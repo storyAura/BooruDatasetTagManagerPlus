@@ -1559,7 +1559,7 @@ namespace BooruDatasetTagManager
             Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             Name = "MainForm";
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            Text = "BooruDatasetTagManager";
+            Text = "BooruDatasetTagManagerPlus";
             WindowState = System.Windows.Forms.FormWindowState.Maximized;
             FormClosing += Form1_FormClosing;
             Load += Form1_Load;

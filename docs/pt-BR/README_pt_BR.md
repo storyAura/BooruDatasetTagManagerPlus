@@ -5,7 +5,10 @@
 
 </div>
 
-# BooruDatasetTagManager
+# BooruDatasetTagManagerPlus
+
+> Este repositório é o fork [storyAura/BooruDatasetTagManagerPlus](https://github.com/storyAura/BooruDatasetTagManagerPlus) do projeto original [starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager). A licença MIT original é mantida em [LICENSE](../../LICENSE).
+
 Um editor de tags simplificado para conjunto de dados usados no treinamento de hiper-redes, embeddings, LoRA, etc. Crie um conjunto de dados do zero usando apenas imagens ou edite um conjunto de dados pré-existente, criado com tags automáticas ([wd14-tagger](https://github.com/toriato/stable-diffusion-webui-wd14-tagger), [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui), etc.).
 Embora seja voltado para dados com tags no estilo booru, você pode adaptá-lo para outros tipos de conjunto de dados.
 

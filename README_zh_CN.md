@@ -1,72 +1,145 @@
 <div align="center">
 
-[English](./README.md) | **中文简体** | [Português do Brasil](./docs/pt-BR/README_pt_BR.md)
+[English](./README.md) | **中文简体** | [Portugues do Brasil](./docs/pt-BR/README_pt_BR.md)
 
 </div>
 
-# BooruDatasetTagManager ~Booru資料標標機~
-這是一個簡單的標籤編輯器，用於編輯訓練超網路、嵌入、LoRA建立的資料集。tagger、stable-diffusion-webui等所建立的資料集。
-這個編輯器主要用於booru風格的標記數據，但您也可以根據需要將其用於其他類型的資料集。
+# BooruDatasetTagManagerPlus
 
-# Using
-您需要如下所示的資料集：
-*如果您想從頭開始建立標籤，也可以指定一個不包含文字檔案的資料集。*
-![](https://user-images.githubusercontent.com/1236582/198582869-be2938a7-f7b2-4ad9-8e8c-a53604a24c2d.jpg)
+BooruDatasetTagManagerPlus 是 [starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager) 的 fork，当前仓库为 [storyAura/BooruDatasetTagManagerPlus](https://github.com/storyAura/BooruDatasetTagManagerPlus)。
 
-在程式中，選擇“檔案->載入資料夾”並指定包含資料集的目錄。
-![](https://github.com/starik222/BooruDatasetTagManager/assets/1236582/4d5a1a31-5909-4706-a3d1-980f82d58c6a)
+它是一个面向 booru 风格数据集的标签编辑器，可用于编辑 LoRA、embedding、hypernetwork 等图像模型训练数据集的 caption/tag 文本文件，也可以从只有图片的文件夹开始新建标签文件。
 
-面板面板顯示資料集中的圖像。個標籤頁中,您可以使用內建服務(interrogator_rpc)產生標籤。
-編輯完成後，選擇“文件->儲存所有變更”。
-您可以在集中資料一次選擇多張圖片。
+这个 fork 保留原项目的数据集浏览、标签编辑、批量替换、自动标签、翻译、多语言界面等工作流，并加入了更适合中文用户的 tag 查询、翻译容错和 Danbooru Wiki 查询能力。
 
-![bdtm03](https://github.com/starik222/BooruDatasetTagManager/assets/1236582/72a450dd-93d9-4cef-9a73-8460c77e9b7d)
+## 与上游项目的关系
 
-透過「設定」選單，您可以開啟設定視窗來自訂應用程式。 "標籤頁中，可以設定適合您的鍵位佈局。
+- 上游项目：[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)
+- 当前 fork：[storyAura/BooruDatasetTagManagerPlus](https://github.com/storyAura/BooruDatasetTagManagerPlus)
+- 开源协议：MIT。原项目的版权声明和许可文本保留在 [LICENSE](./LICENSE) 中。
+- 本 fork 的目标是在保持上游数据集工作流兼容的基础上，增强中文用户体验、tag 查询效率和翻译稳定性。
 
-![bdtm04](https://github.com/starik222/BooruDatasetTagManager/assets/1236582/2adb081f-b11c-480e-b137-1cb801d0474f)
+## 与原仓库的主要区别
 
-# 標籤翻譯
+相比上游 BooruDatasetTagManager，本 fork 当前主要调整包括：
 
-在使用標籤翻譯功能選擇之前，您需要在設定中翻譯語言和翻譯服務。所選的語言。Google翻譯之。
-目前，手動翻譯過濾器只能用於標籤自動完成（需要在設定中啟用該選項）。
+- 项目标识统一为 `BooruDatasetTagManagerPlus`，包括应用窗口标题、程序集产品名、输出 exe 名称和 README 文档。
+- 增加翻译 fallback 链：多个免费翻译接口按顺序尝试，并支持单接口请求超时配置。
+- 增加统一的 tag 右键操作入口，包括 Danbooru Wiki 查询和重新翻译 tag。
+- 增加 Danbooru Wiki 浮窗：清理 Danbooru DText 正文、支持 Wiki 正文翻译，并保留浏览器打开兜底。
+- 增加简体中文 tag 查找：当界面语言为 `zh-CN` 时，可在添加/替换标签输入框中用中文别名补全到英文 tag。
+- 增加 `BooruDatasetTagManager/Data/danbooru-0-zh.csv` 作为中文到英文 tag 的查询数据源。
+- 增加 [docs/UI_STRUCTURE_zh_CN.md](./docs/UI_STRUCTURE_zh_CN.md)，记录当前 WinForms UI 结构，方便后续重构。
+- 增加本地快速启动/构建脚本：[test_start.bat](./test_start.bat)。
 
-# 用於自動完成的標籤列表
+## 使用方式
 
-本應用程式支援從「A1111的Booru標籤自動完成」使用的csv格式文件載入標籤。很長時間，程式把它們轉換為自己的格式並加載資料。
+准备一个包含图片和同名 `.txt` 标签文件的数据集文件夹。也可以只准备图片，BooruDatasetTagManagerPlus 会在保存时创建标签文件。
 
-# 自動標標機 (interrogator_rpc)
+在程序中选择：
 
-您可以直接在程式中為映像產生標籤。
+```text
+File -> Load folder
+```
+
+然后选择数据集目录。左侧是图片列表，中间是当前图片 tags，右侧包含 All/Common tags 和 AutoTagger 预览。
+
+编辑完成后选择：
+
+```text
+File -> Save all changes
+```
+
+可以一次选择多张图片，方便对相似图片批量编辑 tags。
+
+## 标签翻译
+
+在设置中选择翻译目标语言和翻译服务后，可以在下面的菜单中显示 tag 翻译列：
+
+```text
+View -> Translate tags
+```
+
+当前版本使用 fallback 翻译链，默认优先中文友好的接口，然后依次尝试 MyMemory、Google JSON API、旧 Google Mobile HTML。每个接口都有超时控制，默认 5 秒。
+
+翻译缓存保存在 `Translations` 文件夹中。手动翻译可以用 `*` 标记，右键重新翻译不会覆盖手动翻译。
+
+## 标签补全与中文查找
+
+BooruDatasetTagManagerPlus 会从程序目录下的 `Tags` 文件夹加载 A1111 tag autocomplete 格式的 CSV 或逐行 tag TXT 文件，并生成内部缓存以加快启动。
+
+简体中文界面下还会加载：
+
+```text
+BooruDatasetTagManager/Data/danbooru-0-zh.csv
+```
+
+这份文件用于“中文查找英文 tag”，不会作为普通 tag 库导入。格式为：
+
+```csv
+english_tag,中文名|中文别名
+```
+
+在添加标签或替换标签时：
+
+- 输入中文会出现类似 `长发 -> long hair` 的候选。
+- 选择候选后写入的是英文 tag。
+- 如果直接输入完整中文并确认，精确匹配时会自动转成英文 tag。
+- 如果没有匹配，就保留原输入，不强行替换。
+
+## Danbooru Wiki 查询
+
+在 tag 表格中右键 tag，选择“查询 Danbooru Wiki”即可打开浮窗。
+
+浮窗会显示：
+
+- tag 标题
+- other names
+- 更新时间
+- 清理后的 Wiki 正文
+- 翻译 Wiki
+- 在浏览器打开
+
+即使 Wiki 接口加载失败，“在浏览器打开”按钮也会保持可用。
+
+## AutoTagger
+
+BooruDatasetTagManagerPlus 可以通过内置的 AiApiServer 为图片生成 tags。进入 `AiApiServer` 目录后安装依赖：
+
 ```bash
 pip install -r requirements.txt
 ```
-要啟動服務，運行：
+
+启动服务：
+
 ```bash
 python main.py
 ```
-如果您在純Python環境中執行服務遇到問題，可以嘗試使用anaconda或miniconda。
-安裝 anaconda 之後，執行控制台，建立一個新的 conda 環境並安裝必要的依賴項。
-```bash
-#Creating new environment with python
-conda create -n bdtm python=3.10.9
-#Activating the created environment
-conda activate bdtm
-#Installing the necessary dependencies.
-pip install -r requirements.txt
-#Run service
-python main.py
+
+然后可以在程序的 `Tools` 菜单、tag 工具栏按钮或 AutoTagger 预览页中生成 tags。
+
+## 当前 UI 结构
+
+后续 UI 重构前，可以先阅读：
+
+```text
+docs/UI_STRUCTURE_zh_CN.md
 ```
-想啟動已配置的服務，您需要啟動控制台並執行以下命令：
+
+这份文档记录了当前 WinForms 主界面、主要表单、数据流和右键菜单扩展点。
+
+## 构建
+
+需要安装 .NET 8 SDK。命令行构建：
+
 ```bash
-conda activate bdtm
-python main.py
+dotnet build BooruDatasetTagManager/BooruDatasetTagManager.csproj -c Release
 ```
-啟動服務後，在編輯器中，您可以使用“工具”選單產生所有圖像標籤，使用 ![](https://github.com/starik222/BooruDatasetTagManager/assets/1236582/230f47f9-5cef-49bc-8b44-a67890433c42) 圖示為選定的影像產生標籤，也可以單獨在“自動標記器預覽視窗”標籤頁中產生標籤。器設定...”選單。
 
-![bdtm06](https://github.com/starik222/BooruDatasetTagManager/assets/1236582/88c3ab34-b96e-411c-b0b9-2a92729b822c)
+运行测试：
 
-生成器可讓您同時選擇模型，並指定多個結果合併方法。
+```bash
+dotnet test BooruDatasetTagManager.sln -c Release
+```
 
-###翻譯者:哞哞糖
-我累了，翻譯到這樣
+也可以直接双击根目录的 [test_start.bat](./test_start.bat)。当前输出程序名为 `BooruDatasetTagManagerPlus.exe`。

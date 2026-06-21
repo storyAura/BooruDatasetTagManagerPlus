@@ -291,8 +291,8 @@ namespace BooruDatasetTagManager
                     {
                         client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+jso");
                         client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-                        client.DefaultRequestHeaders.Add("User-Agent", "BooruDatasetTagManager");
-                        data = await client.GetStringAsync("https://api.github.com/repos/starik222/BooruDatasetTagManager/releases");
+                        client.DefaultRequestHeaders.Add("User-Agent", "BooruDatasetTagManagerPlus");
+                        data = await client.GetStringAsync("https://api.github.com/repos/storyAura/BooruDatasetTagManagerPlus/releases");
                     }
                 }
                 catch (Exception)

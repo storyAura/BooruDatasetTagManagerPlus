@@ -569,7 +569,7 @@ namespace BooruDatasetTagManager
             if (!CheckSyncLists())
             {
                 CreateDataForDebug();
-                throw new InvalidAsynchronousStateException("List desynchronization detected!\nPlease post the file \""+Path.Combine(Program.AppPath, "ErrorData.json") +"\" in the topic\nhttps://github.com/starik222/BooruDatasetTagManager/discussions/111");
+                throw new InvalidAsynchronousStateException("List desynchronization detected!\nPlease post the file \""+Path.Combine(Program.AppPath, "ErrorData.json") +"\" in the topic\nhttps://github.com/storyAura/BooruDatasetTagManagerPlus/discussions");
             }
         }
 

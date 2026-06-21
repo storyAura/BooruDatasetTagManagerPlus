@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // Общие сведения об этой сборке предоставляются следующим набором
 // набора атрибутов. Измените значения этих атрибутов для изменения сведений,
 // связанных со сборкой.
-[assembly: AssemblyTitle("BooruDatasetTagManager")]
+[assembly: AssemblyTitle("BooruDatasetTagManagerPlus")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("BooruDatasetTagManager")]
+[assembly: AssemblyProduct("BooruDatasetTagManagerPlus")]
 [assembly: AssemblyCopyright("Copyright ©  2022-2025")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
