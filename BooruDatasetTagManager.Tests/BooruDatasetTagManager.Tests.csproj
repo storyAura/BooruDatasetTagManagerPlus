@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\BooruDatasetTagManager\AbstractTranslator.cs" Link="Source\AbstractTranslator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\Adler32.cs" Link="Source\Adler32.cs" />
+    <Compile Include="..\BooruDatasetTagManager\AllTagsItem.cs" Link="Source\AllTagsItem.cs" />
+    <Compile Include="..\BooruDatasetTagManager\AllTagsList.cs" Link="Source\AllTagsList.cs" />
+    <Compile Include="..\BooruDatasetTagManager\EditableTag.cs" Link="Source\EditableTag.cs" />
+    <Compile Include="..\BooruDatasetTagManager\EditableTagHistory.cs" Link="Source\EditableTagHistory.cs" />
+    <Compile Include="..\BooruDatasetTagManager\EditableTagList.cs" Link="Source\EditableTagList.cs" />
+    <Compile Include="..\BooruDatasetTagManager\GlobalEnums.cs" Link="Source\GlobalEnums.cs" />
+    <Compile Include="..\BooruDatasetTagManager\GoogleTranslator.cs" Link="Source\GoogleTranslator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\GoogleJsonTranslator.cs" Link="Source\GoogleJsonTranslator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\MyMemoryTranslator.cs" Link="Source\MyMemoryTranslator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\FallbackTranslator.cs" Link="Source\FallbackTranslator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ChineseTagLookupService.cs" Link="Source\ChineseTagLookupService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\DanbooruWikiClient.cs" Link="Source\DanbooruWikiClient.cs" />
+    <Compile Include="..\BooruDatasetTagManager\DanbooruDTextFormatter.cs" Link="Source\DanbooruDTextFormatter.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ChineseTranslator.cs" Link="Source\ChineseTranslator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CaptionGenerationService.cs" Link="Source\CaptionGenerationService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\AiPromptTemplateCatalog.cs" Link="Source\AiPromptTemplateCatalog.cs" />
+    <Compile Include="..\BooruDatasetTagManager\OpenAiConnectionErrorClassifier.cs" Link="Source\OpenAiConnectionErrorClassifier.cs" />
+    <Compile Include="..\BooruDatasetTagManager\OpenAiSpeedTestService.cs" Link="Source\OpenAiSpeedTestService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\AiServerSetSettingsMigration.cs" Link="Source\AiServerSetSettingsMigration.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageLoader.cs" Link="Source\ImageLoader.cs" />
+    <Compile Include="..\BooruDatasetTagManager\QuickTagReplaceService.cs" Link="Source\QuickTagReplaceService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TranslationManager.cs" Link="Source\TranslationManager.cs" />
+  </ItemGroup>
+</Project>

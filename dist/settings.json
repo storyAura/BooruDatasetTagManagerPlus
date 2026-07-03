@@ -1,0 +1,357 @@
+{
+    "TranslationLanguage":  "zh-CN",
+    "PreviewSize":  130,
+    "TransService":  0,
+    "TranslationProviderOrder":  [
+                                     1,
+                                     2,
+                                     3,
+                                     0
+                                 ],
+    "TranslationTimeoutSeconds":  5,
+    "OnlyManualTransInAutocomplete":  false,
+    "AutocompleteMode":  1,
+    "AutocompleteSort":  0,
+    "FixTagsOnSaveLoad":  true,
+    "PreviewType":  0,
+    "SeparatorOnLoad":  ",",
+    "SeparatorOnSave":  ", ",
+    "DefaultTagsFileExtension":  "txt",
+    "CaptionFileExtensions":  "txt,caption",
+    "ShowAutocompleteAfterCharCount":  3,
+    "AskSaveChanges":  true,
+    "GridViewRowHeight":  29,
+    "GridViewFont":  {
+                         "Name":  "Tahoma",
+                         "Size":  14.0,
+                         "Bold":  false,
+                         "GdiCharSet":  1,
+                         "Italic":  false,
+                         "Strikeout":  false,
+                         "Underline":  false
+                     },
+    "AutocompleteFont":  {
+                             "Name":  "Segoe UI",
+                             "Size":  9.0,
+                             "Bold":  false,
+                             "GdiCharSet":  1,
+                             "Italic":  false,
+                             "Strikeout":  false,
+                             "Underline":  false
+                         },
+    "Hotkeys":  {
+                    "Items":  [
+                                  {
+                                      "Id":  "DatasetFocus",
+                                      "KeyData":  49,
+                                      "FullKeyData":  131121,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "TagsFocus",
+                                      "KeyData":  50,
+                                      "FullKeyData":  131122,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "AllTagsFocus",
+                                      "KeyData":  51,
+                                      "FullKeyData":  131123,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "AutoTagsFocus",
+                                      "KeyData":  52,
+                                      "FullKeyData":  131124,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "PreviewTabFocus",
+                                      "KeyData":  53,
+                                      "FullKeyData":  131125,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "MenuItemSaveChanges",
+                                      "KeyData":  83,
+                                      "FullKeyData":  131155,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "MenuItemShowPreview",
+                                      "KeyData":  80,
+                                      "FullKeyData":  131152,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "MenuHideAllTags",
+                                      "KeyData":  74,
+                                      "FullKeyData":  131146,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "MenuHideTags",
+                                      "KeyData":  75,
+                                      "FullKeyData":  131147,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "MenuHideDataset",
+                                      "KeyData":  76,
+                                      "FullKeyData":  131148,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagAdd",
+                                      "KeyData":  69,
+                                      "FullKeyData":  131141,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagDelete",
+                                      "KeyData":  68,
+                                      "FullKeyData":  131140,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagUndo",
+                                      "KeyData":  90,
+                                      "FullKeyData":  131162,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagRedo",
+                                      "KeyData":  90,
+                                      "FullKeyData":  196698,
+                                      "IsCtrl":  true,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagUp",
+                                      "KeyData":  33,
+                                      "FullKeyData":  131105,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagDown",
+                                      "KeyData":  34,
+                                      "FullKeyData":  131106,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagFindInAll",
+                                      "KeyData":  70,
+                                      "FullKeyData":  131142,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagAddToAll",
+                                      "KeyData":  87,
+                                      "FullKeyData":  131159,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagAddToSelected",
+                                      "KeyData":  87,
+                                      "FullKeyData":  65623,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagAddToFiltered",
+                                      "KeyData":  87,
+                                      "FullKeyData":  196695,
+                                      "IsCtrl":  true,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagDeleteForAll",
+                                      "KeyData":  82,
+                                      "FullKeyData":  131154,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagDeleteForSelected",
+                                      "KeyData":  82,
+                                      "FullKeyData":  65618,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagDeleteForFiltered",
+                                      "KeyData":  82,
+                                      "FullKeyData":  196690,
+                                      "IsCtrl":  true,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagReplace",
+                                      "KeyData":  71,
+                                      "FullKeyData":  131143,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnImageFilter",
+                                      "KeyData":  70,
+                                      "FullKeyData":  196678,
+                                      "IsCtrl":  true,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnImageExitFilter",
+                                      "KeyData":  71,
+                                      "FullKeyData":  196679,
+                                      "IsCtrl":  true,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagMultiModeSwitch",
+                                      "KeyData":  89,
+                                      "FullKeyData":  131161,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagFilter",
+                                      "KeyData":  70,
+                                      "FullKeyData":  65606,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagExitFilter",
+                                      "KeyData":  71,
+                                      "FullKeyData":  65607,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnMenuGenTagsWithCurrentSettings",
+                                      "KeyData":  71,
+                                      "FullKeyData":  65607,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnMenuGenTagsWithSetWindow",
+                                      "KeyData":  72,
+                                      "FullKeyData":  65608,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "toolStripPromptSortBtn",
+                                      "KeyData":  81,
+                                      "FullKeyData":  131153,
+                                      "IsCtrl":  true,
+                                      "IsShift":  false,
+                                      "IsAlt":  false
+                                  },
+                                  {
+                                      "Id":  "BtnTagImageChecker",
+                                      "KeyData":  84,
+                                      "FullKeyData":  65620,
+                                      "IsCtrl":  false,
+                                      "IsShift":  true,
+                                      "IsAlt":  false
+                                  }
+                              ]
+                },
+    "AutoTagger":  {
+                       "ConnectionAddress":  "http://127.0.0.1:50051",
+                       "InterragatorParams":  {
+
+                                              },
+                       "UnionMode":  0,
+                       "SerializeVramUsage":  false,
+                       "SkipInternetRequests":  false,
+                       "CustomSystemPrompt":  "",
+                       "SortMode":  0,
+                       "SetMode":  0,
+                       "TagFilteringMode":  0,
+                       "TagFilter":  ""
+                   },
+    "OpenAiAutoTagger":  {
+                             "ConnectionAddress":  "",
+                             "ApiKey":  "",
+                             "RequestTimeout":  3600,
+                             "SystemPrompt":  "",
+                             "UserPrompt":  "",
+                             "Temperature":  -1.0,
+                             "TopP":  -1.0,
+                             "RepeatPenalty":  0.0,
+                             "Model":  "",
+                             "SplitString":  false,
+                             "Splitter":  ",",
+                             "VideoFrameCount":  10,
+                             "VideoFrameScale":  0,
+                             "SortMode":  0,
+                             "SetMode":  0,
+                             "TagFilteringMode":  0,
+                             "TagFilter":  ""
+                         },
+    "TagImagesGridSize":  400,
+    "AutoSort":  false,
+    "Language":  "zh-CN",
+    "ColorScheme":  "Classic",
+    "CacheOpenImages":  true,
+    "LoadSettingsLoadPreviewImages":  true,
+    "LoadSettingsReadMetadata":  false,
+    "UseDanbooruZhCsvBeforeTranslation":  true,
+    "QuickReplaceThreshold":  30,
+    "AiServerSetPromptTemplate":  "Danbooru Tag",
+    "AiServerSetPromptTemplateId":  "builtin.danbooru-tag",
+    "AiServerSetPromptTemplates":  [
+
+                                   ]
+}

@@ -1,0 +1,581 @@
+﻿using Newtonsoft.Json;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Policy;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Translator.Crypto;
+using static BooruDatasetTagManager.Extensions;
+
+namespace BooruDatasetTagManager
+{
+    public class DatasetManager
+    {
+        public ConcurrentDictionary<string, DataItem> DataSet;
+        public AllTagsList AllTags;
+        public BindingSource AllTagsBindingSource;
+
+        public string DatasetRoot { get; private set; } = string.Empty;
+
+        private int originalHash;
+
+        private bool isTranslate = false;
+        private int bulkMutationDepth = 0;
+        private bool translateAfterBulkMutation = false;
+
+        private FilterType lastAndOperation = FilterType.Or;
+        private IEnumerable<string> lastTagsFilter = null;
+
+        private Dictionary<string, Image> imagesCache;
+
+        public event ProgressHandler LoadingProgressChanged;
+
+        public DatasetManager()
+        {
+            imagesCache = new Dictionary<string, Image>();
+            DataSet = new ConcurrentDictionary<string, DataItem>();
+            AllTags = new AllTagsList();
+            AllTagsBindingSource = new BindingSource();
+            AllTagsBindingSource.DataSource = AllTags;
+        }
+
+        public bool SaveAll()
+        {
+            bool saved = false;
+            foreach (var item in DataSet)
+            {
+                if (item.Value.IsModified)
+                {
+                    item.Value.DeduplicateTags();
+                    string promptText = item.Value.Tags.ToString();
+                    File.WriteAllText(item.Value.TextFilePath, promptText);
+                    saved = true;
+                }
+            }
+            return saved;
+        }
+
+        public bool Remove(string name)
+        {
+            DataSet[name].Tags.Clear();
+            return DataSet.TryRemove(name, out _);
+        }
+
+        public Image GetImageFromFileWithCache(string path)
+        {
+            if (Program.Settings.CacheOpenImages)
+            {
+                if (imagesCache.ContainsKey(path))
+                    return imagesCache[path];
+                else
+                {
+                    Image img = Extensions.GetImageFromFile(path);
+                    imagesCache[path] = img;
+                    return img;
+                }
+            }
+            else
+                return Extensions.GetImageFromFile(path);
+        }
+
+        public void ClearCache()
+        {
+            imagesCache.Clear();
+        }
+
+        public void RemoveFromCache(string path)
+        {
+            imagesCache.Remove(path);
+        }
+
+        private IEnumerable<DataItem> GetEnumerator(bool useFilter)
+        {
+            IEnumerable<DataItem> lst = null;
+            if (useFilter)
+            {
+                lst = FilterLogic(lastAndOperation, lastTagsFilter);
+            }
+            else
+                lst = DataSet.Select(a => a.Value);
+            return lst;
+        }
+
+        public void AddTagToAll(string tag, bool skipExist, AddingType addType, int pos=-1, bool useFilter = false)
+        {
+            var items = GetEnumerator(useFilter).ToList();
+            ExecuteBulkMutation(() =>
+            {
+                foreach (var item in items)
+                    item.Tags.AddTag(tag, skipExist, addType, pos);
+            });
+        }
+
+        public void SetTagListToAll(List<string> tags, bool onlyEmpty)
+        {
+            foreach (var item in DataSet)
+            {
+                if (onlyEmpty)
+                {
+                    if (item.Value.Tags.Count == 0)
+                    {
+                        item.Value.Tags.AddRange(tags, true);
+                    }
+                }
+                else
+                {
+                    item.Value.Tags.Clear();
+                    item.Value.Tags.AddRange(tags, true);
+                }
+            }
+        }
+
+        public void SetTagListToAll(EditableTagList tagList, bool onlyEmpty)
+        {
+            foreach (var item in DataSet)
+            {
+                if (onlyEmpty)
+                {
+                    if (item.Value.Tags.Count == 0)
+                    {
+                        item.Value.Tags = (EditableTagList)tagList.Clone();
+                    }
+                }
+                else
+                {
+                    item.Value.Tags = (EditableTagList)tagList.Clone();
+                }
+            }
+        }
+
+        public List<DataItem> GetDataSourceWithLastFilter(OrderType orderBy = OrderType.Name)
+        {
+            return GetDataSource(orderBy, lastAndOperation, lastTagsFilter);
+        }
+
+        /// <summary>
+        /// Retrieves a list of DataItem objects, filtered and ordered based on the given parameters.
+        /// </summary>
+        /// <param name="orderBy">An optional parameter that specifies how the resulting list should be sorted.</param>
+        /// <param name="andOp">An optional parameter that determines the logical operation to be used when filtering by tags.</param>
+        /// <param name="filterByTags">An optional parameter that contains a list of tags to filter the data items by.</param>
+        /// <returns>A filtered and ordered list of DataItem objects.</returns>
+        public List<DataItem> GetDataSource(OrderType orderBy = OrderType.Name, FilterType andOp = FilterType.Or, IEnumerable<string> filterByTags = null)
+        {
+            // Store the last set of tags used for filtering. FilterLogic will use this value unless passed custom one
+            lastTagsFilter = filterByTags;
+
+            // Declare a list to store the filtered and ordered DataItem objects.
+            List<DataItem> items = FilterLogic(andOp);
+
+            // Sort the data items based on the orderBy parameter.
+            switch (orderBy)
+            {
+                case OrderType.Name:
+                    {
+                        // Sort data items by their Name property using a custom string comparison method.
+                        items.Sort((a, b) => FileNamesComparer.StrCmpLogicalW(a.Name, b.Name));
+                        break;
+                    }
+                case OrderType.ImageModifyTime:
+                    {
+                        // Sort data items by their ImageModifyTime property.
+                        items.Sort((a, b) => a.ImageModifyTime.CompareTo(b.ImageModifyTime));
+                        break;
+                    }
+                case OrderType.TagsModifyTime:
+                    {
+                        // Sort data items by their TagsModifyTime property.
+                        items.Sort((a, b) => a.TagsModifyTime.CompareTo(b.TagsModifyTime));
+                        break;
+                    }
+            }
+            // Return the filtered and sorted list of DataItem objects.
+            return items;
+        }
+
+        public List<DataItem> FilterLogic(FilterType andOp = FilterType.Or, IEnumerable<string> filterByTags = null)
+        {
+            List<DataItem> items = null;
+            if (filterByTags != null)
+                lastTagsFilter = filterByTags;
+            // Check if there are tags to filter by.
+            if (lastTagsFilter != null)
+            {
+                switch (andOp)
+                {
+                    case FilterType.And:
+                        // If the logical operation is AND, filter the data items by requiring all tags to be present.
+                        items = DataSet.Values.Where(a => lastTagsFilter.All(t => a.Tags.Contains(t))).ToList();
+                        break;
+                    case FilterType.Or:
+                        // If the logical operation is OR, filter the data items by requiring at least one tag to be present.
+                        items = DataSet.Values.Where(a => lastTagsFilter.Any(t => a.Tags.Contains(t))).ToList();
+                        break;
+                    case FilterType.Not:
+                        // If the logical operation is NOT, filter the data items by requiring none of the tags to be present.
+                        items = DataSet.Values.Where(a => lastTagsFilter.All(t => !a.Tags.Contains(t))).ToList();
+                        break;
+                    case FilterType.Xor:
+                        // If the logical operation is XOR, filter the data items by requiring exactly one tag to be present.
+                        items = DataSet.Values.Where(a => lastTagsFilter.Count(t => a.Tags.Contains(t)) == 1).ToList();
+                        break;
+                    default:
+                        throw new ArgumentException($"Invalid filter type: {andOp}");
+                }
+                // Store the last logical operation used for filtering, moved here so it is only updated if we actually perform the operation
+                lastAndOperation = andOp;
+            }
+            // If there are no tags to filter by, return all data items.
+            else
+                items = DataSet.Values.ToList();
+
+            return items;
+        }
+
+        public void DeleteTagFromAll(string tag, bool useFilter = false)
+        {
+            DeleteTagsFromAll(new[] { tag }, useFilter);
+        }
+
+        public void DeleteTagsFromAll(IEnumerable<string> tags, bool useFilter = false)
+        {
+            if (tags == null)
+                throw new ArgumentNullException(nameof(tags));
+
+            var tagsToDelete = new HashSet<string>(
+                tags.Where(tag => !string.IsNullOrWhiteSpace(tag))
+                    .Select(tag => tag.ToLowerInvariant().Trim()),
+                StringComparer.Ordinal);
+
+            if (tagsToDelete.Count == 0)
+                return;
+
+            var items = GetEnumerator(useFilter).ToList();
+            ExecuteBulkMutation(() =>
+            {
+                foreach (var item in items)
+                    item.Tags.RemoveTags(tagsToDelete, true);
+            });
+        }
+
+
+
+        public void ReplaceTagInAll(string srcTag, string dstTag, bool useFilter = false)
+        {
+            srcTag = srcTag.ToLower();
+            dstTag = dstTag.ToLower();
+            var items = GetEnumerator(useFilter).ToList();
+            ExecuteBulkMutation(() =>
+            {
+                foreach (var item in items)
+                    item.Tags.ReplaceTag(srcTag, dstTag);
+            });
+        }
+
+        public void ReplaceTagsInAll(IEnumerable<string> srcTags, string dstTag, bool useFilter = false)
+        {
+            if (srcTags == null)
+                throw new ArgumentNullException(nameof(srcTags));
+
+            var normalizedSourceTags = srcTags
+                .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(tag => tag.ToLowerInvariant().Trim())
+                .Distinct()
+                .ToList();
+
+            if (normalizedSourceTags.Count == 0 || string.IsNullOrWhiteSpace(dstTag))
+                return;
+
+            dstTag = dstTag.ToLowerInvariant().Trim();
+            var items = GetEnumerator(useFilter).ToList();
+            ExecuteBulkMutation(() =>
+            {
+                foreach (var item in items)
+                {
+                    foreach (string srcTag in normalizedSourceTags)
+                        item.Tags.ReplaceTag(srcTag, dstTag);
+                }
+            });
+        }
+
+        private void ExecuteBulkMutation(Action mutation)
+        {
+            bool isOuterMutation = bulkMutationDepth == 0;
+            IDisposable allTagsBatch = isOuterMutation ? AllTags.BeginBatchUpdate() : null;
+            bulkMutationDepth++;
+            try
+            {
+                mutation();
+            }
+            finally
+            {
+                bulkMutationDepth--;
+                allTagsBatch?.Dispose();
+                if (isOuterMutation && translateAfterBulkMutation)
+                {
+                    translateAfterBulkMutation = false;
+                    _ = AllTags.TranslateAllTags();
+                }
+            }
+        }
+
+        private List<TagValue> GetTagsForDel(List<TagValue> checkedList, List<string> srcList)
+        {
+            List<TagValue> delList = new List<TagValue>();
+            foreach (var item in checkedList)
+            {
+                if (!srcList.Contains(item.Tag))
+                    delList.Add(item);
+            }
+            return delList;
+        }
+
+        public async Task<bool> LoadFromFolderAsync(string folder, bool loadPreviewImages, bool readMetadata)
+        {
+            return await Task.Run(() => LoadFromFolder(folder, loadPreviewImages, readMetadata));
+        }
+
+        public bool LoadFromFolder(string folder, bool loadPreviewImages, bool readMetadata)
+        {
+            List<string> allowedExt = new List<string>();
+            allowedExt.AddRange(Extensions.ImageExtensions);
+            allowedExt.AddRange(Extensions.VideoExtensions);
+            string[] imgs = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
+            if (imgs.Length == 0)
+            {
+                return false;
+            }
+            imgs = imgs.Where(a => allowedExt.Contains(Path.GetExtension(a).ToLower())).OrderBy(a => a, new FileNamesComparer()).ToArray();
+            if (imgs.Length == 0)
+                return false;
+            int imgSize = Program.Settings.PreviewSize;
+            int progress = 0;
+            imgs.AsParallel().ForAll(x =>
+            {
+                var dt = new DataItem();
+                dt.Tags.TagsListChanged += Tags_TagsListChanged;
+                dt.LoadData(x, loadPreviewImages ? imgSize : 0, readMetadata);
+                DataSet.TryAdd(dt.ImageFilePath, dt);
+                Program.LoadingLocker.Wait();
+                progress++;
+                LoadingProgressChanged?.Invoke(progress, imgs.Length);
+                Program.LoadingLocker.Release();
+            });
+            DatasetRoot = Path.GetFullPath(folder)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            UpdateDatasetHash();
+            AllTagsBindingSource.Sort = "Tag ASC";
+            return true;
+        }
+
+        public void SetTranslationMode(bool needTranslate)
+        {
+            isTranslate = needTranslate;
+        }
+
+        private void Tags_TagsListChanged(object sender, string oldTag, string newTag, ListChangedType changedType)
+        {
+            //EditableTagList eTagList = (EditableTagList)sender;
+            lock (Program.ListChangeLocker)
+            {
+                if (changedType == ListChangedType.ItemAdded)
+                {
+                    AllTags.AddTag(newTag);
+                    if (isTranslate)
+                    {
+                        if (bulkMutationDepth > 0)
+                            translateAfterBulkMutation = true;
+                        else
+                            _ = AllTags.TranslateAllTags();
+                    }
+                }
+                else if (changedType == ListChangedType.ItemDeleted)
+                {
+                    AllTags.RemoveTag(newTag);
+                }
+                else if (changedType == ListChangedType.ItemChanged)
+                {
+                    AllTags.ChangeTag(oldTag, newTag);
+                    if (isTranslate)
+                    {
+                        if (bulkMutationDepth > 0)
+                            translateAfterBulkMutation = true;
+                        else
+                            _ = AllTags.TranslateAllTags();
+                    }
+                }
+                else
+                    throw new Exception("Unknown list changing operation");
+                if (AllTags.IsFilterByCount() && bulkMutationDepth == 0)
+                    AllTags.UpdateFilter();
+            }
+        }
+
+        private ImageList GetImageList(int w, int h)
+        {
+            ImageList imgList = new ImageList();
+            imgList.ImageSize = new Size(w, h);
+            foreach (var item in DataSet)
+            {
+                imgList.Images.Add(item.Key, item.Value.Img);
+            }
+            return imgList;
+        }
+
+        public bool IsDataSetChanged()
+        {
+            return !originalHash.Equals(GetHashCode());
+        }
+
+        public void UpdateDatasetHash()
+        {
+            originalHash = GetHashCode();
+        }
+        public override int GetHashCode()
+        {
+            int result = 0;
+            unchecked
+            {
+                foreach (var item in DataSet)
+                    result = result * 31 + item.Value.GetHashCode();
+            }
+            return result;
+        }
+
+        public enum AddingType
+        {
+            Top,
+            Center,
+            Down,
+            Custom
+        }
+
+        public enum OrderType
+        {
+            Name,
+            ImageModifyTime,
+            TagsModifyTime
+        }
+
+        public class DataItem : IDisposable
+        {
+            [JsonIgnore()]
+            [DisplayName("Image")]
+            public Image Img { get; set; }
+            public string Name { get; set; }
+            [Browsable(false)]
+            public EditableTagList Tags { get; set; }
+            [Browsable(false)]
+            public string TextFilePath { get; set; }
+            //[Browsable(false)]
+            public string ImageFilePath { get; set; }
+            [Browsable(false)]
+            public int ImageFilePathHash { get; set; }
+
+            public DateTime ImageModifyTime { get; set; }
+            public DateTime TagsModifyTime { get; set; }
+            [Browsable(false)]
+            public bool IsModified
+            {
+                get
+                {
+                    return originalHash != GetHashCode();
+                }
+            }
+
+            private int originalHash;
+
+            public DataItem()
+            {
+                Tags = new EditableTagList();
+            }
+
+            public void LoadData(string imagePath, int imageSize, bool readMetadata)
+            {
+                ImageFilePath = imagePath;
+                ImageFilePathHash = ImageFilePath.GetHashCode();
+                Name = Path.GetFileNameWithoutExtension(imagePath);
+                ImageModifyTime = File.GetLastWriteTime(imagePath);
+                foreach (var item in Program.Settings.GetTagFilesExtensions())
+                {
+                    TextFilePath = Path.Combine(Path.GetDirectoryName(imagePath), Name + "." + item);
+                    if (File.Exists(TextFilePath))
+                        break;
+                    else
+                        TextFilePath = string.Empty;
+                }
+                if (string.IsNullOrEmpty(TextFilePath))
+                    TextFilePath = Path.Combine(Path.GetDirectoryName(imagePath), Name + "." + Program.Settings.DefaultTagsFileExtension);
+                GetTagsFromFile(readMetadata);
+                if (imageSize > 0)
+                    Img = Extensions.MakeThumb(imagePath, imageSize);
+            }
+
+            public void DeduplicateTags()
+            {
+                Tags.DeduplicateTags();
+            }
+
+
+
+            public void GetTagsFromFile(bool readMetadata)
+            {
+                if (File.Exists(TextFilePath))
+                {
+                    TagsModifyTime = File.GetLastWriteTime(TextFilePath);
+                    string text = File.ReadAllText(TextFilePath);
+
+                    var temp_tags = PromptParser.ParsePrompt(text, Program.Settings.FixTagsOnSaveLoad, Program.Settings.SeparatorOnLoad);
+                    Tags.LoadFromPromptParserData(temp_tags);
+                }
+                else
+                {
+                    if (readMetadata)
+                    {
+                        var metadata = Diffusion.IO.Metadata.ReadFromFile(ImageFilePath);
+                        if (!string.IsNullOrEmpty(metadata.Prompt))
+                        {
+                            var temp_tags = PromptParser.ParsePrompt(metadata.Prompt, Program.Settings.FixTagsOnSaveLoad, Program.Settings.SeparatorOnLoad);
+                            Tags.LoadFromPromptParserData(temp_tags);
+                        }
+                    }
+                    TagsModifyTime = DateTime.MinValue;
+                }
+
+                originalHash = GetHashCode();
+            }
+
+            public override string ToString()
+            {
+                return Tags.ToString();
+            }
+
+            public override int GetHashCode()
+            {
+                return ToString().GetHashCode();
+            }
+
+            public bool Equals(DataItem obj)
+            {
+                return obj.ImageFilePathHash == ImageFilePathHash;
+            }
+
+            public void Dispose()
+            {
+                Img?.Dispose();
+                Tags.Clear();
+            }
+        }
+    }
+
+
+}
