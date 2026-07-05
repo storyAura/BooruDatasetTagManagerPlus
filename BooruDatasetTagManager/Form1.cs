@@ -238,18 +238,27 @@ namespace BooruDatasetTagManager
                 && Program.OpenAiAutoTagger != null;
         }
 
-        private bool EnsureOpenAiTaggerConfigured(bool openAdvancedSettings)
+        private static bool HasValidOpenAiAutoTagSettings()
         {
-            if (!HasValidLlmT2NlSettings())
+            string endpointText = Program.Settings.OpenAiAutoTagger.ConnectionAddress;
+            return Uri.TryCreate(endpointText, UriKind.Absolute, out Uri endpoint)
+                && (endpoint.Scheme == Uri.UriSchemeHttp || endpoint.Scheme == Uri.UriSchemeHttps)
+                && !string.IsNullOrWhiteSpace(Program.Settings.OpenAiAutoTagger.ResolveVisionModel())
+                && Program.OpenAiAutoTagger != null;
+        }
+
+        private bool EnsureOpenAiAutoTagConfigured(bool openAdvancedSettings)
+        {
+            if (!HasValidOpenAiAutoTagSettings())
             {
                 MessageBox.Show(
                     this,
-                    I18n.GetText("LlmT2NlInvalidSettings"),
+                    I18n.GetText("OpenAiAutoTagInvalidSettings"),
                     I18n.GetText("MenuAiServerSet"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 using Form_AiServerSet settings = new Form_AiServerSet(this);
-                if (settings.ShowDialog(this) != DialogResult.OK || !HasValidLlmT2NlSettings())
+                if (settings.ShowDialog(this) != DialogResult.OK || !HasValidOpenAiAutoTagSettings())
                     return false;
             }
 
@@ -261,6 +270,43 @@ namespace BooruDatasetTagManager
             }
 
             return true;
+        }
+
+        private bool EnsureSelectedAutoTagProviderConfigured(bool openAdvancedSettings)
+        {
+            if (!string.Equals(Program.Settings.AutoTagProviderId, "ai-api-server", StringComparison.OrdinalIgnoreCase))
+                return EnsureOpenAiAutoTagConfigured(openAdvancedSettings);
+
+            if (openAdvancedSettings || Program.Settings.AutoTagger.InterragatorParams.Count == 0)
+            {
+                using Form_AutoTaggerSettings settings = new Form_AutoTaggerSettings();
+                if (settings.ShowDialog(this) != DialogResult.OK)
+                    return false;
+            }
+            return Program.Settings.AutoTagger.InterragatorParams.Count > 0;
+        }
+
+        private async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GenerateWithSelectedAutoTagProviderAsync(
+            string mediaPath)
+        {
+            string providerId = string.IsNullOrWhiteSpace(Program.Settings.AutoTagProviderId)
+                ? "openai-compatible"
+                : Program.Settings.AutoTagProviderId;
+            IAutoTagProvider provider = Program.AutoTagProviders.GetRequired(providerId);
+            AutoTagConnectionResult connection = await provider.ConnectAsync();
+            if (!connection.Success)
+                return (null, connection.ErrorMessage, false);
+            IReadOnlyList<string> modelIds = string.Equals(providerId, "ai-api-server", StringComparison.OrdinalIgnoreCase)
+                ? Program.Settings.AutoTagger.InterragatorParams.Keys.ToList()
+                : new[] { Program.Settings.OpenAiAutoTagger.ResolveVisionModel() };
+            AutoTagProviderResult result = await provider.GenerateAsync(new AutoTagProviderRequest
+            {
+                MediaPath = mediaPath,
+                ModelIds = modelIds
+            });
+            List<AiApiClient.AutoTagItem> items = result.Items.Select(item =>
+                new AiApiClient.AutoTagItem(item.Tag, item.Confidence)).ToList();
+            return (result.Success ? items : null, result.ErrorMessage, result.Canceled);
         }
 
         internal bool TryQuickReplaceSelectedTag(int threshold)
@@ -2556,7 +2602,14 @@ namespace BooruDatasetTagManager
 
         private void autoTaggerSettingsToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            EnsureOpenAiTaggerConfigured(true);
+            EnsureOpenAiAutoTagConfigured(true);
+        }
+
+        internal void RefreshAfterCharacterTagAudit()
+        {
+            gridViewAllTags.Refresh();
+            LoadSelectedImageToGrid();
+            SetStatus(I18n.GetText("CharacterTagAuditSaved"));
         }
 
         private async void BtnAutoGetTagsDefSet_Click(object sender, EventArgs e)
@@ -2571,7 +2624,7 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
                 return;
             }
-            if (!EnsureOpenAiTaggerConfigured(!defSettings))
+            if (!EnsureSelectedAutoTagProviderConfigured(!defSettings))
                 return;
 
             SetStatus(I18n.GetText("InProgress"));
@@ -2581,7 +2634,7 @@ namespace BooruDatasetTagManager
 
             (List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
             TaggerSettings settings = Program.Settings.OpenAiAutoTagger;
-            taggerResult = await Program.OpenAiAutoTagger.GetTagsWithAutoTagger(selectedImageData.ImageFilePath, true);
+            taggerResult = await GenerateWithSelectedAutoTagProviderAsync(selectedImageData.ImageFilePath);
             if (!string.IsNullOrEmpty(taggerResult.errorMessage))
                 SetStatus(taggerResult.errorMessage);
 
@@ -2624,7 +2677,7 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
                 return;
             }
-            if (!EnsureOpenAiTaggerConfigured(!defSettings))
+            if (!EnsureSelectedAutoTagProviderConfigured(!defSettings))
                 return;
 
             TaggerSettings settings = Program.Settings.OpenAiAutoTagger;
@@ -2650,7 +2703,7 @@ namespace BooruDatasetTagManager
             foreach (var item in selectedTagsList)
             {
                 (List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
-                taggerResult = await Program.OpenAiAutoTagger.GetTagsWithAutoTagger(item.ImageFilePath, true);
+                taggerResult = await GenerateWithSelectedAutoTagProviderAsync(item.ImageFilePath);
                 if (taggerResult.canceled)
                 {
                     goto genExit;

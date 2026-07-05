@@ -15,6 +15,8 @@ namespace BooruDatasetTagManager
         private GroupBox groupTranslation;
         private CheckBox checkBoxUseCsv;
         private bool suppressSave;
+        private GroupBox groupCharacterTagAudit;
+        private Button buttonCharacterTagAudit;
 
         public Form_TestModule(MainForm owner)
         {
@@ -31,7 +33,7 @@ namespace BooruDatasetTagManager
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Text = "Test";
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(580, 230);
+            ClientSize = new Size(580, 330);
             MinimumSize = new Size(500, 220);
             ShowInTaskbar = false;
 
@@ -41,9 +43,10 @@ namespace BooruDatasetTagManager
                 AutoSize = true,
                 Padding = new Padding(12),
                 ColumnCount = 1,
-                RowCount = 2
+                RowCount = 3
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
@@ -79,6 +82,16 @@ namespace BooruDatasetTagManager
             checkBoxUseCsv = new CheckBox { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(530, 0) };
             checkBoxUseCsv.CheckedChanged += (_, _) => SaveSettingsImmediate();
             groupTranslation.Controls.Add(checkBoxUseCsv);
+
+            groupCharacterTagAudit = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10), Margin = new Padding(3, 10, 3, 3) };
+            buttonCharacterTagAudit = new Button { AutoSize = true, MinimumSize = new Size(220, 32) };
+            buttonCharacterTagAudit.Click += (_, _) =>
+            {
+                using Form_CharacterTagAuditWizard form = new Form_CharacterTagAuditWizard(owner);
+                form.ShowDialog(this);
+            };
+            groupCharacterTagAudit.Controls.Add(buttonCharacterTagAudit);
+            root.Controls.Add(groupCharacterTagAudit, 0, 2);
         }
 
         private void ApplyLanguage()
@@ -89,6 +102,8 @@ namespace BooruDatasetTagManager
             buttonQuickReplace.Text = I18n.GetText("TestQuickReplaceRun");
             groupTranslation.Text = I18n.GetText("TestTranslation");
             checkBoxUseCsv.Text = I18n.GetText("TestUseDanbooruCsvBeforeTranslation");
+            groupCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditGroup");
+            buttonCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditOpen");
         }
 
         private void LoadSettings()

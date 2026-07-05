@@ -127,6 +127,7 @@ namespace BooruDatasetTagManager
             Program.Settings.AutoTagger.SkipInternetRequests = checkBoxSkipInternet.Checked;
             if (ValidateChildren())
             {
+                Program.Settings.AutoTagProviderId = "ai-api-server";
                 Program.Settings.SaveSettings();
                 DialogResult = DialogResult.OK;
             }
@@ -158,6 +159,14 @@ namespace BooruDatasetTagManager
             label7.Text = I18n.GetText("UIAutoTagFilter");
             checkBoxSerializeVRAM.Text = I18n.GetText("UIAutoTagSerializeVram");
             checkBoxSkipInternet.Text = I18n.GetText("UIAutoTagSkipInternetReq");
+            tabGeneral.Text = I18n.GetText("UIAutoTagGeneral");
+            label3.Text = I18n.GetText("UIAutoTagSelectedModelInfo");
+            labelRepo.Text = I18n.GetText("UIAutoTagRepositoryLink");
+            checkBoxSupportVideo.Text = I18n.GetText("UIAutoTagSupportsVideo");
+            label8.Text = I18n.GetText("UIAutoTagSupportedVideo");
+            label9.Text = I18n.GetText("UIAutoTagUnsupportedVideo");
+            button1.Text = I18n.GetText("BtnOK");
+            button2.Text = I18n.GetText("BtnCancel");
         }
 
         private void textBoxTagFilter_Validating(object sender, CancelEventArgs e)
@@ -230,7 +239,7 @@ namespace BooruDatasetTagManager
             var intParams = await Program.AutoTagger.GetModelParams(name);
             if (!intParams.Success)
             {
-                MessageBox.Show(intParams.ErrorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(intParams.ErrorMessage, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
             selectedInterrogators.Add(name);

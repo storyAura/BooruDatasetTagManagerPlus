@@ -11,6 +11,8 @@ namespace BooruDatasetTagManager
             string openAiApiKey,
             int openAiTimeout,
             string openAiModel,
+            string visionModel,
+            string characterTagAuditModel,
             int llmT2NlConcurrency,
             IEnumerable<AiPromptTemplateSettings> promptTemplates,
             string selectedPromptTemplateId)
@@ -23,6 +25,8 @@ namespace BooruDatasetTagManager
             Program.Settings.OpenAiAutoTagger.ApiKey = openAiApiKey ?? string.Empty;
             Program.Settings.OpenAiAutoTagger.RequestTimeout = openAiTimeout;
             Program.Settings.OpenAiAutoTagger.Model = openAiModel ?? string.Empty;
+            Program.Settings.OpenAiAutoTagger.VisionModel = visionModel ?? string.Empty;
+            Program.Settings.CharacterTagAuditModel = characterTagAuditModel ?? string.Empty;
             Program.Settings.LlmT2NlConcurrency = Math.Clamp(llmT2NlConcurrency, 1, 100);
             Program.Settings.AiServerSetPromptTemplates = promptLibrary.CreateSnapshot();
             Program.Settings.AiServerSetPromptTemplateId = promptLibrary.SelectedTemplateId;
@@ -50,6 +54,20 @@ namespace BooruDatasetTagManager
             }
 
             Program.Settings.SaveSettings();
+        }
+
+        public static void SavePromptTemplates(
+            IEnumerable<AiPromptTemplateSettings> promptTemplates,
+            string selectedPromptTemplateId)
+        {
+            AiPromptTemplateLibrary promptLibrary = AiPromptTemplateLibrary.Create(
+                promptTemplates,
+                selectedPromptTemplateId,
+                Program.Settings.AiServerSetPromptTemplate);
+            Program.Settings.AiServerSetPromptTemplates = promptLibrary.CreateSnapshot();
+            Program.Settings.AiServerSetPromptTemplateId = promptLibrary.SelectedTemplateId;
+            Program.Settings.AiServerSetPromptTemplate = promptLibrary.SelectedTemplate.Name;
+            Program.Settings.OpenAiAutoTagger.SystemPrompt = promptLibrary.SelectedTemplate.SystemPrompt;
         }
     }
 }

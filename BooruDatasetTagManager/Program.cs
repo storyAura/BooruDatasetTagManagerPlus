@@ -102,6 +102,11 @@ namespace BooruDatasetTagManager
                 }
                 catch { }
             }
+            AutoTagProviders = new AutoTagProviderRegistry(new IAutoTagProvider[]
+            {
+                new OpenAiCompatibleAutoTagProvider(() => OpenAiAutoTagger),
+                new AiApiServerAutoTagProvider(() => AutoTagger, () => Settings.AutoTagger)
+            });
 
             Application.Run(new MainForm());
         }
@@ -172,6 +177,7 @@ namespace BooruDatasetTagManager
 
         public static AiApiClient AutoTagger;
         public static AiOpenAiClient OpenAiAutoTagger = null;
+        public static AutoTagProviderRegistry AutoTagProviders;
 
         public static ColorSchemeManager ColorManager;
 

@@ -62,6 +62,9 @@ namespace BooruDatasetTagManager
             checkBoxLoadOnlyManual = new System.Windows.Forms.CheckBox();
             labelTranslService = new System.Windows.Forms.Label();
             comboBox2 = new System.Windows.Forms.ComboBox();
+            translationTableLayoutPanel = new System.Windows.Forms.TableLayoutPanel();
+            labelTranslationTimeout = new System.Windows.Forms.Label();
+            numericUpDownTranslationTimeout = new System.Windows.Forms.NumericUpDown();
             labelHotkeysHelp = new System.Windows.Forms.Label();
             dataGridViewHotkeys = new System.Windows.Forms.DataGridView();
             CmdId = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -103,6 +106,8 @@ namespace BooruDatasetTagManager
             tabGeneral.SuspendLayout();
             tabUI.SuspendLayout();
             tabTranslations.SuspendLayout();
+            translationTableLayoutPanel.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownTranslationTimeout).BeginInit();
             tabInterrogator.SuspendLayout();
             groupBox2.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numericUpDownOpenAiTimeout).BeginInit();
@@ -113,7 +118,7 @@ namespace BooruDatasetTagManager
             // labelTransLang
             // 
             labelTransLang.AutoSize = true;
-            labelTransLang.Location = new System.Drawing.Point(10, 16);
+            labelTransLang.Dock = System.Windows.Forms.DockStyle.Fill;
             labelTransLang.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             labelTransLang.Name = "labelTransLang";
             labelTransLang.Size = new System.Drawing.Size(116, 15);
@@ -122,9 +127,9 @@ namespace BooruDatasetTagManager
             // 
             // comboBox1
             // 
+            comboBox1.Dock = System.Windows.Forms.DockStyle.Fill;
             comboBox1.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             comboBox1.FormattingEnabled = true;
-            comboBox1.Location = new System.Drawing.Point(201, 13);
             comboBox1.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             comboBox1.Name = "comboBox1";
             comboBox1.Size = new System.Drawing.Size(263, 23);
@@ -392,7 +397,7 @@ namespace BooruDatasetTagManager
             // checkBoxLoadOnlyManual
             // 
             checkBoxLoadOnlyManual.AutoSize = true;
-            checkBoxLoadOnlyManual.Location = new System.Drawing.Point(13, 75);
+            checkBoxLoadOnlyManual.Dock = System.Windows.Forms.DockStyle.Fill;
             checkBoxLoadOnlyManual.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             checkBoxLoadOnlyManual.Name = "checkBoxLoadOnlyManual";
             checkBoxLoadOnlyManual.Size = new System.Drawing.Size(286, 19);
@@ -403,7 +408,7 @@ namespace BooruDatasetTagManager
             // labelTranslService
             // 
             labelTranslService.AutoSize = true;
-            labelTranslService.Location = new System.Drawing.Point(10, 47);
+            labelTranslService.Dock = System.Windows.Forms.DockStyle.Fill;
             labelTranslService.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             labelTranslService.Name = "labelTranslService";
             labelTranslService.Size = new System.Drawing.Size(103, 15);
@@ -412,13 +417,60 @@ namespace BooruDatasetTagManager
             // 
             // comboBox2
             // 
+            comboBox2.Dock = System.Windows.Forms.DockStyle.Fill;
             comboBox2.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             comboBox2.FormattingEnabled = true;
-            comboBox2.Location = new System.Drawing.Point(201, 44);
             comboBox2.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             comboBox2.Name = "comboBox2";
             comboBox2.Size = new System.Drawing.Size(263, 23);
             comboBox2.TabIndex = 1;
+            // 
+            // translationTableLayoutPanel
+            // 
+            translationTableLayoutPanel.ColumnCount = 2;
+            translationTableLayoutPanel.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 190F));
+            translationTableLayoutPanel.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            translationTableLayoutPanel.Controls.Add(labelTransLang, 0, 0);
+            translationTableLayoutPanel.Controls.Add(comboBox1, 1, 0);
+            translationTableLayoutPanel.Controls.Add(labelTranslService, 0, 1);
+            translationTableLayoutPanel.Controls.Add(comboBox2, 1, 1);
+            translationTableLayoutPanel.Controls.Add(checkBoxLoadOnlyManual, 0, 2);
+            translationTableLayoutPanel.SetColumnSpan(checkBoxLoadOnlyManual, 2);
+            translationTableLayoutPanel.Controls.Add(labelTranslationTimeout, 0, 3);
+            translationTableLayoutPanel.Controls.Add(numericUpDownTranslationTimeout, 1, 3);
+            translationTableLayoutPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            translationTableLayoutPanel.Location = new System.Drawing.Point(0, 0);
+            translationTableLayoutPanel.Name = "translationTableLayoutPanel";
+            translationTableLayoutPanel.Padding = new System.Windows.Forms.Padding(10);
+            translationTableLayoutPanel.RowCount = 4;
+            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            translationTableLayoutPanel.Size = new System.Drawing.Size(0, 0);
+            translationTableLayoutPanel.TabIndex = 0;
+            // 
+            // labelTranslationTimeout
+            // 
+            labelTranslationTimeout.AutoSize = true;
+            labelTranslationTimeout.Dock = System.Windows.Forms.DockStyle.Fill;
+            labelTranslationTimeout.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            labelTranslationTimeout.Name = "labelTranslationTimeout";
+            labelTranslationTimeout.Size = new System.Drawing.Size(182, 15);
+            labelTranslationTimeout.TabIndex = 3;
+            labelTranslationTimeout.Text = "Translation timeout (seconds)";
+            // 
+            // numericUpDownTranslationTimeout
+            // 
+            numericUpDownTranslationTimeout.Anchor = System.Windows.Forms.AnchorStyles.Left;
+            numericUpDownTranslationTimeout.Location = new System.Drawing.Point(201, 3);
+            numericUpDownTranslationTimeout.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            numericUpDownTranslationTimeout.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
+            numericUpDownTranslationTimeout.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numericUpDownTranslationTimeout.Name = "numericUpDownTranslationTimeout";
+            numericUpDownTranslationTimeout.Size = new System.Drawing.Size(81, 23);
+            numericUpDownTranslationTimeout.TabIndex = 4;
+            numericUpDownTranslationTimeout.Value = new decimal(new int[] { 5, 0, 0, 0 });
             // 
             // labelHotkeysHelp
             // 
@@ -629,11 +681,7 @@ namespace BooruDatasetTagManager
             // 
             // tabTranslations
             // 
-            tabTranslations.Controls.Add(checkBoxLoadOnlyManual);
-            tabTranslations.Controls.Add(labelTransLang);
-            tabTranslations.Controls.Add(labelTranslService);
-            tabTranslations.Controls.Add(comboBox1);
-            tabTranslations.Controls.Add(comboBox2);
+            tabTranslations.Controls.Add(translationTableLayoutPanel);
             tabTranslations.Location = new System.Drawing.Point(0, 0);
             tabTranslations.Name = "tabTranslations";
             tabTranslations.Size = new System.Drawing.Size(0, 0);
@@ -700,7 +748,7 @@ namespace BooruDatasetTagManager
             // 
             // textBoxOpenApiEndpoint
             // 
-            textBoxOpenApiEndpoint.AutoCompleteCustomSource.AddRange(new string[] { "http://localhost:1234/v1", "http://192.168.11.2:1234/v1", "https://api.openai.com/v1", "https://generativelanguage.googleapis.com/v1beta/openai", "https://bothub.chat/api/v2/openai/v1" });
+            textBoxOpenApiEndpoint.AutoCompleteCustomSource.AddRange(new string[] { "http://localhost:1234/v1", "https://api.openai.com/v1", "https://generativelanguage.googleapis.com/v1beta/openai" });
             textBoxOpenApiEndpoint.AutoCompleteMode = System.Windows.Forms.AutoCompleteMode.Suggest;
             textBoxOpenApiEndpoint.Location = new System.Drawing.Point(137, 16);
             textBoxOpenApiEndpoint.Name = "textBoxOpenApiEndpoint";
@@ -802,6 +850,9 @@ namespace BooruDatasetTagManager
             tabUI.PerformLayout();
             tabTranslations.ResumeLayout(false);
             tabTranslations.PerformLayout();
+            translationTableLayoutPanel.ResumeLayout(false);
+            translationTableLayoutPanel.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numericUpDownTranslationTimeout).EndInit();
             tabInterrogator.ResumeLayout(false);
             groupBox2.ResumeLayout(false);
             groupBox2.PerformLayout();
@@ -824,6 +875,9 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.Label labelTranslService;
         private System.Windows.Forms.ComboBox comboBox2;
         private System.Windows.Forms.CheckBox checkBoxLoadOnlyManual;
+        private System.Windows.Forms.TableLayoutPanel translationTableLayoutPanel;
+        private System.Windows.Forms.Label labelTranslationTimeout;
+        private System.Windows.Forms.NumericUpDown numericUpDownTranslationTimeout;
         private System.Windows.Forms.ComboBox comboAutocompMode;
         private System.Windows.Forms.Label LabelAutocompMode;
         private System.Windows.Forms.ComboBox comboAutocompSort;

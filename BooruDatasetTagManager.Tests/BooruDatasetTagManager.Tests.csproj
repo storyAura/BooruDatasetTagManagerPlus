@@ -42,6 +42,10 @@
     <Compile Include="..\BooruDatasetTagManager\AiServerSetSettingsMigration.cs" Link="Source\AiServerSetSettingsMigration.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageLoader.cs" Link="Source\ImageLoader.cs" />
     <Compile Include="..\BooruDatasetTagManager\QuickTagReplaceService.cs" Link="Source\QuickTagReplaceService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CharacterTagAudit.cs" Link="Source\CharacterTagAudit.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CharacterTagReasonLocalizer.cs" Link="Source\CharacterTagReasonLocalizer.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CharacterTagFileTransaction.cs" Link="Source\CharacterTagFileTransaction.cs" />
+    <Compile Include="..\BooruDatasetTagManager\AutoTagProvider.cs" Link="Source\AutoTagProvider.cs" />
     <Compile Include="..\BooruDatasetTagManager\TranslationManager.cs" Link="Source\TranslationManager.cs" />
   </ItemGroup>
 </Project>

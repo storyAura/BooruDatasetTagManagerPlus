@@ -69,6 +69,41 @@ public class LocalizationAndImageLoaderTests
         Assert.Null(thumb);
     }
 
+    [Fact]
+    public void LoadPreviewDoesNotUpscaleImageBelowMaximumDimension()
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "small.png");
+        SaveSampleImage(imagePath, 80, 40);
+
+        using var preview = ImageLoader.LoadPreview(imagePath, 2048);
+
+        Assert.NotNull(preview);
+        Assert.Equal(80, preview.Width);
+        Assert.Equal(40, preview.Height);
+    }
+
+    [Theory]
+    [InlineData(320, 160, 128, 128, 64)]
+    [InlineData(160, 320, 128, 64, 128)]
+    public void LoadPreviewLimitsMaximumDimensionAndPreservesAspectRatio(
+        int width,
+        int height,
+        int maximumDimension,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "large.png");
+        SaveSampleImage(imagePath, width, height);
+
+        using var preview = ImageLoader.LoadPreview(imagePath, maximumDimension);
+
+        Assert.NotNull(preview);
+        Assert.Equal(expectedWidth, preview.Width);
+        Assert.Equal(expectedHeight, preview.Height);
+    }
+
     private static Dictionary<string, string> LoadLanguage(string language)
     {
         string root = FindRepoRoot();
@@ -96,9 +131,9 @@ public class LocalizationAndImageLoaderTests
         throw new DirectoryNotFoundException("Could not find repository root.");
     }
 
-    private static void SaveSampleImage(string path)
+    private static void SaveSampleImage(string path, int width = 80, int height = 40)
     {
-        using var image = new Image<Rgba32>(80, 40, new Rgba32(30, 120, 220, 255));
+        using var image = new Image<Rgba32>(width, height, new Rgba32(30, 120, 220, 255));
         image.Save(path);
     }
 

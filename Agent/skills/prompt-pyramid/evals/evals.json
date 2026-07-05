@@ -1,0 +1,23 @@
+{
+  "skill_name": "prompt-pyramid",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我把这堆tag整理成可以直接丢进webui的prompt：1girl, artist:ke-ta, black_thighhighs, blue_eyes, blonde_hair, cute, long_hair, red_ribbon, white_dress, black_boots, sidelocks, hair_between_eyes, solo, ahoge, beautiful",
+      "expected_output": "A single comma-separated line: 1girl, solo, blonde hair, blue eyes, long hair, ahoge, sidelocks, hair between eyes, red ribbon, white dress, black thighhighs, black boots. No underscores, no artist string, no cute/beautiful fluff, correct tier order, boots last.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I have this ComfyUI positive prompt that keeps bleeding the dress color onto the jacket. What's wrong with the order? Fix it: white_dress, green_cape, 1girl, brown_eyes, pink_hair, twin_drills, hairband, white_blouse, long_skirt, ankle_boots, white_gloves, masterpiece, best_quality",
+      "expected_output": "Reordered single line with outerwear-before-innerwear: 1girl, pink hair, brown eyes, twin drills, hairband, green cape, white blouse, long skirt, white gloves, ankle boots, masterpiece, best quality. Should explain (if asked why) that cape (outer) now precedes blouse (inner), preventing the dress/blouse color from contaminating the outer layer.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "角色：一个穿红色夹克、白色连衣裙、黑色过膝袜和黑色靴子的金发蓝眼少女，有呆毛和侧发，戴发带。trigger word 是 'hatsune_miku'。给我一个干净的 booru tag prompt",
+      "expected_output": "1girl, hatsune miku, blonde hair, blue eyes, long hair, ahoge, sidelocks, hairband, red jacket, white dress, black thighhighs, black boots. Trigger word at Tier 1 (right after 1girl). Note: trigger kept as the user-given token even though it's a name, because it's the LoRA trigger, not an artist/source string to strip.",
+      "files": []
+    }
+  ]
+}

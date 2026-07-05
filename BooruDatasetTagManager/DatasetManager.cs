@@ -346,6 +346,7 @@ namespace BooruDatasetTagManager
 
         public bool LoadFromFolder(string folder, bool loadPreviewImages, bool readMetadata)
         {
+            CharacterTagFileTransaction.RecoverIncompleteAsync(folder).GetAwaiter().GetResult();
             List<string> allowedExt = new List<string>();
             allowedExt.AddRange(Extensions.ImageExtensions);
             allowedExt.AddRange(Extensions.VideoExtensions);
@@ -523,6 +524,12 @@ namespace BooruDatasetTagManager
             public void DeduplicateTags()
             {
                 Tags.DeduplicateTags();
+            }
+
+            public void AcceptCurrentTagsAsSaved()
+            {
+                TagsModifyTime = File.Exists(TextFilePath) ? File.GetLastWriteTime(TextFilePath) : DateTime.MinValue;
+                originalHash = GetHashCode();
             }
 
 

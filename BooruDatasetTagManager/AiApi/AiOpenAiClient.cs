@@ -5,6 +5,7 @@ using OpenAI.Models;
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -65,6 +66,15 @@ namespace BooruDatasetTagManager.AiApi
             OpenAiRequest request,
             CancellationToken cancellationToken = default)
         {
+            OpenAiDetailedResponse response = await SendDetailedRequestAsync(request, cancellationToken).ConfigureAwait(false);
+            return (response.Result, response.ErrMessage);
+        }
+
+        public async Task<OpenAiDetailedResponse> SendDetailedRequestAsync(
+            OpenAiRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Stopwatch timer = Stopwatch.StartNew();
             try
             {
                 if (chatClient == null || chatClient.Model != request.Model)
@@ -108,9 +118,20 @@ namespace BooruDatasetTagManager.AiApi
                     cancellationToken);
                 if (result.FinishReason != ChatFinishReason.Stop)
                 {
-                    return (null, "OpenAiClient SendRequest return error: " + result.FinishReason.ToString());
+                    timer.Stop();
+                    return new OpenAiDetailedResponse(
+                        null,
+                        "OpenAiClient SendRequest return error: " + result.FinishReason.ToString(),
+                        timer.Elapsed);
                 }
-                return (result.Content[0].Text, "");
+                timer.Stop();
+                return new OpenAiDetailedResponse(
+                    result.Content[0].Text,
+                    string.Empty,
+                    timer.Elapsed,
+                    result.Usage?.InputTokenCount,
+                    result.Usage?.OutputTokenCount,
+                    result.Usage?.TotalTokenCount);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -118,7 +139,8 @@ namespace BooruDatasetTagManager.AiApi
             }
             catch (Exception ex)
             {
-                return (null, "OpenAiClient SendRequest error: " + ex.Message);
+                timer.Stop();
+                return new OpenAiDetailedResponse(null, "OpenAiClient SendRequest error: " + ex.Message, timer.Elapsed);
             }
         }
 
@@ -153,12 +175,15 @@ namespace BooruDatasetTagManager.AiApi
             }
         }
 
-        public async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GetTagsWithAutoTagger(string imagePath, bool defSettings)
+        public async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GetTagsWithAutoTagger(
+            string imagePath,
+            bool defSettings,
+            CancellationToken cancellationToken = default)
         {
-            if (!defSettings || Program.OpenAiAutoTagger == null || string.IsNullOrEmpty(Program.Settings.OpenAiAutoTagger.Model))
+            if (!defSettings || Program.OpenAiAutoTagger == null || string.IsNullOrEmpty(Program.Settings.OpenAiAutoTagger.ResolveVisionModel()))
             {
                 Form_AutoTaggerOpenAiSettings autoTaggerSettings = new Form_AutoTaggerOpenAiSettings();
-                if (autoTaggerSettings.ShowDialog() != DialogResult.OK || Program.OpenAiAutoTagger == null || string.IsNullOrEmpty(Program.Settings.OpenAiAutoTagger.Model))
+                if (autoTaggerSettings.ShowDialog() != DialogResult.OK || Program.OpenAiAutoTagger == null || string.IsNullOrEmpty(Program.Settings.OpenAiAutoTagger.ResolveVisionModel()))
                 {
                     autoTaggerSettings.Close();
                     return (null, I18n.GetText("TipGenCancel"), true);
@@ -166,7 +191,7 @@ namespace BooruDatasetTagManager.AiApi
             }
             if (!Program.OpenAiAutoTagger.IsConnected)
             {
-                var connectionResult = await Program.OpenAiAutoTagger.ConnectAsync();
+                var connectionResult = await Program.OpenAiAutoTagger.ConnectAsync(cancellationToken);
                 if (!connectionResult.Result)
                 {
                     return (null, connectionResult.ErrMessage, true);
@@ -182,7 +207,7 @@ namespace BooruDatasetTagManager.AiApi
                 Program.Settings.AiServerSetPromptTemplateId,
                 Program.Settings.AiServerSetPromptTemplate);
             request.SystemPrompt = promptLibrary.SelectedTemplate.SystemPrompt;
-            request.Model = Program.Settings.OpenAiAutoTagger.Model;
+            request.Model = Program.Settings.OpenAiAutoTagger.ResolveVisionModel();
             request.RepeatPenalty = Program.Settings.OpenAiAutoTagger.RepeatPenalty;
             string imgExt = Path.GetExtension(imagePath).ToLower();
             if (imgExt == ".webp")
@@ -203,7 +228,7 @@ namespace BooruDatasetTagManager.AiApi
                 request.ImagePath.Add(imagePath);
 
 
-            var response = await Program.OpenAiAutoTagger.SendRequestAsync(request);
+            var response = await Program.OpenAiAutoTagger.SendRequestAsync(request, cancellationToken);
             string errMess = response.ErrMessage;
             if (response.Result == null)
             {
@@ -281,6 +306,33 @@ namespace BooruDatasetTagManager.AiApi
                     return "OpenAiClient connection error: " + error;
             }
         }
+    }
+
+    public sealed class OpenAiDetailedResponse
+    {
+        public OpenAiDetailedResponse(
+            string result,
+            string errMessage,
+            TimeSpan duration,
+            int? inputTokens = null,
+            int? outputTokens = null,
+            int? totalTokens = null)
+        {
+            Result = result;
+            ErrMessage = errMessage ?? string.Empty;
+            Duration = duration;
+            InputTokens = inputTokens;
+            OutputTokens = outputTokens;
+            TotalTokens = totalTokens;
+        }
+
+        public string Result { get; }
+        public string ErrMessage { get; }
+        public TimeSpan Duration { get; }
+        public int? InputTokens { get; }
+        public int? OutputTokens { get; }
+        public int? TotalTokens { get; }
+        public bool HasUsage => InputTokens.HasValue && OutputTokens.HasValue && TotalTokens.HasValue;
     }
 
 

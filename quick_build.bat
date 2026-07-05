@@ -39,6 +39,22 @@ echo.
 
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
+rem test_start.bat launches from bin\<Configuration>\net8.0-windows first,
+rem so update that output before producing the self-contained dist package.
+dotnet build "%PROJECT%" -c "%CONFIG%" -f "%FRAMEWORK%" --nologo --no-restore -m -v quiet /clp:ErrorsOnly >> "%LOG%" 2>&1
+if errorlevel 1 (
+    echo.
+    echo Fast build failed. Restoring packages and trying once more...
+    echo.
+    >> "%LOG%" echo.
+    >> "%LOG%" echo Fast build failed. Restoring packages and trying once more...
+    dotnet restore "%PROJECT%" -r "%RUNTIME%" --nologo -v quiet /clp:ErrorsOnly >> "%LOG%" 2>&1
+    if errorlevel 1 goto :build_failed
+
+    dotnet build "%PROJECT%" -c "%CONFIG%" -f "%FRAMEWORK%" --nologo --no-restore -m -v quiet /clp:ErrorsOnly >> "%LOG%" 2>&1
+    if errorlevel 1 goto :build_failed
+)
+
 dotnet publish "%PROJECT%" -c "%CONFIG%" -f "%FRAMEWORK%" -r "%RUNTIME%" --self-contained true -o "%OUTPUT_DIR%" --nologo --no-restore -m -v quiet /clp:ErrorsOnly >> "%LOG%" 2>&1
 if errorlevel 1 (
     echo.

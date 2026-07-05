@@ -17,7 +17,6 @@ namespace BooruDatasetTagManager
         public Form_settings()
         {
             InitializeComponent();
-            InitializeTranslationFallbackControls();
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             Program.ColorManager.SchemeChanded += ColorManager_SchemeChanded;
@@ -27,32 +26,6 @@ namespace BooruDatasetTagManager
         }
         private FontSettings gridFontSettings = null;
         private FontSettings autocompleteFontSettings = null;
-        private Label labelTranslationTimeout;
-        private NumericUpDown numericUpDownTranslationTimeout;
-
-        private void InitializeTranslationFallbackControls()
-        {
-            labelTranslationTimeout = new Label
-            {
-                AutoSize = true,
-                Location = new Point(10, 105),
-                Name = "labelTranslationTimeout",
-                Text = "Translation timeout (seconds)"
-            };
-
-            numericUpDownTranslationTimeout = new NumericUpDown
-            {
-                Location = new Point(201, 102),
-                Maximum = 60,
-                Minimum = 1,
-                Name = "numericUpDownTranslationTimeout",
-                Size = new Size(81, 23),
-                Value = 5
-            };
-
-            tabTranslations.Controls.Add(labelTranslationTimeout);
-            tabTranslations.Controls.Add(numericUpDownTranslationTimeout);
-        }
 
         private void Form_settings_Load(object sender, EventArgs e)
         {

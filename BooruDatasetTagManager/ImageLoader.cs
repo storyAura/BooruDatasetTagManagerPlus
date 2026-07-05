@@ -45,6 +45,30 @@ namespace BooruDatasetTagManager
             }
         }
 
+        public static System.Drawing.Image LoadPreview(string imagePath, int maximumDimension)
+        {
+            if (!File.Exists(imagePath) || maximumDimension <= 0)
+                return null;
+
+            try
+            {
+                using var image = SixLabors.ImageSharp.Image.Load(imagePath);
+                if (Math.Max(image.Width, image.Height) > maximumDimension)
+                {
+                    image.Mutate(context => context.Resize(new ResizeOptions
+                    {
+                        Mode = ResizeMode.Max,
+                        Size = new SixLabors.ImageSharp.Size(maximumDimension, maximumDimension)
+                    }));
+                }
+                return ToDrawingImage(image);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static System.Drawing.Image ToDrawingImage(SixLabors.ImageSharp.Image image)
         {
             using var stream = new MemoryStream();

@@ -15,16 +15,19 @@ namespace BooruDatasetTagManager
 {
     public partial class Form_AutoTaggerOpenAiSettings : Form
     {
+        private AiPromptTemplateEditorPanel promptTemplatePanel;
+        private TableLayoutPanel tabRequestLayout;
+
         public Form_AutoTaggerOpenAiSettings()
         {
             InitializeComponent();
+            InitializePromptTemplatePanel();
             comboBoxSortMode.Items.AddRange(Extensions.GetFriendlyEnumValues<AutoTaggerSort>());
             comboBoxSetMode.Items.AddRange(Extensions.GetFriendlyEnumValues<NetworkResultSetMode>());
             comboBoxTagFilterMode.Items.AddRange(Extensions.GetFriendlyEnumValues<TagFilteringMode>());
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             listBoxModels.Enabled = false;
-            textBoxSystemPrompt.ReadOnly = true;
 
             if (Program.OpenAiAutoTagger == null && !string.IsNullOrWhiteSpace(Program.Settings.OpenAiAutoTagger.ConnectionAddress))
             {
@@ -48,6 +51,42 @@ namespace BooruDatasetTagManager
             connectRechecker.Interval = 5000;
         }
 
+        private void InitializePromptTemplatePanel()
+        {
+            tabRequest.Controls.Remove(textBoxSystemPrompt);
+            tabRequest.Controls.Remove(labelSystemPrompt);
+
+            tabRequestLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                Padding = new Padding(3)
+            };
+            tabRequestLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tabRequestLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+            tabRequestLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tabRequestLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+
+            Label labelTemplates = new Label
+            {
+                AutoSize = true,
+                Text = I18n.GetText("AiServerSetAutoTagPrompt"),
+                Margin = new Padding(0, 0, 0, 4)
+            };
+            promptTemplatePanel = new AiPromptTemplateEditorPanel { Dock = DockStyle.Fill };
+            labelUserPrompt.Dock = DockStyle.Fill;
+            labelUserPrompt.Margin = new Padding(0, 8, 0, 4);
+            textBoxUserPrompt.Dock = DockStyle.Fill;
+
+            tabRequestLayout.Controls.Add(labelTemplates, 0, 0);
+            tabRequestLayout.Controls.Add(promptTemplatePanel, 0, 1);
+            tabRequestLayout.Controls.Add(labelUserPrompt, 0, 2);
+            tabRequestLayout.Controls.Add(textBoxUserPrompt, 0, 3);
+            tabRequest.Controls.Clear();
+            tabRequest.Controls.Add(tabRequestLayout);
+        }
+
 
         private async void ConnectRechecker_Tick(object sender, EventArgs e)
         {
@@ -69,7 +108,7 @@ namespace BooruDatasetTagManager
         {
             if (Program.OpenAiAutoTagger == null)
             {
-                MessageBox.Show(I18n.GetText("OpenAiTaggerInitError"), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(I18n.GetText("OpenAiTaggerInitError"), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             buttonOk.Enabled = false;
@@ -98,7 +137,9 @@ namespace BooruDatasetTagManager
                 comboBoxSetMode.SelectedIndex = Extensions.GetEnumIndexFromValue<NetworkResultSetMode>(Program.Settings.OpenAiAutoTagger.SetMode.ToString());
                 comboBoxTagFilterMode.SelectedIndex = Extensions.GetEnumIndexFromValue<TagFilteringMode>(Program.Settings.OpenAiAutoTagger.TagFilteringMode.ToString());
                 textBoxTagFilter.Text = Program.Settings.OpenAiAutoTagger.TagFilter;
-                if (Program.OpenAiAutoTagger.Models.Contains(Program.Settings.OpenAiAutoTagger.Model))
+                if (Program.OpenAiAutoTagger.Models.Contains(Program.Settings.OpenAiAutoTagger.ResolveVisionModel()))
+                    listBoxModels.SelectedItem = Program.Settings.OpenAiAutoTagger.ResolveVisionModel();
+                else if (Program.OpenAiAutoTagger.Models.Contains(Program.Settings.OpenAiAutoTagger.Model))
                     listBoxModels.SelectedItem = Program.Settings.OpenAiAutoTagger.Model;
                 checkBoxSplitString.Checked = Program.Settings.OpenAiAutoTagger.SplitString;
                 textBoxSplitter.Text = Program.Settings.OpenAiAutoTagger.Splitter;
@@ -119,11 +160,7 @@ namespace BooruDatasetTagManager
                 numericUpDownVideoFrameCount.Value = Program.Settings.OpenAiAutoTagger.VideoFrameCount;
                 labelVideoFrameScaleValue.Text = (100 - trackBarVideoFrameScale.Value).ToString();
 
-                AiPromptTemplateLibrary promptLibrary = AiPromptTemplateLibrary.Create(
-                    Program.Settings.AiServerSetPromptTemplates,
-                    Program.Settings.AiServerSetPromptTemplateId,
-                    Program.Settings.AiServerSetPromptTemplate);
-                textBoxSystemPrompt.Text = promptLibrary.SelectedTemplate.SystemPrompt;
+                promptTemplatePanel.ReloadFromSettings();
                 textBoxUserPrompt.Text = Program.Settings.OpenAiAutoTagger.UserPrompt;
 
                 trackBarTemperature_ValueChanged(this, EventArgs.Empty);
@@ -141,6 +178,18 @@ namespace BooruDatasetTagManager
             label2.Text = I18n.GetText("UIAutoTagSortMode");
             label6.Text = I18n.GetText("UIAutoTagFilteringMode");
             label7.Text = I18n.GetText("UIAutoTagFilter");
+            tabRequest.Text = I18n.GetText("UIAutoTagChatMessage");
+            tabSettings.Text = I18n.GetText("UIAutoTagSettings");
+            labelUserPrompt.Text = I18n.GetText("UIAutoTagUserMessage");
+            promptTemplatePanel?.ApplyLanguage();
+            labelTemperature.Text = I18n.GetText("UIAutoTagTemperature");
+            labelTopP.Text = I18n.GetText("UIAutoTagTopP");
+            labelRepeatPenalty.Text = I18n.GetText("UIAutoTagRepeatPenalty");
+            checkBoxSplitString.Text = I18n.GetText("UIAutoTagSplitString");
+            labelVideoFrameCount.Text = I18n.GetText("UIAutoTagVideoFrameCount");
+            labelVideoFrameScale.Text = I18n.GetText("UIAutoTagVideoFrameScale");
+            buttonOk.Text = I18n.GetText("BtnOK");
+            buttonCancel.Text = I18n.GetText("BtnCancel");
         }
 
         private void textBoxTagFilter_Validating(object sender, CancelEventArgs e)
@@ -221,13 +270,24 @@ namespace BooruDatasetTagManager
             Program.Settings.OpenAiAutoTagger.VideoFrameCount = (int)numericUpDownVideoFrameCount.Value;
             Program.Settings.OpenAiAutoTagger.VideoFrameScale = trackBarVideoFrameScale.Value;
 
-            Program.Settings.OpenAiAutoTagger.UserPrompt = textBoxUserPrompt.Text;
-
             Program.Settings.OpenAiAutoTagger.SplitString = checkBoxSplitString.Checked;
             Program.Settings.OpenAiAutoTagger.Splitter = textBoxSplitter.Text;
 
+            Program.Settings.OpenAiAutoTagger.UserPrompt = textBoxUserPrompt.Text;
+
+            if (listBoxModels.SelectedItem is string selectedVisionModel)
+                Program.Settings.OpenAiAutoTagger.VisionModel = selectedVisionModel;
+
             if (ValidateChildren())
             {
+                if (!promptTemplatePanel.SaveEditedTemplate())
+                    return;
+
+                AiServerSetSettingsService.SavePromptTemplates(
+                    promptTemplatePanel.CreateSnapshot(),
+                    promptTemplatePanel.SelectedTemplateId);
+
+                Program.Settings.AutoTagProviderId = "openai-compatible";
                 Program.Settings.SaveSettings();
                 DialogResult = DialogResult.OK;
             }

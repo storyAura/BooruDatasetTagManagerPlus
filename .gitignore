@@ -366,3 +366,10 @@ FodyWeavers.xsd
 # Interrogator binaries
 /interrogator_rpc/build
 /interrogator_rpc/dist
+
+# Local runtime settings (may contain API keys); keep dist/ template only
+**/settings.json
+!dist/settings.json
+
+# Debug session logs
+debug-*.log

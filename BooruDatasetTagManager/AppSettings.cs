@@ -53,7 +53,7 @@ namespace BooruDatasetTagManager
 
         public bool AutoSort { get; set; } = false;
 
-        public string Language { get; set; } = "en-US";
+        public string Language { get; set; } = "zh-CN";
 
         public string ColorScheme { get; set; } = "Classic";
 
@@ -64,6 +64,11 @@ namespace BooruDatasetTagManager
         public bool UseDanbooruZhCsvBeforeTranslation { get; set; } = false;
         public int QuickReplaceThreshold { get; set; } = 30;
         public int LlmT2NlConcurrency { get; set; } = 5;
+        public string CharacterTagAuditModel { get; set; } = string.Empty;
+        public CharacterTagAuditStyle CharacterTagAuditStyle { get; set; } = CharacterTagAuditStyle.Sparse;
+        public CharacterTagAuditExecutionMode CharacterTagAuditExecutionMode { get; set; } = CharacterTagAuditExecutionMode.Review;
+        public int CharacterTagAuditMinimumCount { get; set; } = 10;
+        public string AutoTagProviderId { get; set; } = "openai-compatible";
         public string AiServerSetPromptTemplate { get; set; } = AiPromptTemplateCatalog.DanbooruTag;
         public string AiServerSetPromptTemplateId { get; set; } = AiPromptTemplateCatalog.DanbooruTagId;
         public List<AiPromptTemplateSettings> AiServerSetPromptTemplates { get; set; } =
@@ -150,6 +155,13 @@ namespace BooruDatasetTagManager
                 UseDanbooruZhCsvBeforeTranslation = tempSettings.UseDanbooruZhCsvBeforeTranslation;
                 QuickReplaceThreshold = tempSettings.QuickReplaceThreshold <= 0 ? 30 : tempSettings.QuickReplaceThreshold;
                 LlmT2NlConcurrency = Math.Clamp(tempSettings.LlmT2NlConcurrency, 1, 100);
+                CharacterTagAuditModel = tempSettings.CharacterTagAuditModel ?? string.Empty;
+                CharacterTagAuditStyle = tempSettings.CharacterTagAuditStyle;
+                CharacterTagAuditExecutionMode = tempSettings.CharacterTagAuditExecutionMode;
+                CharacterTagAuditMinimumCount = tempSettings.CharacterTagAuditMinimumCount <= 0 ? 10 : tempSettings.CharacterTagAuditMinimumCount;
+                AutoTagProviderId = string.IsNullOrWhiteSpace(tempSettings.AutoTagProviderId)
+                    ? "openai-compatible"
+                    : tempSettings.AutoTagProviderId;
                 if (!string.IsNullOrEmpty(tempSettings.ColorScheme))
                     ColorScheme = tempSettings.ColorScheme;
                 AutoTagger = tempSettings.AutoTagger;
@@ -162,6 +174,8 @@ namespace BooruDatasetTagManager
                 {
                     OpenAiAutoTagger = new OpenAiSettings();
                 }
+                if (string.IsNullOrWhiteSpace(OpenAiAutoTagger.VisionModel))
+                    OpenAiAutoTagger.VisionModel = OpenAiAutoTagger.Model ?? string.Empty;
                 AiPromptTemplateLibrary promptLibrary = AiPromptTemplateLibrary.Create(
                     tempSettings.AiServerSetPromptTemplates,
                     tempSettings.AiServerSetPromptTemplateId,
@@ -390,10 +404,16 @@ namespace BooruDatasetTagManager
         public float TopP { get; set; } = -1;
         public float RepeatPenalty { get; set; } = 0;
         public string Model { get; set; } = string.Empty;
+        public string VisionModel { get; set; } = string.Empty;
         public bool SplitString { get; set; } = false;
         public string Splitter { get; set; } = ",";
         public int VideoFrameCount { get; set; } = 10;
         public int VideoFrameScale { get; set; } = 0;
+
+        public string ResolveVisionModel()
+        {
+            return !string.IsNullOrWhiteSpace(VisionModel) ? VisionModel : Model ?? string.Empty;
+        }
 
 
         public OpenAiSettings()
