@@ -113,3 +113,4 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 - `test_start.bat` — 启动 Release（或 Debug）
 - `quick_build.bat` — 本地发布至 `dist/`（产物不入库，请上传至 Releases）
+- `publish_release.bat` — 打包、压缩并发布到 GitHub Releases（需 `gh auth login`）
