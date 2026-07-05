@@ -101,7 +101,9 @@
 
 ## 安装
 
-Windows + .NET 8。解压 `dist/` 运行 `BooruDatasetTagManagerPlus.exe`。
+**推荐：** 从 [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) 下载 `BooruDatasetTagManagerPlus-*-win-x64.zip`，解压后运行 `BooruDatasetTagManagerPlus.exe`（自包含，无需单独安装 .NET）。
+
+从源码构建：
 
 ```powershell
 dotnet build BooruDatasetTagManager.sln -c Debug -f net8.0-windows
@@ -110,4 +112,4 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — 启动 Release（或 Debug）
-- `quick_build.bat` — 发布至 `dist/`
+- `quick_build.bat` — 本地发布至 `dist/`（产物不入库，请上传至 Releases）

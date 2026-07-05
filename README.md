@@ -71,7 +71,9 @@ Sparse mode prunes non-core appearance tags locally after visual review; full mo
 
 ## Install
 
-Windows + .NET 8. Run `BooruDatasetTagManagerPlus.exe` from `dist/`.
+**Recommended:** Download `BooruDatasetTagManagerPlus-*-win-x64.zip` from [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases), extract, and run `BooruDatasetTagManagerPlus.exe` (self-contained; no separate .NET install required).
+
+Build from source:
 
 ```powershell
 dotnet build BooruDatasetTagManager.sln -c Debug -f net8.0-windows
@@ -80,6 +82,6 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — launch Release (or Debug)
-- `quick_build.bat` — publish to `dist/`
+- `quick_build.bat` — publish locally to `dist/` (not committed; upload to Releases)
 
 Images sent for tagging, TAG2NL, or audit go to your configured endpoint. API settings live in local `settings.json`.

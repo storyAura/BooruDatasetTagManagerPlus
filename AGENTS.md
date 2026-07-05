@@ -12,7 +12,7 @@ Guide for contributors working on BooruDatasetTagManager+, a .NET 8 Windows Form
 - `BooruDatasetTagManager/Translations/` - cached translation files written at runtime.
 - `BooruDatasetTagManager.Tests/` - xUnit test project. Source files from the main project are linked via `<Compile Include="..\..." Link="..." />` in the test `.csproj`.
 - `AiApiServer/` - companion AI API server (Python).
-- `dist/` - self-contained publish output.
+- `dist/` - self-contained publish output (gitignored; attach to GitHub Releases).
 
 ## Build, Test, and Development Commands
 

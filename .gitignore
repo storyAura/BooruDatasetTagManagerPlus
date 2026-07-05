@@ -367,9 +367,12 @@ FodyWeavers.xsd
 /interrogator_rpc/build
 /interrogator_rpc/dist
 
-# Local runtime settings (may contain API keys); keep dist/ template only
+# Self-contained publish output (build with quick_build.bat; download from GitHub Releases)
+dist/
+releases/
+
+# Local runtime settings (may contain API keys)
 **/settings.json
-!dist/settings.json
 
 # Debug session logs
 debug-*.log
