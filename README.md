@@ -122,7 +122,6 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — launch Release (or Debug)
-- `quick_build.bat` — publish locally to `dist/` (not committed; upload to Releases; downloads FFmpeg on first build)
-- `publish_release.bat` — build, zip, and publish to GitHub Releases (requires `gh auth login`)
+- `quick_build.bat` — quick local build to `dist/` (not committed; downloads FFmpeg on first build)
 
 Images sent for tagging, TAG2NL, or audit go to your configured endpoint. API settings live in local `settings.json`.
