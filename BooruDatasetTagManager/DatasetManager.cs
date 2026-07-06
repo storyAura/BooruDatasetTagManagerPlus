@@ -378,6 +378,38 @@ namespace BooruDatasetTagManager
             return true;
         }
 
+        public IReadOnlyList<string> AddImages(IEnumerable<string> paths, bool loadPreviewImages, bool readMetadata)
+        {
+            if (paths == null)
+                return Array.Empty<string>();
+
+            int imgSize = loadPreviewImages ? Program.Settings.PreviewSize : 0;
+            var added = new List<string>();
+            foreach (string path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                    continue;
+
+                string extension = Path.GetExtension(path).ToLowerInvariant();
+                if (!Extensions.ImageExtensions.Contains(extension) && !Extensions.VideoExtensions.Contains(extension))
+                    continue;
+
+                if (DataSet.ContainsKey(path))
+                    continue;
+
+                var dataItem = new DataItem();
+                dataItem.Tags.TagsListChanged += Tags_TagsListChanged;
+                dataItem.LoadData(path, imgSize, readMetadata);
+                if (DataSet.TryAdd(dataItem.ImageFilePath, dataItem))
+                    added.Add(dataItem.ImageFilePath);
+            }
+
+            if (added.Count > 0)
+                UpdateDatasetHash();
+
+            return added;
+        }
+
         public void SetTranslationMode(bool needTranslate)
         {
             isTranslate = needTranslate;

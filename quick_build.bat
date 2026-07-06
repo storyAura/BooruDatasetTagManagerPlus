@@ -33,6 +33,16 @@ if not exist "%PROJECT%" (
     exit /b 1
 )
 
+if not exist "BooruDatasetTagManager\ThirdParty\ffmpeg\win-x64\ffmpeg.exe" (
+    echo FFmpeg not found. Downloading bundled binaries...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\fetch_ffmpeg.ps1"
+    if errorlevel 1 (
+        echo Failed to download FFmpeg.
+        pause
+        exit /b 1
+    )
+)
+
 echo Building BooruDatasetTagManagerPlus [%CONFIG%]...
 echo.
 > "%LOG%" echo Building BooruDatasetTagManagerPlus [%CONFIG%]...

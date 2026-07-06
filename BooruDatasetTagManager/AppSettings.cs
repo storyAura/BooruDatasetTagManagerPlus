@@ -69,6 +69,10 @@ namespace BooruDatasetTagManager
         public CharacterTagAuditExecutionMode CharacterTagAuditExecutionMode { get; set; } = CharacterTagAuditExecutionMode.Review;
         public int CharacterTagAuditMinimumCount { get; set; } = 10;
         public string AutoTagProviderId { get; set; } = "openai-compatible";
+        public string FfmpegPath { get; set; } = string.Empty;
+        public Wd14TaggerSettings Wd14Tagger { get; set; } = new Wd14TaggerSettings();
+        public PixAiTaggerSettings PixAiTagger { get; set; } = new PixAiTaggerSettings();
+        public string OnnxTaggerLastModelId { get; set; } = string.Empty;
         public string AiServerSetPromptTemplate { get; set; } = AiPromptTemplateCatalog.DanbooruTag;
         public string AiServerSetPromptTemplateId { get; set; } = AiPromptTemplateCatalog.DanbooruTagId;
         public List<AiPromptTemplateSettings> AiServerSetPromptTemplates { get; set; } =
@@ -162,6 +166,10 @@ namespace BooruDatasetTagManager
                 AutoTagProviderId = string.IsNullOrWhiteSpace(tempSettings.AutoTagProviderId)
                     ? "openai-compatible"
                     : tempSettings.AutoTagProviderId;
+                FfmpegPath = tempSettings.FfmpegPath ?? string.Empty;
+                Wd14Tagger = tempSettings.Wd14Tagger ?? new Wd14TaggerSettings();
+                PixAiTagger = tempSettings.PixAiTagger ?? new PixAiTaggerSettings();
+                OnnxTaggerLastModelId = tempSettings.OnnxTaggerLastModelId ?? string.Empty;
                 if (!string.IsNullOrEmpty(tempSettings.ColorScheme))
                     ColorScheme = tempSettings.ColorScheme;
                 AutoTagger = tempSettings.AutoTagger;
@@ -428,6 +436,8 @@ namespace BooruDatasetTagManager
         public NetworkResultSetMode SetMode { get; set; } = NetworkResultSetMode.AllWithReplacement;
         public TagFilteringMode TagFilteringMode { get; set; } = TagFilteringMode.None;
         public string TagFilter { get; set; } = "";
+        public string TagPrefix { get; set; } = "";
+        public string TagSuffix { get; set; } = "";
     }
 
     public class InterragatorSettings : TaggerSettings
@@ -443,6 +453,23 @@ namespace BooruDatasetTagManager
         {
             InterragatorParams = new Dictionary<string, List<AdditionalParameters>>();
         }
+    }
+
+    public class Wd14TaggerSettings : TaggerSettings
+    {
+        public string SelectedModelRepo { get; set; } = "SmilingWolf/wd-eva02-large-tagger-v3";
+        public double Threshold { get; set; } = 0.52;
+        public double CharacterThreshold { get; set; } = 0.85;
+        public bool ReplaceUnderscoresWithSpaces { get; set; } = true;
+        public HuggingFaceDownloadSource DownloadSource { get; set; } = HuggingFaceDownloadSource.HfMirror;
+    }
+
+    public class PixAiTaggerSettings : TaggerSettings
+    {
+        public double GeneralThreshold { get; set; } = 0.3;
+        public double CharacterThreshold { get; set; } = 0.85;
+        public bool ReplaceUnderscoresWithSpaces { get; set; } = true;
+        public HuggingFaceDownloadSource DownloadSource { get; set; } = HuggingFaceDownloadSource.HfMirror;
     }
 
     public class AdditionalParameters

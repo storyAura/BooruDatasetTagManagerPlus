@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.0.4
+# BooruDatasetTagManager+ 1.0.5
 
 [English](README.md)
 
@@ -21,7 +21,18 @@
 | **AI 视觉打标** | 单图或选中图片打标，可选提示词模板 |
 | **TAG2NL** | 标签 + 图片 → 自然语言描述，输出至同级 `_captioned` 目录 |
 | **角色标签审查** | 触发词 + 标准图 + 全库 inventory，AI 两阶段审查后写回数据集 |
-| **中文工作流** | Danbooru 中文映射、Wiki 弹窗、审查理由翻译 |
+| **ONNX 推标** | WD14 + PixAI 统一界面；HuggingFace 下载；双阈值；写入模式；前后缀标签 |
+| **视频处理** | 格式转换（mp4/mkv/avi/webm 等）；全部帧 / 按 FPS / 指定帧抽帧；自带 FFmpeg |
+| **背景移除** | 工具菜单与数据集右键；需本地 AiApiServer + rmbg2 模型 |
+
+## 1.0.5 更新内容
+
+- **统一 ONNX 推标** — WD14（eva02-large v3）与 PixAI 0.9 合并为同一对话框；支持 HuggingFace / 镜像下载；通用阈值与角色阈值分离
+- **推理修复** — WebP 通过 ImageLoader 加载；修复 v3 `selected_tags.csv` 解析；预处理对齐官方 wd-tagger
+- **标签后处理** — 可选下划线→空格（仅 ONNX）；前缀/后缀标签适用于全部写入路径
+- **右键 ONNX 重新推标** — 打开推标对话框并显示进度条，自动对选中图片开始推标
+- **视频工具** — 格式转换与视频抽帧（预览、锁定帧、原生 FPS）；Release 包内置 FFmpeg
+- **界面精简** — 移除文件浏览输入源及 ONNX 设置中的无用提示文字
 
 ## 与原版差异
 
@@ -90,14 +101,43 @@
 
 **少标法**本地额外删除非核心项（细碎刘海、泛化头饰、轻微面部特征等），并在视觉已确认颜色时归一泛化服饰标签；**全标法**保留真实细节。
 
+## ONNX 推标
+
+入口：**工具 → ONNX 推标...**，或数据集右键 **ONNX 重新推标**。
+
+![工具菜单](docs/images/tools-menu.png)
+
+![ONNX 推标](docs/images/onnx-tagger.png)
+
+![右键 ONNX 重新推标](docs/images/context-menu-onnx-retag.png)
+
+- 模型选择：WD14 eva02-large v3、PixAI 0.9 及目录内其他模型
+- HuggingFace 官方或镜像下载；各模型设置自动保存
+- 写入模式（全部替换 / 追加 / 跳过已有）与可选排序
+- 后处理：下划线→空格（仅 ONNX 推理）、前缀/后缀标签
+- 批量推标显示进度条；右键推标自动打开对话框并开始
+
+## 视频处理
+
+**工具 → 视频格式转换...** / **视频抽帧...**
+
+![视频格式转换](docs/images/video-format-conversion.png)
+
+![视频抽帧](docs/images/video-frame-extraction.png)
+
+- 支持 mp4、mkv、avi、webm、mov、flv 等格式互转；可选替换原文件
+- 全部帧 / 按 FPS / 原生 FPS / 指定帧号抽帧；带预览与锁定帧流程
+- 抽帧结果自动导入数据集；Release 包内置 FFmpeg
+
 ## 其他
 
-- **裁剪 / 去背景**：本地 AiApiServer（`http://127.0.0.1:50051`），与 LLM 链路独立
+- **裁剪 / 去背景 / 视频**：本地 AiApiServer 提供去背景（`http://127.0.0.1:50051`）；视频处理使用内置 FFmpeg，与 LLM 链路独立
 - **隐私**：`settings.json` 本地保存；打标/TAG2NL/审查均向所配端点发送图片
 
 ## 致谢
 
 - **[starik222](https://github.com/starik222)** — [BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager) 原作者
+- **[FFmpeg](https://ffmpeg.org/)** — 视频处理（GPL 组件，随 Release 打包）
 
 ## 安装
 
@@ -112,5 +152,5 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — 启动 Release（或 Debug）
-- `quick_build.bat` — 本地发布至 `dist/`（产物不入库，请上传至 Releases）
+- `quick_build.bat` — 本地发布至 `dist/`（产物不入库，请上传至 Releases；首次构建会自动下载 FFmpeg）
 - `publish_release.bat` — 打包、压缩并发布到 GitHub Releases（需 `gh auth login`）

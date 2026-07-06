@@ -13,12 +13,12 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>1.0.4.0</ApplicationVersion>
-    <Version>1.0.4</Version>
-    <ProductVersion>1.0.4</ProductVersion>
-    <AssemblyVersion>1.0.4.0</AssemblyVersion>
-    <FileVersion>1.0.4.0</FileVersion>
-    <InformationalVersion>1.0.4</InformationalVersion>
+    <ApplicationVersion>1.0.5.0</ApplicationVersion>
+    <Version>1.0.5</Version>
+    <ProductVersion>1.0.5</ProductVersion>
+    <AssemblyVersion>1.0.5.0</AssemblyVersion>
+    <FileVersion>1.0.5.0</FileVersion>
+    <InformationalVersion>1.0.5</InformationalVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -29,12 +29,6 @@
     <ApplicationIcon>BDTM.ico</ApplicationIcon>
 	<PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net6.0-windows|AnyCPU'">
-    <NoWarn>1701;1702;CA1416;NU1701</NoWarn>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net6.0-windows|AnyCPU'">
-    <NoWarn>1701;1702;CA1416;NU1701</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <AdditionalFiles Remove="app.manifest" />
@@ -63,7 +57,18 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="ThirdParty\ffmpeg\win-x64\ffmpeg.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="ThirdParty\ffmpeg\win-x64\ffprobe.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="MetadataExtractor" Version="2.9.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.20.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="OpenAI" Version="2.7.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />

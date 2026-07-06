@@ -15,6 +15,7 @@ using System.Diagnostics;
 using System.Data;
 using Newtonsoft.Json;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using System.Threading;
 using System.Drawing.Imaging;
 
 namespace BooruDatasetTagManager
@@ -23,7 +24,7 @@ namespace BooruDatasetTagManager
     {
 
         public static string[] ImageExtensions = { ".jpg", ".png", ".bmp", ".jpeg", ".webp" };
-        public static string[] VideoExtensions = { ".mp4", ".flv", ".mkv", ".ts", ".avi" };
+        public static string[] VideoExtensions = { ".mp4", ".flv", ".mkv", ".ts", ".avi", ".webm", ".mov" };
 
         public delegate void ProgressHandler(int current, int max);
 
@@ -157,7 +158,41 @@ namespace BooruDatasetTagManager
         {
             if (!VideoExtensions.Contains(Path.GetExtension(videoPath).ToLower()))
                 return null;
-            return null;
+
+            if (count <= 0)
+                return new List<KeyValuePair<TimeSpan, Image>>();
+
+            try
+            {
+                var service = VideoProcessingService.CreateDefault();
+                string tempDir = Path.Combine(Path.GetTempPath(), "BDTM_video_" + Guid.NewGuid().ToString("N"));
+                var frames = service.ExtractPreviewFramesAsync(videoPath, count, percentResize, tempDir, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                var result = new List<KeyValuePair<TimeSpan, Image>>();
+                foreach (var frame in frames)
+                {
+                    if (!File.Exists(frame.Value))
+                        continue;
+
+                    using var loaded = Image.FromFile(frame.Value);
+                    result.Add(new KeyValuePair<TimeSpan, Image>(frame.Key, (Image)loaded.Clone()));
+                }
+
+                try
+                {
+                    Directory.Delete(tempDir, true);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                return result;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public static byte[] ImageToByteArray(Image image)
@@ -184,7 +219,135 @@ namespace BooruDatasetTagManager
 
         public static Image MakeThumb(string imagePath, int imgSize)
         {
+            if (VideoExtensions.Contains(Path.GetExtension(imagePath).ToLower()))
+                return MakeVideoThumb(imagePath, imgSize);
+
             return ImageLoader.MakeThumb(imagePath, imgSize);
+        }
+
+        private static readonly object VideoThumbCacheLock = new object();
+
+        public static Image MakeVideoThumb(string videoPath, int imgSize, bool drawBadge = true)
+        {
+            if (string.IsNullOrWhiteSpace(videoPath) || imgSize <= 0)
+                return CreateVideoPlaceholder(imgSize, drawBadge);
+
+            try
+            {
+                string cachePath = GetVideoThumbCachePath(videoPath, imgSize, drawBadge);
+                if (File.Exists(cachePath))
+                {
+                    using var cached = Image.FromFile(cachePath);
+                    return (Image)cached.Clone();
+                }
+
+                Image frameImage = null;
+                try
+                {
+                    var service = VideoProcessingService.CreateDefault();
+                    string frameFile = service.ExtractFirstFrameAsync(videoPath, imgSize, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    if (!string.IsNullOrEmpty(frameFile) && File.Exists(frameFile))
+                    {
+                        using var loaded = Image.FromFile(frameFile);
+                        frameImage = (Image)loaded.Clone();
+                        try
+                        {
+                            File.Delete(frameFile);
+                            Directory.Delete(Path.GetDirectoryName(frameFile), true);
+                        }
+                        catch
+                        {
+                            // ignored
+                        }
+                    }
+                }
+                catch
+                {
+                    // ffmpeg unavailable or extraction failed
+                }
+
+                if (frameImage == null)
+                    return CreateVideoPlaceholder(imgSize, drawBadge);
+
+                using (frameImage)
+                {
+                    Bitmap result = drawBadge ? DrawVideoBadge((Bitmap)frameImage) : new Bitmap(frameImage);
+                    SaveVideoThumbCache(cachePath, videoPath, result);
+                    return (Bitmap)result.Clone();
+                }
+            }
+            catch
+            {
+                return CreateVideoPlaceholder(imgSize, drawBadge);
+            }
+        }
+
+        private static string GetVideoThumbCachePath(string videoPath, int imgSize, bool drawBadge)
+        {
+            var fileInfo = new FileInfo(videoPath);
+            string key = $"{videoPath}|{fileInfo.LastWriteTimeUtc.Ticks}|{fileInfo.Length}|{imgSize}|{drawBadge}";
+            string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+            string cacheDir = Path.Combine(Program.AppPath, "Cache", "video_thumbs");
+            Directory.CreateDirectory(cacheDir);
+            return Path.Combine(cacheDir, hash + ".png");
+        }
+
+        private static void SaveVideoThumbCache(string cachePath, string videoPath, Image image)
+        {
+            lock (VideoThumbCacheLock)
+            {
+                try
+                {
+                    image.Save(cachePath, ImageFormat.Png);
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+        }
+
+        private static Bitmap CreateVideoPlaceholder(int imgSize, bool drawBadge)
+        {
+            var bitmap = new Bitmap(imgSize, imgSize);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.Clear(Color.FromArgb(64, 64, 64));
+                using var font = new Font("Segoe UI", Math.Max(8, imgSize / 10), FontStyle.Bold);
+                using var brush = new SolidBrush(Color.FromArgb(180, 180, 180));
+                var text = "VIDEO";
+                SizeF size = g.MeasureString(text, font);
+                g.DrawString(text, font, brush, (imgSize - size.Width) / 2f, (imgSize - size.Height) / 2f);
+            }
+
+            return drawBadge ? DrawVideoBadge(bitmap) : bitmap;
+        }
+
+        private static Bitmap DrawVideoBadge(Bitmap source)
+        {
+            var bitmap = new Bitmap(source.Width, source.Height);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                g.DrawImage(source, 0, 0, source.Width, source.Height);
+                int badgeHeight = Math.Max(12, source.Height / 8);
+                int badgeWidth = Math.Max(36, badgeHeight * 3);
+                var badgeRect = new Rectangle(source.Width - badgeWidth - 2, source.Height - badgeHeight - 2, badgeWidth, badgeHeight);
+                using var badgeBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0));
+                g.FillRectangle(badgeBrush, badgeRect);
+                using var font = new Font("Segoe UI", Math.Max(6, badgeHeight - 4), FontStyle.Bold);
+                using var textBrush = new SolidBrush(Color.White);
+                var text = "VIDEO";
+                SizeF textSize = g.MeasureString(text, font);
+                g.DrawString(
+                    text,
+                    font,
+                    textBrush,
+                    badgeRect.X + (badgeRect.Width - textSize.Width) / 2f,
+                    badgeRect.Y + (badgeRect.Height - textSize.Height) / 2f);
+            }
+
+            return bitmap;
         }
 
         public static string[] GetFriendlyEnumValues<T>()

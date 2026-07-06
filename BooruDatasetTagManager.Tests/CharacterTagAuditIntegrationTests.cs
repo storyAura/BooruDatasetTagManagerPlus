@@ -18,17 +18,17 @@ public sealed class CharacterTagAuditIntegrationTests
     }
 
     [Fact]
-    public void ProjectPublishesAgentSkillsAndVersionIs104()
+    public void ProjectPublishesAgentSkillsAndVersionIs105()
     {
         string project = ProjectDirectory();
         string csproj = File.ReadAllText(Path.Combine(project, "BooruDatasetTagManager.csproj"));
         string assembly = File.ReadAllText(Path.Combine(project, "Properties", "AssemblyInfo.cs"));
 
         Assert.Contains("..\\Agent\\skills\\**\\*", csproj);
-        Assert.Contains("<ApplicationVersion>1.0.4.0</ApplicationVersion>", csproj);
-        Assert.Contains("AssemblyVersion(\"1.0.4.0\")", assembly);
-        Assert.Contains("AssemblyFileVersion(\"1.0.4.0\")", assembly);
-        Assert.Contains("AssemblyInformationalVersion(\"1.0.4\")", assembly);
+        Assert.Contains("<ApplicationVersion>1.0.5.0</ApplicationVersion>", csproj);
+        Assert.Contains("AssemblyVersion(\"1.0.5.0\")", assembly);
+        Assert.Contains("AssemblyFileVersion(\"1.0.5.0\")", assembly);
+        Assert.Contains("AssemblyInformationalVersion(\"1.0.5\")", assembly);
     }
 
     [Fact]

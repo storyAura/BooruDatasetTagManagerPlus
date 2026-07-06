@@ -30,6 +30,11 @@ public class LocalizationAndImageLoaderTests
     [InlineData("TipLoadingComplete")]
     [InlineData("LlmT2NlInvalidSettings")]
     [InlineData("LlmT2NlProgressTitle")]
+    [InlineData("HuggingFace")]
+    [InlineData("HfMirror")]
+    [InlineData("MenuOnnxTagger")]
+    [InlineData("MenuContextDSRetagOnnx")]
+    [InlineData("TaggerModelCorrupt")]
     public void ChineseLanguageFileLocalizesCriticalUiText(string key)
     {
         var en = LoadLanguage("en-US");

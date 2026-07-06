@@ -21,6 +21,18 @@ namespace BooruDatasetTagManager
         public bool FixTagsOnSaveLoad { get; set; }
         public string SeparatorOnSave { get; set; } = ", ";
         public bool UseDanbooruZhCsvBeforeTranslation { get; set; }
+        public string FfmpegPath { get; set; } = string.Empty;
+        public HotkeyDataStub Hotkeys { get; } = new HotkeyDataStub();
+    }
+
+    public sealed class HotkeyDataStub
+    {
+        public HotkeyItemStub this[string key] => null;
+    }
+
+    public sealed class HotkeyItemStub
+    {
+        public string GetHotkeyString() => string.Empty;
     }
 
     public static class Extensions

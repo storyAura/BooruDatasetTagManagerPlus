@@ -16,8 +16,11 @@ namespace BooruDatasetTagManager
 {
     public partial class Form_CropImage : Form
     {
-        public Form_CropImage()
+        private readonly MainForm owner;
+
+        public Form_CropImage(MainForm owner)
         {
+            this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
             InitializeComponent();
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
@@ -161,17 +164,24 @@ namespace BooruDatasetTagManager
             return await CalcCropRectangle(imgFilePath, textBoxInclude.Text, textBoxExclude.Text);
         }
 
+        private string GetPreviewImagePath()
+        {
+            return owner.GetSelectedDatasetImagePaths().FirstOrDefault();
+        }
+
         private async void button4_Click(object sender, EventArgs e)
         {
-            OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "Image files|*.jpg;*.png;*.bmp;*.jpeg";
-            openFileDialog.Title = "Select image";
-            if (openFileDialog.ShowDialog() != DialogResult.OK)
+            string imagePath = GetPreviewImagePath();
+            if (string.IsNullOrWhiteSpace(imagePath))
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
-            button4.Enabled = false;
-            var res = await CalcCropRectangle(openFileDialog.FileName, textBoxInclude.Text, textBoxExclude.Text);
+            }
 
-            Image image = Image.FromFile(openFileDialog.FileName);
+            button4.Enabled = false;
+            var res = await CalcCropRectangle(imagePath, textBoxInclude.Text, textBoxExclude.Text);
+
+            Image image = Image.FromFile(imagePath);
 
             using (Graphics g = Graphics.FromImage(image))
             {
@@ -184,25 +194,26 @@ namespace BooruDatasetTagManager
 
         private async void button5_Click(object sender, EventArgs e)
         {
-            OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "Image files|*.jpg;*.png;*.bmp;*.jpeg";
-            openFileDialog.Title = "Select image";
-            if (openFileDialog.ShowDialog() != DialogResult.OK)
+            string imagePath = GetPreviewImagePath();
+            if (string.IsNullOrWhiteSpace(imagePath))
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
+            }
+
             button5.Enabled = false;
 
-
-            Image image = Image.FromFile(openFileDialog.FileName);
+            Image image = Image.FromFile(imagePath);
             Rectangle[] incObj = new Rectangle[0];
             Rectangle[] exclObj = new Rectangle[0];
             if (!string.IsNullOrEmpty(textBoxInclude.Text))
             {
-                incObj = (await DetectObjectsOnImage(openFileDialog.FileName, textBoxInclude.Text))
+                incObj = (await DetectObjectsOnImage(imagePath, textBoxInclude.Text))
                     .Select(a => a.ToRealRect(image.Width, image.Height)).ToArray();
             }
             if (!string.IsNullOrEmpty(textBoxExclude.Text))
             {
-                exclObj = (await DetectObjectsOnImage(openFileDialog.FileName, textBoxExclude.Text))
+                exclObj = (await DetectObjectsOnImage(imagePath, textBoxExclude.Text))
                     .Select(a => a.ToRealRect(image.Width, image.Height)).ToArray();
             }
             using (Graphics g = Graphics.FromImage(image))

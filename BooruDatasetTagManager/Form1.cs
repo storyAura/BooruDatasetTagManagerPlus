@@ -1,6 +1,7 @@
 ﻿using BooruDatasetTagManager.AiApi;
 using BooruDatasetTagManager.Properties;
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
@@ -40,6 +41,85 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuAiServerSet;
         private ToolStripMenuItem menuTestModule;
         private ToolStripMenuItem menuLlmT2Nl;
+        private ToolStripMenuItem menuVideoConvert;
+        private ToolStripMenuItem menuVideoExtract;
+        private ToolStripMenuItem menuOnnxTagger;
+        private ToolStripMenuItem menuContextDSVideoTools;
+        private ToolStripMenuItem menuContextDSRetagOnnx;
+        private ToolStripMenuItem menuContextDSRetagLlm;
+
+        internal List<string> GetSelectedDatasetVideoPaths()
+        {
+            var paths = new List<string>();
+            for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
+            {
+                string path = (string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value;
+                if (VideoProcessingService.IsVideoFile(path))
+                    paths.Add(path);
+            }
+
+            return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        internal List<string> GetSelectedDatasetImagePaths()
+        {
+            var paths = new List<string>();
+            for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
+            {
+                string path = (string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value;
+                string extension = Path.GetExtension(path).ToLowerInvariant();
+                if (Extensions.ImageExtensions.Contains(extension) && !VideoProcessingService.IsVideoFile(path))
+                    paths.Add(path);
+            }
+
+            return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        internal void RefreshDatasetGrid(IReadOnlyList<string> addedPaths = null)
+        {
+            if (Program.DataManager == null)
+                return;
+
+            SaveSelectedInViewDs();
+            gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter();
+            LoadSelectedInViewDs();
+            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+            if (addedPaths != null && addedPaths.Count > 0)
+                SetStatus(string.Format(I18n.GetText("VideoExtractImportedCount"), addedPaths.Count));
+        }
+
+        internal void RefreshSelectedImageTags()
+        {
+            LoadSelectedImageToGrid();
+        }
+
+        internal void DeleteDatasetMediaFiles(IEnumerable<string> mediaPaths)
+        {
+            if (Program.DataManager == null || mediaPaths == null)
+                return;
+
+            foreach (string file in mediaPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(file))
+                    continue;
+
+                string tagFile = Path.Combine(Path.GetDirectoryName(file) ?? string.Empty, Path.GetFileNameWithoutExtension(file) + ".txt");
+                try
+                {
+                    if (File.Exists(file))
+                        File.Delete(file);
+                    if (File.Exists(tagFile))
+                        File.Delete(tagFile);
+                    Program.DataManager.Remove(file);
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+
+            RefreshDatasetGrid();
+        }
 
         private void InitializeAiServerSetAndTestMenu()
         {
@@ -59,6 +139,53 @@ namespace BooruDatasetTagManager
 
             menuLlmT2Nl = new ToolStripMenuItem { Name = "menuLlmT2Nl", Text = "LLM-T2NL" };
             menuLlmT2Nl.Click += async (_, _) => await RunLlmT2NlAsync();
+
+            menuVideoConvert = new ToolStripMenuItem { Name = "menuVideoConvert", Text = "Video convert" };
+            menuVideoConvert.Click += (_, _) =>
+            {
+                using Form_VideoConvert form = new Form_VideoConvert(this);
+                form.ShowDialog(this);
+            };
+
+            menuVideoExtract = new ToolStripMenuItem { Name = "menuVideoExtract", Text = "Frame extract" };
+            menuVideoExtract.Click += (_, _) =>
+            {
+                using Form_VideoTools form = new Form_VideoTools(this);
+                form.ShowDialog(this);
+            };
+
+            menuOnnxTagger = new ToolStripMenuItem { Name = "menuOnnxTagger", Text = "ONNX tagger" };
+            menuOnnxTagger.Click += (_, _) => ShowOnnxTaggerForSelectedImages(autoRun: false);
+
+            menuContextDSVideoTools = new ToolStripMenuItem { Name = "menuContextDSVideoTools", Text = "Video tools..." };
+            menuContextDSVideoTools.Click += (_, _) =>
+            {
+                if (gridViewDS.SelectedRows.Count == 0)
+                    return;
+
+                string file = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
+                if (!VideoProcessingService.IsVideoFile(file))
+                    return;
+
+                using Form_VideoTools form = new Form_VideoTools(this, file);
+                form.ShowDialog(this);
+            };
+
+            menuContextDSRetagOnnx = new ToolStripMenuItem { Name = "menuContextDSRetagOnnx", Text = "Retag ONNX" };
+            menuContextDSRetagOnnx.Click += (_, _) => ShowOnnxTaggerForSelectedImages(autoRun: true);
+
+            menuContextDSRetagLlm = new ToolStripMenuItem { Name = "menuContextDSRetagLlm", Text = "Retag LLM" };
+            menuContextDSRetagLlm.Click += async (_, _) => await RetagSelectedWithLlmAsync();
+
+            contextMenuStrip1.Items.Add(menuContextDSRetagOnnx);
+            contextMenuStrip1.Items.Add(menuContextDSRetagLlm);
+            contextMenuStrip1.Items.Add(menuContextDSVideoTools);
+            contextMenuStrip1.Opening += ContextMenuStrip1_Opening;
+
+            toolsToolStripMenuItem.DropDownItems.Add(menuVideoConvert);
+            toolsToolStripMenuItem.DropDownItems.Add(menuVideoExtract);
+            toolsToolStripMenuItem.DropDownItems.Add(menuOnnxTagger);
+            toolsToolStripMenuItem.DropDownItems.Add(backgroundRemovalWithRMBG20ToolStripMenuItem);
             toolsToolStripMenuItem.DropDownItems.Add(menuLlmT2Nl);
 
             int insertIndex = menuStrip1.Items.IndexOf(toolsToolStripMenuItem) + 1;
@@ -307,6 +434,102 @@ namespace BooruDatasetTagManager
             List<AiApiClient.AutoTagItem> items = result.Items.Select(item =>
                 new AiApiClient.AutoTagItem(item.Tag, item.Confidence)).ToList();
             return (result.Success ? items : null, result.ErrorMessage, result.Canceled);
+        }
+
+        private async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GenerateWithOpenAiAutoTaggerAsync(
+            string mediaPath)
+        {
+            IAutoTagProvider provider = Program.AutoTagProviders.GetRequired("openai-compatible");
+            AutoTagConnectionResult connection = await provider.ConnectAsync();
+            if (!connection.Success)
+                return (null, connection.ErrorMessage, false);
+            AutoTagProviderResult result = await provider.GenerateAsync(new AutoTagProviderRequest
+            {
+                MediaPath = mediaPath,
+                ModelIds = new[] { Program.Settings.OpenAiAutoTagger.ResolveVisionModel() }
+            });
+            List<AiApiClient.AutoTagItem> items = result.Items.Select(item =>
+                new AiApiClient.AutoTagItem(item.Tag, item.Confidence)).ToList();
+            return (result.Success ? items : null, result.ErrorMessage, result.Canceled);
+        }
+
+        private List<DataItem> GetSelectedImageDataItems()
+        {
+            var items = new List<DataItem>();
+            if (Program.DataManager == null)
+                return items;
+
+            foreach (DataGridViewRow row in gridViewDS.SelectedRows)
+            {
+                string path = (string)row.Cells["ImageFilePath"].Value;
+                if (VideoProcessingService.IsVideoFile(path))
+                    continue;
+                if (Program.DataManager.DataSet.TryGetValue(path, out DataItem item))
+                    items.Add(item);
+            }
+
+            return items;
+        }
+
+        private void ShowOnnxTaggerForSelectedImages(bool autoRun)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            if (autoRun && GetSelectedImageDataItems().Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using Form_OnnxTagger form = new Form_OnnxTagger(this, autoRun);
+            form.ShowDialog(this);
+        }
+
+        private async Task RetagSelectedWithLlmAsync()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            if (!EnsureOpenAiAutoTagConfigured(false))
+                return;
+
+            List<DataItem> targets = GetSelectedImageDataItems();
+            if (targets.Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            OpenAiSettings settings = Program.Settings.OpenAiAutoTagger;
+            LockEdit(true);
+            SetStatus(I18n.GetText("InProgress"));
+            int current = 0;
+            foreach (DataItem item in targets)
+            {
+                var taggerResult = await GenerateWithOpenAiAutoTaggerAsync(item.ImageFilePath);
+                if (taggerResult.canceled)
+                    break;
+                if (!string.IsNullOrEmpty(taggerResult.errorMessage))
+                    SetStatus(taggerResult.errorMessage);
+                if (taggerResult.data != null && taggerResult.data.Count > 0)
+                {
+                    var tags = taggerResult.data.Select(tag => new AutoTagProviderItem { Tag = tag.Tag, Confidence = tag.Confidence }).ToList();
+                    TagWriteService.ApplyTags(item, tags, settings);
+                }
+
+                SetStatus(string.Format(I18n.GetText("InProgressCount"), ++current, targets.Count));
+            }
+
+            LoadSelectedImageToGrid();
+            SetStatus(I18n.GetText("TipProgressComplete"));
+            LockEdit(false);
         }
 
         internal bool TryQuickReplaceSelectedTag(int threshold)
@@ -770,9 +993,24 @@ namespace BooruDatasetTagManager
 
         private void ShowPreview(string imgPath, bool separateWindow = false)
         {
-            if (Extensions.VideoExtensions.Contains(Path.GetExtension(imgPath)))
+            if (VideoProcessingService.IsVideoFile(imgPath))
             {
-                Process.Start(new ProcessStartInfo(imgPath) { UseShellExecute = true });
+                if (separateWindow || Program.Settings.PreviewType == ImagePreviewType.SeparateWindow)
+                {
+                    Process.Start(new ProcessStartInfo(imgPath) { UseShellExecute = true });
+                    return;
+                }
+
+                if (Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow)
+                {
+                    int previewSize = Math.Max(Program.Settings.PreviewSize, 320);
+                    Image videoPreview = Extensions.MakeVideoThumb(imgPath, previewSize, drawBadge: false);
+                    if (videoPreview == null)
+                        return;
+                    if (!Program.Settings.CacheOpenImages)
+                        pictureBoxPreview.Image?.Dispose();
+                    pictureBoxPreview.Image = videoPreview;
+                }
                 return;
             }
             Image img = Program.DataManager.GetImageFromFileWithCache(imgPath);
@@ -1992,6 +2230,23 @@ namespace BooruDatasetTagManager
             }
         }
 
+        private void ContextMenuStrip1_Opening(object sender, CancelEventArgs e)
+        {
+            if (gridViewDS.SelectedRows.Count == 0)
+                return;
+
+            string file = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
+            bool isVideo = VideoProcessingService.IsVideoFile(file);
+            cropImageToolStripMenuItem.Visible = !isVideo;
+            removeBackgroundToolStripMenuItem.Visible = !isVideo;
+            if (menuContextDSRetagOnnx != null)
+                menuContextDSRetagOnnx.Visible = !isVideo;
+            if (menuContextDSRetagLlm != null)
+                menuContextDSRetagLlm.Visible = !isVideo;
+            if (menuContextDSVideoTools != null)
+                menuContextDSVideoTools.Visible = isVideo;
+        }
+
         private void gridViewDS_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
         {
             if (e.RowIndex != -1 && e.RowIndex < gridViewDS.Rows.Count && e.Button == MouseButtons.Right)
@@ -2219,6 +2474,12 @@ namespace BooruDatasetTagManager
                 menuAiServerSet.Text = I18n.GetText("MenuAiServerSet");
             if (menuLlmT2Nl != null)
                 menuLlmT2Nl.Text = I18n.GetText("MenuLlmT2Nl");
+            if (menuVideoConvert != null)
+                menuVideoConvert.Text = I18n.GetText("MenuVideoConvert");
+            if (menuVideoExtract != null)
+                menuVideoExtract.Text = I18n.GetText("MenuVideoExtract");
+            if (menuOnnxTagger != null)
+                menuOnnxTagger.Text = I18n.GetText("MenuOnnxTagger");
             if (menuTestModule != null)
                 menuTestModule.Text = I18n.GetText("MenuTestModule");
             replaceTransparentBackgroundToolStripMenuItem.Text = I18n.GetText("MenuReplaceTranspColor");
@@ -2227,6 +2488,15 @@ namespace BooruDatasetTagManager
             cropImagesWithMoondream2ToolStripMenuItem.Text = I18n.GetText("MenuToolsAutoCropping");
             backgroundRemovalWithRMBG20ToolStripMenuItem.Text = I18n.GetText("MenuToolsBGRemoval");
             removeBackgroundToolStripMenuItem.Text = I18n.GetText("MenuContextDSRemoveBG");
+            toolStripMenuItem1.Text = I18n.GetText("MenuContextDSOpenFolder");
+            toolStripMenuItem2.Text = I18n.GetText("MenuContextDSDeleteImage");
+            cropImageToolStripMenuItem.Text = I18n.GetText("MenuContextDSCropImage");
+            if (menuContextDSVideoTools != null)
+                menuContextDSVideoTools.Text = I18n.GetText("MenuContextDSVideoTools");
+            if (menuContextDSRetagOnnx != null)
+                menuContextDSRetagOnnx.Text = I18n.GetText("MenuContextDSRetagOnnx");
+            if (menuContextDSRetagLlm != null)
+                menuContextDSRetagLlm.Text = I18n.GetText("MenuContextDSRetagLlm");
             UpdateTagContextMenuText();
 
             BtnTagAddToAll.Text = I18n.GetText("BtnTagAddToAll");
@@ -2770,7 +3040,7 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
                 return false;
             }
-            using (Form_CropImage cropImageForm = new Form_CropImage())
+            using (Form_CropImage cropImageForm = new Form_CropImage(this))
             {
                 if (gridViewDS.SelectedRows.Count > 1)
                     cropImageForm.radioButtonOnlySelected.Checked = true;
@@ -2847,7 +3117,7 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
                 return false;
             }
-            using (Form_BGRemover bgRemoverForm = new Form_BGRemover())
+            using (Form_BGRemover bgRemoverForm = new Form_BGRemover(this))
             {
                 if (onlySelected || gridViewDS.SelectedRows.Count > 1)
                     bgRemoverForm.radioButtonOnlySelected.Checked = true;
@@ -2879,6 +3149,12 @@ namespace BooruDatasetTagManager
                 int index = 0;
                 foreach (var item in selectedTagsList)
                 {
+                    if (Extensions.VideoExtensions.Contains(Path.GetExtension(item.ImageFilePath).ToLowerInvariant()))
+                    {
+                        sbErrors.AppendLine(item.ImageFilePath);
+                        continue;
+                    }
+
                     var imgData = await bgRemoverForm.RemoveBackgroundAsync(item.ImageFilePath, selectedModel);
                     if (imgData == null)
                     {
@@ -3221,18 +3497,18 @@ namespace BooruDatasetTagManager
         {
             var res = await RemoveBackgrounds(false);
             if (res)
-                SetStatus("Background removal complete!");
+                SetStatus(I18n.GetText("TipBGRemovalComplete"));
             else
-                SetStatus("Background removal canceled!");
+                SetStatus(I18n.GetText("TipBGRemovalCanceled"));
         }
 
         private async void removeBackgroundToolStripMenuItem_Click(object sender, EventArgs e)
         {
             var res = await RemoveBackgrounds(true);
             if (res)
-                SetStatus("Background removal complete!");
+                SetStatus(I18n.GetText("TipBGRemovalComplete"));
             else
-                SetStatus("Background removal canceled!");
+                SetStatus(I18n.GetText("TipBGRemovalCanceled"));
         }
 
         private void openManualCropToolStripMenuItem_Click(object sender, EventArgs e)

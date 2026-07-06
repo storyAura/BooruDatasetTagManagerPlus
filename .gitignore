@@ -371,6 +371,11 @@ FodyWeavers.xsd
 dist/
 releases/
 
+# Bundled FFmpeg binaries (fetch with scripts/fetch_ffmpeg.ps1)
+BooruDatasetTagManager/ThirdParty/ffmpeg/win-x64/*.exe
+BooruDatasetTagManager/ThirdParty/ffmpeg.zip
+BooruDatasetTagManager/ThirdParty/ffmpeg/_tmp/
+
 # Local runtime settings (may contain API keys)
 **/settings.json
 

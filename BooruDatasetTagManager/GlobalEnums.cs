@@ -51,6 +51,12 @@ namespace BooruDatasetTagManager
         SeparateWindow
     }
 
+    public enum HuggingFaceDownloadSource
+    {
+        HuggingFace,
+        HfMirror
+    }
+
     public enum NetworkUnionMode
     {
         Addition,

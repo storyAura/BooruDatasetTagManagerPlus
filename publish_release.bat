@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set "VERSION=1.0.4"
+set "VERSION=1.0.5"
 set "PROJECT=BooruDatasetTagManager\BooruDatasetTagManager.csproj"
 set "CONFIG=Release"
 set "FRAMEWORK=net8.0-windows"
@@ -11,13 +11,13 @@ set "OUTPUT_DIR=dist"
 set "RELEASES_DIR=releases"
 set "ZIP_NAME=BooruDatasetTagManagerPlus-%VERSION%-win-x64.zip"
 set "ZIP_PATH=%RELEASES_DIR%\%ZIP_NAME%"
-set "NOTES=%RELEASES_DIR%\RELEASE_NOTES_v%VERSION%.md"
+set "NOTES=docs\RELEASE_NOTES_v%VERSION%.md"
 set "TAG=v%VERSION%"
 
 if not "%~1"=="" set "VERSION=%~1"
 if not "%~1"=="" set "ZIP_NAME=BooruDatasetTagManagerPlus-%VERSION%-win-x64.zip"
 if not "%~1"=="" set "ZIP_PATH=%RELEASES_DIR%\%ZIP_NAME%"
-if not "%~1"=="" set "NOTES=%RELEASES_DIR%\RELEASE_NOTES_v%VERSION%.md"
+if not "%~1"=="" set "NOTES=docs\RELEASE_NOTES_v%VERSION%.md"
 if not "%~1"=="" set "TAG=v%VERSION%"
 
 where dotnet >nul 2>nul
@@ -43,6 +43,15 @@ echo.
 
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 if not exist "%RELEASES_DIR%" mkdir "%RELEASES_DIR%"
+
+if not exist "BooruDatasetTagManager\ThirdParty\ffmpeg\win-x64\ffmpeg.exe" (
+    echo FFmpeg not found. Downloading bundled binaries...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\fetch_ffmpeg.ps1"
+    if errorlevel 1 (
+        echo Failed to download FFmpeg.
+        exit /b 1
+    )
+)
 
 dotnet publish "%PROJECT%" -c "%CONFIG%" -f "%FRAMEWORK%" -r "%RUNTIME%" --self-contained true -o "%OUTPUT_DIR%" --nologo
 if errorlevel 1 (

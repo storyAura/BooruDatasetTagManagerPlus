@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.20.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
@@ -47,5 +48,16 @@
     <Compile Include="..\BooruDatasetTagManager\CharacterTagFileTransaction.cs" Link="Source\CharacterTagFileTransaction.cs" />
     <Compile Include="..\BooruDatasetTagManager\AutoTagProvider.cs" Link="Source\AutoTagProvider.cs" />
     <Compile Include="..\BooruDatasetTagManager\TranslationManager.cs" Link="Source\TranslationManager.cs" />
+    <Compile Include="..\BooruDatasetTagManager\VideoProcessingService.cs" Link="Source\VideoProcessingService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\OnnxTaggerCatalog.cs" Link="Source\OnnxTaggerCatalog.cs" />
+    <Compile Include="..\BooruDatasetTagManager\HuggingFaceModelDownloader.cs" Link="Source\HuggingFaceModelDownloader.cs" />
+    <Compile Include="..\BooruDatasetTagManager\Wd14OnnxTaggerService.cs" Link="Source\Wd14OnnxTaggerService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\PixAiOnnxTaggerService.cs" Link="Source\PixAiOnnxTaggerService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\FfmpegLocator.cs" Link="Source\FfmpegLocator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagPostProcessor.cs" Link="Source\TagPostProcessor.cs" />
+    <Compile Include="..\BooruDatasetTagManager\AppSettings.cs" Link="Source\AppSettings.cs" />
+    <Compile Include="..\BooruDatasetTagManager\HotkeyData.cs" Link="Source\HotkeyData.cs" />
+    <Compile Include="..\BooruDatasetTagManager\I18n.cs" Link="Source\I18n.cs" />
+    <Compile Include="..\BooruDatasetTagManager\LanguageManager.cs" Link="Source\LanguageManager.cs" />
   </ItemGroup>
 </Project>

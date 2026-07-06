@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.0.4
+# BooruDatasetTagManager+ 1.0.5
 
 [简体中文](README_zh_CN.md)
 
@@ -21,7 +21,18 @@ Licensed under [MIT License](LICENSE). Retain upstream copyright notices when re
 | **AI vision tagging** | Single or selected images with prompt templates |
 | **TAG2NL** | Tags + image → natural-language caption in sibling `_captioned` folder |
 | **Character tag audit** | Trigger + reference image + dataset inventory; two-stage AI review with transactional save |
-| **Chinese workflow** | Danbooru zh mapping, Wiki popup, localized audit reasons |
+| **ONNX tagger** | Unified WD14 + PixAI interface; HuggingFace download; dual thresholds; write modes; prefix/suffix tags |
+| **Video tools** | Format conversion; all frames / by FPS / specific frames; bundled FFmpeg |
+| **Background removal** | Tools menu and dataset context menu; requires local AiApiServer + rmbg2 model |
+
+## What's New in 1.0.5
+
+- **Unified ONNX tagger** — WD14 (eva02-large v3) and PixAI 0.9 in one dialog; HuggingFace / mirror download; separate general and character thresholds
+- **Inference fixes** — WebP loading via ImageLoader; v3 `selected_tags.csv` parsing; preprocessing aligned with official wd-tagger
+- **Tag post-processing** — Optional underscore→space (ONNX only); prefix/suffix tags on all write paths
+- **Context-menu ONNX retag** — Opens the ONNX dialog with progress bar and auto-starts on selected images
+- **Video tools** — Format conversion and frame extraction with preview, locked frames, and native FPS; FFmpeg bundled in Releases
+- **UI cleanup** — Removed file-browse input sources and obsolete hint text from ONNX settings
 
 ## vs. upstream
 
@@ -65,9 +76,38 @@ Built-in Danbooru Tag, Natural Language, Mixed Mode, Natural Language 2. Custom 
 
 Sparse mode prunes non-core appearance tags locally after visual review; full mode keeps confirmed details.
 
+## ONNX tagger
+
+**Tools → ONNX tagger...** or right-click **Retag with ONNX** on selected images.
+
+![Tools menu](docs/images/tools-menu.png)
+
+![ONNX tagger](docs/images/onnx-tagger.png)
+
+![Context menu ONNX retag](docs/images/context-menu-onnx-retag.png)
+
+- Model picker: WD14 eva02-large v3, PixAI 0.9, and catalog entries
+- Download from HuggingFace official or HF mirror; settings auto-save per model
+- Write mode (replace / append / skip existing) and optional tag sort
+- Post-processing: replace underscores with spaces (ONNX inference only), prefix/suffix tags
+- Progress bar for batch tagging; right-click retag opens the dialog and starts automatically
+
+## Video tools
+
+**Tools → Video format conversion...** / **Frame extraction...**
+
+![Video format conversion](docs/images/video-format-conversion.png)
+
+![Video frame extraction](docs/images/video-frame-extraction.png)
+
+- Convert between mp4, mkv, avi, webm, mov, flv; optional replace-original
+- Extract all frames, by FPS, native FPS, or specific frame numbers with preview and lock-frame workflow
+- Extracted frames import into the dataset; FFmpeg is bundled in Release builds
+
 ## Acknowledgments
 
 - **[starik222](https://github.com/starik222)** — author of [BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)
+- **[FFmpeg](https://ffmpeg.org/)** — video processing (GPL component bundled in Releases)
 
 ## Install
 
@@ -82,7 +122,7 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — launch Release (or Debug)
-- `quick_build.bat` — publish locally to `dist/` (not committed; upload to Releases)
+- `quick_build.bat` — publish locally to `dist/` (not committed; upload to Releases; downloads FFmpeg on first build)
 - `publish_release.bat` — build, zip, and publish to GitHub Releases (requires `gh auth login`)
 
 Images sent for tagging, TAG2NL, or audit go to your configured endpoint. API settings live in local `settings.json`.
