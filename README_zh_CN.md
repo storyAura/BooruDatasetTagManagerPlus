@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.0.5
+# BooruDatasetTagManager+ 1.1
 
 [English](README.md)
 
@@ -24,6 +24,19 @@
 | **ONNX 推标** | WD14 + PixAI 统一界面；HuggingFace 下载；双阈值；写入模式；前后缀标签 |
 | **视频处理** | 格式转换（mp4/mkv/avi/webm 等）；全部帧 / 按 FPS / 指定帧抽帧；自带 FFmpeg |
 | **背景移除** | 工具菜单与数据集右键；需本地 AiApiServer + rmbg2 模型 |
+
+## 1.1 更新内容
+
+- **WD14 全系列模型** — 模型列表含 12 款 WD14（vit-large v3、eva02-large v3 等）
+- **PixAI v0.9 修复** — 正确读取 prediction/logits 输出；v0.9 CSV；WebP 加载；DirectML 失败回退 CPU
+- **WD14 按模型独立阈值** — vit-large 默认 0.26，不再误用 eva02 的 0.52
+- **大模型稳定性** — WD14 DirectML 挂起时自动回退 CPU；显式 output 名；NHWC/NCHW 输入尺寸
+- **批量推标修复** — 推理与写标签分离，修复中途 BindingSource 循环引用错误
+- **进度与耗时** — 进度条显示上次/平均/剩余/已用推理时间
+- **下载体验** — 模型下载完成提示，状态恢复为可推标
+- **减少界面卡顿** — 推标结束后后台保存；单图选中时同步刷新标签列表
+
+上一版本：[v1.0.5](docs/RELEASE_NOTES_v1.0.5.md)（统一 ONNX 推标、视频工具、内置 FFmpeg）。
 
 ## 1.0.5 更新内容
 
@@ -111,7 +124,7 @@
 
 ![右键 ONNX 重新推标](docs/images/context-menu-onnx-retag.png)
 
-- 模型选择：WD14 eva02-large v3、PixAI 0.9 及目录内其他模型
+- 模型选择：WD14 全系列 12 款 + PixAI 0.9；各模型阈值独立保存
 - HuggingFace 官方或镜像下载；各模型设置自动保存
 - 写入模式（全部替换 / 追加 / 跳过已有）与可选排序
 - 后处理：下划线→空格（仅 ONNX 推理）、前缀/后缀标签
@@ -153,3 +166,5 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 - `test_start.bat` — 启动 Release（或 Debug）
 - `quick_build.bat` — 本地快速打包至 `dist/`（产物不入库；首次构建会自动下载 FFmpeg）
+
+本地运行后，程序目录下会生成 **Models/**（下载的 ONNX 模型）、**Cache/**（如视频缩略图缓存）、**settings.json**（API 与偏好设置）。这些均为本地运行时数据，**不会也不应提交到 Git**；ONNX 模型请在应用内下载。

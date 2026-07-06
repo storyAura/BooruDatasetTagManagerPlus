@@ -307,7 +307,7 @@ namespace BooruDatasetTagManager
             });
         }
 
-        private void ExecuteBulkMutation(Action mutation)
+        internal void ExecuteBulkMutation(Action mutation)
         {
             bool isOuterMutation = bulkMutationDepth == 0;
             IDisposable allTagsBatch = isOuterMutation ? AllTags.BeginBatchUpdate() : null;

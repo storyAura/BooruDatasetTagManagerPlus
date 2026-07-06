@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.0.5
+# BooruDatasetTagManager+ 1.1
 
 [简体中文](README_zh_CN.md)
 
@@ -24,6 +24,19 @@ Licensed under [MIT License](LICENSE). Retain upstream copyright notices when re
 | **ONNX tagger** | Unified WD14 + PixAI interface; HuggingFace download; dual thresholds; write modes; prefix/suffix tags |
 | **Video tools** | Format conversion; all frames / by FPS / specific frames; bundled FFmpeg |
 | **Background removal** | Tools menu and dataset context menu; requires local AiApiServer + rmbg2 model |
+
+## What's New in 1.1
+
+- **WD14 full catalog** — 12 WD14 models in the picker (vit-large v3, eva02-large v3, and more)
+- **PixAI v0.9 fix** — correct output tensor selection; v0.9 CSV; WebP loading; DirectML → CPU fallback
+- **Per-model WD14 thresholds** — vit-large uses 0.26 by default instead of inheriting eva02’s 0.52
+- **Large-model stability** — WD14 DirectML retry on CPU; explicit ONNX output names; NHWC/NCHW input sizes
+- **Batch tagging fixes** — inference vs. tag-write split; no more `BindingSource` errors mid-batch
+- **Progress and timing** — last / average / ETA / elapsed on the ONNX progress line
+- **Download UX** — completion dialog and ready-to-tag status after model download
+- **Less UI blocking** — background save after tagging; synchronous single-image tag refresh
+
+Prior release: [v1.0.5](docs/RELEASE_NOTES_v1.0.5.md) (unified ONNX dialog, video tools, FFmpeg bundle).
 
 ## What's New in 1.0.5
 
@@ -86,7 +99,7 @@ Sparse mode prunes non-core appearance tags locally after visual review; full mo
 
 ![Context menu ONNX retag](docs/images/context-menu-onnx-retag.png)
 
-- Model picker: WD14 eva02-large v3, PixAI 0.9, and catalog entries
+- Model picker: full WD14 catalog (12 models) and PixAI 0.9; per-model threshold memory
 - Download from HuggingFace official or HF mirror; settings auto-save per model
 - Write mode (replace / append / skip existing) and optional tag sort
 - Post-processing: replace underscores with spaces (ONNX inference only), prefix/suffix tags
@@ -123,5 +136,7 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 - `test_start.bat` — launch Release (or Debug)
 - `quick_build.bat` — quick local build to `dist/` (not committed; downloads FFmpeg on first build)
+
+Running locally creates **Models/** (downloaded ONNX weights), **Cache/** (e.g. video thumbnails), and **settings.json** (API keys and preferences) beside the executable. These are runtime-only and must not be committed; ONNX models are downloaded from inside the app.
 
 Images sent for tagging, TAG2NL, or audit go to your configured endpoint. API settings live in local `settings.json`.

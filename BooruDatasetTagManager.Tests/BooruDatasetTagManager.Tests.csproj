@@ -51,6 +51,7 @@
     <Compile Include="..\BooruDatasetTagManager\VideoProcessingService.cs" Link="Source\VideoProcessingService.cs" />
     <Compile Include="..\BooruDatasetTagManager\OnnxTaggerCatalog.cs" Link="Source\OnnxTaggerCatalog.cs" />
     <Compile Include="..\BooruDatasetTagManager\HuggingFaceModelDownloader.cs" Link="Source\HuggingFaceModelDownloader.cs" />
+    <Compile Include="..\BooruDatasetTagManager\OnnxTaggerProgressTracker.cs" Link="Source\OnnxTaggerProgressTracker.cs" />
     <Compile Include="..\BooruDatasetTagManager\Wd14OnnxTaggerService.cs" Link="Source\Wd14OnnxTaggerService.cs" />
     <Compile Include="..\BooruDatasetTagManager\PixAiOnnxTaggerService.cs" Link="Source\PixAiOnnxTaggerService.cs" />
     <Compile Include="..\BooruDatasetTagManager\FfmpegLocator.cs" Link="Source\FfmpegLocator.cs" />

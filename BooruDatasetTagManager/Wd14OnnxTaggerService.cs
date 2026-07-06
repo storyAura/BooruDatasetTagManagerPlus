@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,8 +45,14 @@ namespace BooruDatasetTagManager
 
         private readonly HuggingFaceModelDownloader downloader = new HuggingFaceModelDownloader();
         private InferenceSession session;
+        private bool usesDirectMlProvider;
+        private string inputName;
+        private string outputName;
+        private string loadedModelPath;
         private List<(string Name, int Category)> labels = new List<(string, int)>();
         private string loadedRepo;
+
+        private static readonly string[] PreferredOutputNames = { "output", "predictions", "probs", "logits" };
 
         public string LoadedRepo => loadedRepo;
         public bool IsLoaded => session != null;
@@ -99,19 +106,33 @@ namespace BooruDatasetTagManager
                 throw new FileNotFoundException(I18n.GetText("TaggerModelMissing"));
 
             labels = LoadLabels(labelsPath);
+            loadedModelPath = modelPath;
             session = CreateSession(modelPath);
+            ConfigureSessionMetadata(session);
             loadedRepo = repo;
         }
 
-        public IReadOnlyList<AutoTagProviderItem> TagImage(string imagePath, double generalThreshold, double characterThreshold)
+        public OnnxTagResult TagImageWithTiming(string imagePath, double generalThreshold, double characterThreshold)
         {
             if (session == null)
                 throw new InvalidOperationException("Model is not loaded.");
 
+            var stopwatch = Stopwatch.StartNew();
             // ImageLoader (ImageSharp) handles formats GDI+ cannot decode, e.g. WebP.
             using Image image = ImageLoader.GetImageFromFile(imagePath)
                 ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
-            return TagImage(image, generalThreshold, characterThreshold);
+            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, generalThreshold, characterThreshold);
+            stopwatch.Stop();
+            return new OnnxTagResult
+            {
+                Tags = tags,
+                ElapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds
+            };
+        }
+
+        public IReadOnlyList<AutoTagProviderItem> TagImage(string imagePath, double generalThreshold, double characterThreshold)
+        {
+            return TagImageWithTiming(imagePath, generalThreshold, characterThreshold).Tags;
         }
 
         public IReadOnlyList<AutoTagProviderItem> TagImage(string imagePath, double threshold)
@@ -126,10 +147,7 @@ namespace BooruDatasetTagManager
 
             int targetSize = GetInputSize(session);
             DenseTensor<float> input = Wd14OnnxImagePreprocessor.CreateInputTensor(image, targetSize);
-            string inputName = session.InputMetadata.Keys.First();
-            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = session.Run(
-                new[] { NamedOnnxValue.CreateFromTensor(inputName, input) });
-            float[] output = results.First().AsEnumerable<float>().ToArray();
+            float[] output = RunPrediction(session, input);
 
             var items = new List<AutoTagProviderItem>();
             int count = Math.Min(labels.Count, output.Length);
@@ -163,6 +181,7 @@ namespace BooruDatasetTagManager
             session?.Dispose();
             session = null;
             loadedRepo = null;
+            loadedModelPath = null;
             labels.Clear();
         }
 
@@ -177,16 +196,124 @@ namespace BooruDatasetTagManager
             Unload();
         }
 
-        private static InferenceSession CreateSession(string modelPath)
+        internal static (string InputName, string OutputName) ResolveSessionMetadata(InferenceSession session)
         {
-            var options = new SessionOptions();
+            return ResolveSessionMetadata(session.InputMetadata.Keys, session.OutputMetadata.Keys);
+        }
+
+        internal static (string InputName, string OutputName) ResolveSessionMetadata(
+            IEnumerable<string> inputNames,
+            IEnumerable<string> outputNames)
+        {
+            string resolvedInput = inputNames.FirstOrDefault(name =>
+                string.Equals(name, "input", StringComparison.OrdinalIgnoreCase))
+                ?? inputNames.First();
+
+            foreach (string preferred in PreferredOutputNames)
+            {
+                if (outputNames.Any(name => string.Equals(name, preferred, StringComparison.OrdinalIgnoreCase)))
+                    return (resolvedInput, preferred);
+            }
+
+            string resolvedOutput = outputNames.First();
+            return (resolvedInput, resolvedOutput);
+        }
+
+        internal static float[] ExtractFloatVector(NamedOnnxValue result)
+        {
+            if (result.Value is DenseTensor<float> denseTensor)
+                return denseTensor.ToArray();
+
+            if (result.Value is Tensor<float> tensor)
+                return tensor.ToArray();
+
+            return result.AsEnumerable<float>().ToArray();
+        }
+
+        internal static int ResolveInputSize(IReadOnlyList<int> dims)
+        {
+            if (dims == null || dims.Count == 0)
+                return 448;
+
+            // NHWC: [batch, height, width, channels]
+            if (dims.Count >= 4 && dims[1] > 0 && dims[3] == 3)
+                return dims[1];
+            if (dims.Count >= 4 && dims[1] > 0 && dims[1] == dims[2])
+                return dims[1];
+
+            // NCHW: [batch, channels, height, width]
+            if (dims.Count >= 4 && dims[1] == 3 && dims[2] > 0)
+                return dims[2];
+
+            if (dims.Count >= 3 && dims[0] > 0 && dims[0] != 3)
+                return dims[0];
+
+            return 448;
+        }
+
+        private void ConfigureSessionMetadata(InferenceSession loadedSession)
+        {
+            (inputName, outputName) = ResolveSessionMetadata(loadedSession);
+        }
+
+        private float[] RunPrediction(InferenceSession activeSession, DenseTensor<float> input)
+        {
             try
             {
-                options.AppendExecutionProvider_DML(0);
+                return RunPredictionCore(activeSession, input);
             }
-            catch
+            catch (OnnxRuntimeException ex) when (usesDirectMlProvider)
+            {
+                activeSession.Dispose();
+                session = CreateSession(loadedModelPath, forceCpu: true);
+                ConfigureSessionMetadata(session);
+                try
+                {
+                    return RunPredictionCore(session, input);
+                }
+                catch (Exception retryEx)
+                {
+                    throw new InvalidOperationException(ex.Message, retryEx);
+                }
+            }
+        }
+
+        private float[] RunPredictionCore(InferenceSession activeSession, DenseTensor<float> input)
+        {
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = activeSession.Run(
+                new[] { NamedOnnxValue.CreateFromTensor(inputName, input) },
+                new[] { outputName });
+            return ExtractFloatVector(results.First());
+        }
+
+        private InferenceSession CreateSession(string modelPath, bool forceCpu = false)
+        {
+            return CreateSession(modelPath, forceCpu, out usesDirectMlProvider);
+        }
+
+        private static InferenceSession CreateSession(string modelPath, bool forceCpu, out bool usesDirectMl)
+        {
+            var options = new SessionOptions
+            {
+                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+            };
+
+            usesDirectMl = false;
+            if (forceCpu)
             {
                 options.AppendExecutionProvider_CPU();
+            }
+            else
+            {
+                try
+                {
+                    options.AppendExecutionProvider_DML(0);
+                    usesDirectMl = true;
+                }
+                catch
+                {
+                    options.AppendExecutionProvider_CPU();
+                }
             }
 
             return new InferenceSession(HuggingFaceModelDownloader.NormalizePathForOnnx(modelPath), options);
@@ -194,13 +321,7 @@ namespace BooruDatasetTagManager
 
         private static int GetInputSize(InferenceSession session)
         {
-            var dims = session.InputMetadata.Values.First().Dimensions;
-            // NHWC: [batch, height, width, channels]
-            if (dims.Length >= 4 && dims[1] > 0)
-                return dims[1];
-            if (dims.Length >= 3 && dims[0] > 0 && dims[0] != 3)
-                return dims[0];
-            return 448;
+            return ResolveInputSize(session.InputMetadata.Values.First().Dimensions);
         }
 
         private static List<(string Name, int Category)> LoadLabels(string labelsPath)
@@ -293,9 +414,10 @@ namespace BooruDatasetTagManager
                     for (int x = 0; x < width; x++)
                     {
                         int offset = row + (x * 3);
-                        tensor[0, y, x, 0] = buffer[offset + 0];
+                        // ONNX WD14 models expect BGR channel order (see wd14-migration-package preprocess.py).
+                        tensor[0, y, x, 0] = buffer[offset + 2];
                         tensor[0, y, x, 1] = buffer[offset + 1];
-                        tensor[0, y, x, 2] = buffer[offset + 2];
+                        tensor[0, y, x, 2] = buffer[offset + 0];
                     }
                 }
             }
@@ -310,7 +432,7 @@ namespace BooruDatasetTagManager
         private static Bitmap PrepareBitmap(Image source, int targetSize)
         {
             using Bitmap rgb = EnsureRgbOnWhite(source);
-            using Bitmap squared = PadSquare(rgb);
+            using Bitmap squared = PadSquare(rgb, targetSize);
             return ResizeIfNeeded(squared, targetSize);
         }
 
@@ -333,19 +455,19 @@ namespace BooruDatasetTagManager
             return rgb;
         }
 
-        private static Bitmap PadSquare(Bitmap source)
+        private static Bitmap PadSquare(Bitmap source, int targetSize)
         {
             int width = source.Width;
             int height = source.Height;
-            int maxDim = Math.Max(width, height);
-            if (width == maxDim && height == maxDim)
+            int desiredSize = Math.Max(Math.Max(width, height), targetSize);
+            if (width == desiredSize && height == desiredSize)
                 return new Bitmap(source);
 
-            var square = new Bitmap(maxDim, maxDim, PixelFormat.Format24bppRgb);
+            var square = new Bitmap(desiredSize, desiredSize, PixelFormat.Format24bppRgb);
             using (Graphics graphics = Graphics.FromImage(square))
             {
                 graphics.Clear(Color.White);
-                graphics.DrawImage(source, (maxDim - width) / 2, (maxDim - height) / 2, width, height);
+                graphics.DrawImage(source, (desiredSize - width) / 2, (desiredSize - height) / 2, width, height);
             }
 
             return square;
@@ -359,7 +481,9 @@ namespace BooruDatasetTagManager
             var resized = new Bitmap(targetSize, targetSize, PixelFormat.Format24bppRgb);
             using (Graphics graphics = Graphics.FromImage(resized))
             {
-                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                graphics.InterpolationMode = source.Width > targetSize
+                    ? System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear
+                    : System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                 graphics.DrawImage(source, 0, 0, targetSize, targetSize);
             }
 

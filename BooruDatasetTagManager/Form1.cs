@@ -93,6 +93,45 @@ namespace BooruDatasetTagManager
             LoadSelectedImageToGrid();
         }
 
+        internal void PrepareForBulkTagWrite()
+        {
+            LockEdit(true);
+            gridViewTags.DataSource = null;
+            gridViewTags.Rows.Clear();
+        }
+
+        internal void CompleteBulkTagWrite()
+        {
+            RefreshSelectedImageTagsAfterBulkWrite();
+            gridViewAllTags.Refresh();
+            LockEdit(false);
+        }
+
+        internal void RefreshSelectedImageTagsAfterBulkWrite()
+        {
+            if (Program.DataManager == null || gridViewDS.SelectedRows.Count == 0)
+                return;
+
+            if (gridViewDS.SelectedRows.Count == 1)
+            {
+                string imagePath = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
+                if (!Program.DataManager.DataSet.TryGetValue(imagePath, out DataItem dataItem))
+                    return;
+
+                gridViewTags.AutoGenerateColumns = false;
+                gridViewTags.SuspendLayout();
+                BtnTagImageChecker.Enabled = false;
+                gridViewTags.Tag = imagePath;
+                ChageImageColumn(false);
+                gridViewTags.DataSource = dataItem.Tags;
+                gridViewTags.AllowDrop = true;
+                gridViewTags.ResumeLayout();
+                return;
+            }
+
+            RefreshSelectedImageTags();
+        }
+
         internal void DeleteDatasetMediaFiles(IEnumerable<string> mediaPaths)
         {
             if (Program.DataManager == null || mediaPaths == null)

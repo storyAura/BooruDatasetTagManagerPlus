@@ -168,6 +168,7 @@ namespace BooruDatasetTagManager
                     : tempSettings.AutoTagProviderId;
                 FfmpegPath = tempSettings.FfmpegPath ?? string.Empty;
                 Wd14Tagger = tempSettings.Wd14Tagger ?? new Wd14TaggerSettings();
+                Wd14Tagger.EnsureLegacyThresholdMigrated();
                 PixAiTagger = tempSettings.PixAiTagger ?? new PixAiTaggerSettings();
                 OnnxTaggerLastModelId = tempSettings.OnnxTaggerLastModelId ?? string.Empty;
                 if (!string.IsNullOrEmpty(tempSettings.ColorScheme))
@@ -462,6 +463,65 @@ namespace BooruDatasetTagManager
         public double CharacterThreshold { get; set; } = 0.85;
         public bool ReplaceUnderscoresWithSpaces { get; set; } = true;
         public HuggingFaceDownloadSource DownloadSource { get; set; } = HuggingFaceDownloadSource.HfMirror;
+        public Dictionary<string, Wd14ModelThresholds> ModelThresholds { get; set; } = new Dictionary<string, Wd14ModelThresholds>(StringComparer.OrdinalIgnoreCase);
+
+        public bool HasThresholdsForRepo(string repo)
+        {
+            return !string.IsNullOrWhiteSpace(repo)
+                && ModelThresholds != null
+                && ModelThresholds.ContainsKey(repo);
+        }
+
+        public (double Threshold, double CharacterThreshold) GetThresholdsForRepo(string repo)
+        {
+            if (HasThresholdsForRepo(repo))
+            {
+                Wd14ModelThresholds stored = ModelThresholds[repo];
+                return (stored.Threshold, stored.CharacterThreshold);
+            }
+
+            if (string.Equals(repo, SelectedModelRepo, StringComparison.OrdinalIgnoreCase))
+                return (Threshold, CharacterThreshold);
+
+            Wd14ModelDefinition model = Wd14OnnxTaggerService.GetModel(repo);
+            return (model.DefaultThreshold, model.DefaultCharacterThreshold);
+        }
+
+        public void SetThresholdsForRepo(string repo, double threshold, double characterThreshold)
+        {
+            ModelThresholds ??= new Dictionary<string, Wd14ModelThresholds>(StringComparer.OrdinalIgnoreCase);
+            ModelThresholds[repo] = new Wd14ModelThresholds
+            {
+                Threshold = threshold,
+                CharacterThreshold = characterThreshold
+            };
+
+            SelectedModelRepo = repo;
+            Threshold = threshold;
+            CharacterThreshold = characterThreshold;
+        }
+
+        public void EnsureLegacyThresholdMigrated()
+        {
+            ModelThresholds ??= new Dictionary<string, Wd14ModelThresholds>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(SelectedModelRepo)
+                || ModelThresholds.ContainsKey(SelectedModelRepo))
+            {
+                return;
+            }
+
+            ModelThresholds[SelectedModelRepo] = new Wd14ModelThresholds
+            {
+                Threshold = Threshold,
+                CharacterThreshold = CharacterThreshold
+            };
+        }
+    }
+
+    public sealed class Wd14ModelThresholds
+    {
+        public double Threshold { get; set; }
+        public double CharacterThreshold { get; set; }
     }
 
     public class PixAiTaggerSettings : TaggerSettings

@@ -117,7 +117,17 @@ namespace BooruDatasetTagManager
                 if (loadingSettings)
                     return;
 
-                ApplyModelDefaults();
+                OnnxTaggerModelEntry entry = GetSelectedModel();
+                if (entry.Kind == OnnxTaggerModelKind.Wd14
+                    && !Program.Settings.Wd14Tagger.HasThresholdsForRepo(entry.Repo))
+                {
+                    ApplyModelDefaults();
+                }
+                else
+                {
+                    LoadThresholdsForSelectedModel();
+                }
+
                 LoadPostProcessForSelectedModel();
                 UpdateModelKindUi();
                 UpdateModelStatus();
@@ -141,6 +151,7 @@ namespace BooruDatasetTagManager
             Shown += async (_, _) =>
             {
                 UpdateModelStatus();
+                UpdateIdleStatus();
                 if (autoRunOnShown)
                     await RunJobAsync().ConfigureAwait(true);
             };
@@ -314,7 +325,7 @@ namespace BooruDatasetTagManager
                 ColumnCount = 1,
                 RowCount = 3
             };
-            panelBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(22F)));
+            panelBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(28F)));
             panelBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(24F)));
             panelBottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
@@ -488,8 +499,9 @@ namespace BooruDatasetTagManager
             else
             {
                 Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
-                numericThreshold.Value = (decimal)Math.Clamp(settings.Threshold, (double)numericThreshold.Minimum, (double)numericThreshold.Maximum);
-                numericCharacterThreshold.Value = (decimal)Math.Clamp(settings.CharacterThreshold, (double)numericCharacterThreshold.Minimum, (double)numericCharacterThreshold.Maximum);
+                (double threshold, double characterThreshold) = settings.GetThresholdsForRepo(entry.Repo);
+                numericThreshold.Value = (decimal)Math.Clamp(threshold, (double)numericThreshold.Minimum, (double)numericThreshold.Maximum);
+                numericCharacterThreshold.Value = (decimal)Math.Clamp(characterThreshold, (double)numericCharacterThreshold.Minimum, (double)numericCharacterThreshold.Maximum);
             }
         }
 
@@ -569,9 +581,10 @@ namespace BooruDatasetTagManager
             else
             {
                 Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
-                settings.SelectedModelRepo = entry.Repo;
-                settings.Threshold = (double)numericThreshold.Value;
-                settings.CharacterThreshold = (double)numericCharacterThreshold.Value;
+                settings.SetThresholdsForRepo(
+                    entry.Repo,
+                    (double)numericThreshold.Value,
+                    (double)numericCharacterThreshold.Value);
                 settings.ReplaceUnderscoresWithSpaces = checkReplaceUnderscores.Checked;
                 settings.TagPrefix = textTagPrefix.Text ?? string.Empty;
                 settings.TagSuffix = textTagSuffix.Text ?? string.Empty;
@@ -611,6 +624,25 @@ namespace BooruDatasetTagManager
         {
             labelStatus.Text = line;
             toolTip.SetToolTip(labelStatus, line);
+        }
+
+        private void CompleteDownloadSuccess()
+        {
+            progressBar.Value = 0;
+            UpdateModelStatus();
+            UpdateStatus(I18n.GetText("TaggerReadyToRun"));
+            MessageBox.Show(this, I18n.GetText("TaggerDownloadCompleted"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void UpdateIdleStatus()
+        {
+            if (IsJobRunning())
+                return;
+
+            OnnxTaggerModelEntry entry = GetSelectedModel();
+            UpdateStatus(IsModelReady(entry)
+                ? I18n.GetText("TaggerReadyToRun")
+                : I18n.GetText("TaggerModelMissing"));
         }
 
         private List<string> ResolveInputImages()
@@ -722,15 +754,19 @@ namespace BooruDatasetTagManager
 
                 await VerifyDownloadedModelAsync(entry).ConfigureAwait(true);
 
-                progressBar.Value = 100;
-                UpdateModelStatus();
+                CompleteDownloadSuccess();
             }
             catch (OperationCanceledException)
             {
+                progressBar.Value = 0;
                 UpdateStatus(I18n.GetText("TaggerCancelled"));
+                UpdateModelStatus();
             }
             catch (Exception ex)
             {
+                progressBar.Value = 0;
+                UpdateModelStatus();
+                UpdateIdleStatus();
                 MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -797,7 +833,11 @@ namespace BooruDatasetTagManager
 
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
-            var reporter = new VideoProgressReporter(line =>
+            int completed = 0;
+            var errors = new List<string>();
+            var progressTracker = new OnnxTaggerProgressTracker();
+            int totalImages = inputs.Count;
+            var progressReporter = new VideoProgressReporter(line =>
             {
                 if (IsDisposed)
                     return;
@@ -806,77 +846,59 @@ namespace BooruDatasetTagManager
                     BeginInvoke(new Action(() => UpdateStatus(line)));
                 else
                     UpdateStatus(line);
-            });
-
-            int completed = 0;
-            var errors = new List<string>();
+            }, throttleMilliseconds: 100);
 
             try
             {
+                List<BatchInferenceResult> inferenceResults;
                 if (entry.Kind == OnnxTaggerModelKind.PixAi)
                 {
                     PixAiTaggerSettings settings = Program.Settings.PixAiTagger;
-                    await Task.Run(() => pixAiService.LoadModel(), jobCancellation.Token).ConfigureAwait(true);
-
-                    foreach (string input in inputs)
+                    inferenceResults = await Task.Run(() =>
                     {
-                        jobCancellation.Token.ThrowIfCancellationRequested();
-                        reporter.Report(Path.GetFileName(input));
+                        pixAiService.LoadModel();
+                        return RunBatchInference(
+                            inputs,
+                            input => pixAiService.TagImageWithTiming(input, settings.GeneralThreshold, settings.CharacterThreshold),
+                            progressTracker,
+                            progressReporter,
+                            value => ReportBatchProgress(value, totalImages),
+                            ref completed,
+                            errors,
+                            jobCancellation.Token);
+                    }, jobCancellation.Token).ConfigureAwait(true);
 
-                        try
-                        {
-                            IReadOnlyList<AutoTagProviderItem> tags = await Task.Run(
-                                () => pixAiService.TagImage(input, settings.GeneralThreshold, settings.CharacterThreshold),
-                                jobCancellation.Token).ConfigureAwait(true);
-
-                            if (TryGetDataItem(input, out DataItem item))
-                                TagWriteService.ApplyTags(item, tags, settings);
-                            else
-                                errors.Add(input + ": " + I18n.GetText("TaggerDatasetItemMissing"));
-                        }
-                        catch (Exception ex)
-                        {
-                            errors.Add(input + ": " + ex.Message);
-                        }
-
-                        completed++;
-                        progressBar.Value = Math.Min(100, (int)Math.Round(completed * 100.0 / inputs.Count));
-                    }
+                    ApplyBatchInferenceResults(inferenceResults, () => settings, errors);
                 }
                 else
                 {
                     Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
-                    await Task.Run(() => wd14Service.LoadModel(entry.Repo), jobCancellation.Token).ConfigureAwait(true);
-
-                    foreach (string input in inputs)
+                    (double generalThreshold, double characterThreshold) = settings.GetThresholdsForRepo(entry.Repo);
+                    inferenceResults = await Task.Run(() =>
                     {
-                        jobCancellation.Token.ThrowIfCancellationRequested();
-                        reporter.Report(Path.GetFileName(input));
+                        wd14Service.LoadModel(entry.Repo);
+                        return RunBatchInference(
+                            inputs,
+                            input => wd14Service.TagImageWithTiming(input, generalThreshold, characterThreshold),
+                            progressTracker,
+                            progressReporter,
+                            value => ReportBatchProgress(value, totalImages),
+                            ref completed,
+                            errors,
+                            jobCancellation.Token);
+                    }, jobCancellation.Token).ConfigureAwait(true);
 
-                        try
-                        {
-                            IReadOnlyList<AutoTagProviderItem> tags = await Task.Run(
-                                () => wd14Service.TagImage(input, settings.Threshold, settings.CharacterThreshold),
-                                jobCancellation.Token).ConfigureAwait(true);
-
-                            if (TryGetDataItem(input, out DataItem item))
-                                TagWriteService.ApplyTags(item, tags, settings);
-                            else
-                                errors.Add(input + ": " + I18n.GetText("TaggerDatasetItemMissing"));
-                        }
-                        catch (Exception ex)
-                        {
-                            errors.Add(input + ": " + ex.Message);
-                        }
-
-                        completed++;
-                        progressBar.Value = Math.Min(100, (int)Math.Round(completed * 100.0 / inputs.Count));
-                    }
+                    ApplyBatchInferenceResults(inferenceResults, () => settings, errors);
                 }
 
+                progressBar.Value = Math.Min(100, (int)Math.Round(completed * 100.0 / inputs.Count));
+                progressReporter.Report(progressTracker.FormatStatusLine(
+                    completed > 0 ? Path.GetFileName(inputs[completed - 1]) : string.Empty,
+                    completed,
+                    inputs.Count));
+
                 Program.Settings.SaveSettings();
-                Program.DataManager?.SaveAll();
-                owner.RefreshSelectedImageTags();
+                await Task.Run(() => Program.DataManager?.SaveAll()).ConfigureAwait(true);
 
                 if (errors.Count > 0)
                 {
@@ -900,6 +922,97 @@ namespace BooruDatasetTagManager
                 jobCancellation?.Dispose();
                 jobCancellation = null;
                 SetJobRunning(false);
+            }
+        }
+
+        private void ReportBatchProgress(int completed, int total)
+        {
+            if (IsDisposed)
+                return;
+
+            int percent = Math.Min(100, (int)Math.Round(completed * 100.0 / total));
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => progressBar.Value = percent));
+                return;
+            }
+
+            progressBar.Value = percent;
+        }
+
+        private sealed class BatchInferenceResult
+        {
+            public string Input { get; init; }
+            public OnnxTagResult Result { get; init; }
+        }
+
+        private static List<BatchInferenceResult> RunBatchInference(
+            IReadOnlyList<string> inputs,
+            Func<string, OnnxTagResult> tagImage,
+            OnnxTaggerProgressTracker progressTracker,
+            VideoProgressReporter progressReporter,
+            Action<int> reportProgress,
+            ref int completed,
+            List<string> errors,
+            CancellationToken cancellationToken)
+        {
+            var results = new List<BatchInferenceResult>(inputs.Count);
+            foreach (string input in inputs)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    OnnxTagResult result = tagImage(input);
+                    progressTracker.RecordInference(result.ElapsedMilliseconds);
+                    results.Add(new BatchInferenceResult { Input = input, Result = result });
+                }
+                catch (Exception ex)
+                {
+                    errors.Add(input + ": " + ex.Message);
+                }
+
+                completed++;
+                reportProgress(completed);
+                progressReporter.Report(progressTracker.FormatStatusLine(
+                    Path.GetFileName(input),
+                    completed,
+                    inputs.Count));
+            }
+
+            return results;
+        }
+
+        private void ApplyBatchInferenceResults<TSettings>(
+            IReadOnlyList<BatchInferenceResult> results,
+            Func<TSettings> getSettings,
+            List<string> errors)
+            where TSettings : TaggerSettings
+        {
+            if (results.Count == 0 || Program.DataManager == null)
+                return;
+
+            TSettings settings = getSettings();
+            owner.PrepareForBulkTagWrite();
+            try
+            {
+                Program.DataManager.ExecuteBulkMutation(() =>
+                {
+                    foreach (BatchInferenceResult item in results)
+                    {
+                        if (!TryGetDataItem(item.Input, out DataItem dataItem))
+                        {
+                            errors.Add(item.Input + ": " + I18n.GetText("TaggerDatasetItemMissing"));
+                            continue;
+                        }
+
+                        TagWriteService.ApplyTags(dataItem, item.Result.Tags, settings);
+                    }
+                });
+            }
+            finally
+            {
+                owner.CompleteBulkTagWrite();
             }
         }
 

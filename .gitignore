@@ -381,3 +381,12 @@ BooruDatasetTagManager/ThirdParty/ffmpeg/_tmp/
 
 # Debug session logs
 debug-*.log
+
+# Local ONNX models downloaded at runtime (HuggingFace cache under app dir)
+**/Models/
+
+# Runtime cache (e.g. video thumbnails)
+**/Cache/
+
+# quick_build local log
+quick_build.log
