@@ -965,6 +965,70 @@ public sealed class CharacterTagFileTransactionTests
         Assert.Equal("old", File.ReadAllText(target));
         Assert.Empty(Directory.GetDirectories(temp.Path, CharacterTagFileTransaction.DirectoryPrefix + "*"));
     }
+
+    [Fact]
+    public async Task CommitAsync_reports_progress_for_each_file()
+    {
+        using var temp = new TemporaryDirectory();
+        string first = Path.Combine(temp.Path, "a.txt");
+        string second = Path.Combine(temp.Path, "b.txt");
+        File.WriteAllText(first, "old-a");
+        File.WriteAllText(second, "old-b");
+
+        var progressValues = new List<int>();
+        var progress = new Progress<int>(value => progressValues.Add(value));
+        await CharacterTagFileTransaction.CommitAsync(
+            temp.Path,
+            new[]
+            {
+                new CharacterTagFileChange(first, "new-a"),
+                new CharacterTagFileChange(second, "new-b"),
+            },
+            progress: progress);
+
+        Assert.Equal(new[] { 1, 2 }, progressValues);
+    }
+
+    [Fact]
+    public void CommitAsync_does_not_rewrite_manifest_during_apply_loop()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(),
+            "BooruDatasetTagManager",
+            "CharacterTagFileTransaction.cs"));
+
+        int applyLoopStart = source.IndexOf("int appliedCount = 0;", StringComparison.Ordinal);
+        int applyLoopEnd = source.IndexOf("Directory.Delete(transactionDirectory, true);", applyLoopStart, StringComparison.Ordinal);
+        Assert.True(applyLoopStart >= 0);
+        Assert.True(applyLoopEnd > applyLoopStart);
+        string applyLoop = source.Substring(applyLoopStart, applyLoopEnd - applyLoopStart);
+        Assert.DoesNotContain("WriteManifestAsync", applyLoop);
+    }
+
+    [Fact]
+    public void ApplyAsync_uses_bulk_mutation_and_background_scan()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(),
+            "BooruDatasetTagManager",
+            "Form_CharacterTagAuditWizard.cs"));
+
+        Assert.Contains("await Task.Run(() =>", source);
+        Assert.Contains("ExecuteBulkMutation", source);
+        Assert.Contains("CharacterTagAuditSaveProgress", source);
+    }
+
+    private static string RepoRoot()
+    {
+        string dir = AppContext.BaseDirectory;
+        while (!string.IsNullOrEmpty(dir))
+        {
+            if (File.Exists(Path.Combine(dir, "BooruDatasetTagManager.sln")))
+                return dir;
+            dir = Directory.GetParent(dir)?.FullName;
+        }
+        throw new InvalidOperationException("Repository root not found.");
+    }
 }
 
 internal sealed class TemporaryDirectory : IDisposable

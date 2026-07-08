@@ -1251,35 +1251,58 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(this, validationError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            List<(DataItem Item, IReadOnlyList<EditableTag> Tags)> affected = Program.DataManager.DataSet.Values
-                .Select(item => (Item: item, Tags: TransformEditableTags(item.Tags, decisions)))
-                .Where(change => !change.Item.Tags.TextTags.SequenceEqual(change.Tags.Select(tag => tag.Tag), StringComparer.Ordinal))
-                .ToList();
-            int changeCount = decisions.Count(item => item.ShouldDelete || item.ShouldReplace);
-            if (affected.Count == 0)
-            {
-                MessageBox.Show(this, I18n.GetText("CharacterTagAuditNothingToDelete"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            string confirm = string.Format(I18n.GetText("CharacterTagAuditApplyConfirmV2"), changeCount, affected.Count);
-            if (MessageBox.Show(this, confirm, Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
-                return;
 
             buttonNext.Enabled = false;
+            buttonBack.Enabled = false;
             try
             {
+                labelProgress.Text = I18n.GetText("CharacterTagAuditSavePreparing");
+                Application.DoEvents();
+
+                List<(DataItem Item, IReadOnlyList<EditableTag> Tags)> affected = await Task.Run(() =>
+                    Program.DataManager.DataSet.Values
+                        .Select(item => (Item: item, Tags: TransformEditableTags(item.Tags, decisions)))
+                        .Where(change => !change.Item.Tags.TextTags.SequenceEqual(change.Tags.Select(tag => tag.Tag), StringComparer.Ordinal))
+                        .ToList());
+
+                int changeCount = decisions.Count(item => item.ShouldDelete || item.ShouldReplace);
+                if (affected.Count == 0)
+                {
+                    MessageBox.Show(this, I18n.GetText("CharacterTagAuditNothingToDelete"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                string confirm = string.Format(I18n.GetText("CharacterTagAuditApplyConfirmV2"), changeCount, affected.Count);
+                if (MessageBox.Show(this, confirm, Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
+                    return;
+
                 string separator = Program.Settings.SeparatorOnSave.Replace("\\n", "\n").Replace("\\r", "\r").Replace("\\t", "\t");
                 List<CharacterTagFileChange> changes = affected.Select(change => new CharacterTagFileChange(
                     change.Item.TextFilePath,
                     string.Join(separator, change.Tags.Select(tag => tag.ToString())))).ToList();
-                await CharacterTagFileTransaction.CommitAsync(Program.DataManager.DatasetRoot, changes);
-                foreach ((DataItem item, IReadOnlyList<EditableTag> tags) in affected)
+
+                int total = changes.Count;
+                var progress = new Progress<int>(completed =>
                 {
-                    item.Tags.Clear();
-                    foreach (EditableTag tag in tags)
-                        item.Tags.Add((EditableTag)tag.Clone(), true);
-                    item.AcceptCurrentTagsAsSaved();
-                }
+                    labelProgress.Text = string.Format(I18n.GetText("CharacterTagAuditSaveProgress"), completed, total);
+                });
+                labelProgress.Text = string.Format(I18n.GetText("CharacterTagAuditSaveProgress"), 0, total);
+
+                await CharacterTagFileTransaction.CommitAsync(
+                    Program.DataManager.DatasetRoot,
+                    changes,
+                    progress: progress);
+
+                labelProgress.Text = I18n.GetText("CharacterTagAuditSaveUpdatingMemory");
+                Program.DataManager.ExecuteBulkMutation(() =>
+                {
+                    foreach ((DataItem item, IReadOnlyList<EditableTag> tags) in affected)
+                    {
+                        item.Tags.Clear();
+                        foreach (EditableTag tag in tags)
+                            item.Tags.Add((EditableTag)tag.Clone(), true);
+                        item.AcceptCurrentTagsAsSaved();
+                    }
+                });
                 Program.DataManager.UpdateDatasetHash();
                 owner.RefreshAfterCharacterTagAudit();
                 MessageBox.Show(this, I18n.GetText("CharacterTagAuditSaved"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1293,6 +1316,7 @@ namespace BooruDatasetTagManager
             finally
             {
                 buttonNext.Enabled = true;
+                buttonBack.Enabled = true;
             }
         }
 

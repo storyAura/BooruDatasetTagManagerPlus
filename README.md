@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.1
+# BooruDatasetTagManager+ 1.1.1
 
 [简体中文](README_zh_CN.md)
 
@@ -24,6 +24,16 @@ Licensed under [MIT License](LICENSE). Retain upstream copyright notices when re
 | **ONNX tagger** | Unified WD14 + PixAI interface; HuggingFace download; dual thresholds; write modes; prefix/suffix tags |
 | **Video tools** | Format conversion; all frames / by FPS / specific frames; bundled FFmpeg |
 | **Background removal** | Tools menu and dataset context menu; requires local AiApiServer + rmbg2 model |
+| **Crop image** | Single or multi-region crop; export `_r1`/`_r2` to source folder; auto-import to dataset |
+
+## What's New in 1.1.1
+
+- **Faster character tag audit save** — single manifest write, batched AllTags update, save progress UI, lighter refresh
+- **Unified crop image** — one dialog for single or multiple regions; preview panel; Delete to remove a region
+- **Same-folder export** — `{basename}_r1.png`, `_r2.png`, … next to the original; source file untouched
+- **Auto-import crops** — new cropped images appear in the dataset grid immediately after export
+
+Prior release: [v1.1](docs/RELEASE_NOTES_v1.1.md) (WD14 catalog, PixAI fix, ONNX batch tagging).
 
 ## What's New in 1.1
 

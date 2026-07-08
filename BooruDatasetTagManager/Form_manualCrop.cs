@@ -65,36 +65,12 @@ namespace BooruDatasetTagManager
 
         private Rectangle CalcImageLocation()
         {
-            var imgSize = pictureBox1.Image.Size;
-            var zoomSize = pictureBox1.Size;
-            float mod = CalcZoomMod();
-            int w = (int)(mod * imgSize.Width);
-            int h = (int)(mod * imgSize.Height);
-            int x = 0;
-            int y = 0;
-            int imgWidth = w;
-            int imgHeight = h;
-            if (w == zoomSize.Width)
-            {
-                x = 0;
-                y = (int)((float)zoomSize.Height / 2 - (float)h / 2);
-            }
-            else
-            {
-                y = 0;
-                x = (int)((float)zoomSize.Width / 2 - (float)w / 2);
-            }
-            return new Rectangle(x, y, imgWidth, imgHeight);
+            return CropCanvasHelper.CalcImageLocation(pictureBox1.Image.Size, pictureBox1.ClientSize);
         }
 
         private float CalcZoomMod()
         {
-            var imgSize = pictureBox1.Image.Size;
-            var zoomSize = pictureBox1.Size;
-            float mod = (float)zoomSize.Height / (float)imgSize.Height;
-            if ((int)(mod * imgSize.Width) > zoomSize.Width)
-                mod = (float)zoomSize.Width / (float)imgSize.Width;
-            return mod;
+            return CropCanvasHelper.CalcZoomMod(pictureBox1.Image.Size, pictureBox1.ClientSize);
         }
 
         private void pictureBox1_MouseMove(object sender, MouseEventArgs e)

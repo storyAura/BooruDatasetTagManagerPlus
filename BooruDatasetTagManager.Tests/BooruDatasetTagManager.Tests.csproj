@@ -46,6 +46,9 @@
     <Compile Include="..\BooruDatasetTagManager\CharacterTagAudit.cs" Link="Source\CharacterTagAudit.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagReasonLocalizer.cs" Link="Source\CharacterTagReasonLocalizer.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagFileTransaction.cs" Link="Source\CharacterTagFileTransaction.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CropRegion.cs" Link="Source\CropRegion.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CropCanvasHelper.cs" Link="Source\CropCanvasHelper.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageCropExporter.cs" Link="Source\ImageCropExporter.cs" />
     <Compile Include="..\BooruDatasetTagManager\AutoTagProvider.cs" Link="Source\AutoTagProvider.cs" />
     <Compile Include="..\BooruDatasetTagManager\TranslationManager.cs" Link="Source\TranslationManager.cs" />
     <Compile Include="..\BooruDatasetTagManager\VideoProcessingService.cs" Link="Source\VideoProcessingService.cs" />

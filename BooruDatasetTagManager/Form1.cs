@@ -2916,8 +2916,16 @@ namespace BooruDatasetTagManager
 
         internal void RefreshAfterCharacterTagAudit()
         {
+            gridViewDS.Refresh();
             gridViewAllTags.Refresh();
-            LoadSelectedImageToGrid();
+            if (gridViewDS.SelectedRows.Count == 1)
+            {
+                string path = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
+                if (Program.DataManager.DataSet.TryGetValue(path, out DataItem item))
+                {
+                    gridViewTags.DataSource = item.Tags;
+                }
+            }
             SetStatus(I18n.GetText("CharacterTagAuditSaved"));
         }
 
@@ -3552,22 +3560,28 @@ namespace BooruDatasetTagManager
 
         private void openManualCropToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Form_manualCrop form_ManualCrop = new Form_manualCrop("D:\\All\\Upscaled\\Ayumu Orikasa\\card_chara_01193 — копия.png");
-            form_ManualCrop.ShowDialog();
+            Form_ImageCrop form_ImageCrop = new Form_ImageCrop("D:\\All\\Upscaled\\Ayumu Orikasa\\card_chara_01193 — копия.png");
+            form_ImageCrop.ShowDialog();
         }
 
         private void cropImageToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (gridViewDS.SelectedRows.Count > 0)
+            if (gridViewDS.SelectedRows.Count == 0 || Program.DataManager == null)
+                return;
+
+            string imagePath = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
+            using (Form_ImageCrop form = new Form_ImageCrop(imagePath))
             {
-                var di = Program.DataManager.DataSet[(string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value];
-                Form_manualCrop fCrop = new Form_manualCrop(di.ImageFilePath);
-                if (fCrop.ShowDialog() == DialogResult.OK)
-                {
-                    di.Img = Extensions.MakeThumb(di.ImageFilePath, Program.Settings.PreviewSize);
-                    gridViewDS.Refresh();
-                }
-                fCrop.Close();
+                if (form.ShowDialog(this) != DialogResult.OK || form.ExportedPaths.Count == 0)
+                    return;
+
+                IReadOnlyList<string> added = Program.DataManager.AddImages(
+                    form.ExportedPaths,
+                    loadPreviewImages: true,
+                    readMetadata: false);
+                RefreshDatasetGrid();
+                if (added.Count > 0)
+                    SetStatus(string.Format(I18n.GetText("CropImageImportedCount"), added.Count));
             }
         }
 

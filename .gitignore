@@ -390,3 +390,7 @@ debug-*.log
 
 # quick_build local log
 quick_build.log
+
+# Local planning / reference (not for repo)
+docs/superpowers/
+wd14-migration-package/

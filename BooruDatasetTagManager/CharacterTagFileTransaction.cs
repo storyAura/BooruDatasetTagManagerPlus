@@ -30,6 +30,7 @@ namespace BooruDatasetTagManager
             IEnumerable<CharacterTagFileChange> changes,
             Action<string> beforeReplace = null,
             bool preserveTransactionOnFailure = false,
+            IProgress<int> progress = null,
             CancellationToken cancellationToken = default)
         {
             string root = NormalizeRoot(datasetRoot);
@@ -64,6 +65,7 @@ namespace BooruDatasetTagManager
                 }
                 await WriteManifestAsync(transactionDirectory, manifest, cancellationToken);
 
+                int appliedCount = 0;
                 foreach (TransactionEntry entry in manifest.Entries)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -75,7 +77,8 @@ namespace BooruDatasetTagManager
                     File.Copy(Path.Combine(transactionDirectory, entry.StagedFile), siblingTemp, true);
                     File.Move(siblingTemp, entry.TargetPath, true);
                     entry.Applied = true;
-                    await WriteManifestAsync(transactionDirectory, manifest, cancellationToken);
+                    appliedCount++;
+                    progress?.Report(appliedCount);
                 }
                 Directory.Delete(transactionDirectory, true);
             }
