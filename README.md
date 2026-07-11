@@ -189,6 +189,6 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — 启动 Release（或 Debug）
-- `quick_build.bat` — 本地快速打包至 `dist/`（产物不入库；首次构建会自动下载 FFmpeg）
+- `quick_build.bat` — 本地快速打包至 `dist/`（首次构建会自动下载 FFmpeg）
 
-本地运行后，程序目录下会生成 **Models/**（下载的 ONNX 模型）、**Cache/**（如视频缩略图缓存）、**settings.json**（API 与偏好设置）。这些均为本地运行时数据，**不会也不应提交到 Git**；ONNX 模型请在应用内下载。
+本地运行后，程序目录下会生成 **Models/**（下载的 ONNX 模型）、**Cache/**（如视频缩略图缓存）、**settings.json**（API 与偏好设置）。这些均为程序自动生成的本地数据，可随时删除——设置会恢复默认，模型可在应用内重新下载。

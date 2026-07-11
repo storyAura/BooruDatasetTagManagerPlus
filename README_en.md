@@ -162,8 +162,8 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 ```
 
 - `test_start.bat` — launch Release (or Debug)
-- `quick_build.bat` — quick local build to `dist/` (not committed; downloads FFmpeg on first build)
+- `quick_build.bat` — quick local build to `dist/` (downloads FFmpeg on first build)
 
-Running locally creates **Models/** (downloaded ONNX weights), **Cache/** (e.g. video thumbnails), and **settings.json** (API keys and preferences) beside the executable. These are runtime-only and must not be committed; ONNX models are downloaded from inside the app.
+Running locally creates **Models/** (downloaded ONNX weights), **Cache/** (e.g. video thumbnails), and **settings.json** (API keys and preferences) beside the executable. These are locally generated data and safe to delete — settings reset to defaults, and models can be re-downloaded from inside the app.
 
 Images sent for LLM tagging (including Tags → Natural language) or character audit go to your configured endpoint; background removal and video tools run entirely locally. API settings live in local `settings.json`.

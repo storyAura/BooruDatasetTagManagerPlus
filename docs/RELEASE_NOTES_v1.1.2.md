@@ -126,7 +126,7 @@ Download `BooruDatasetTagManagerPlus-1.1.2-win-x64.zip` from [Releases](https://
 
 Self-contained build for Windows x64; no separate .NET install required.
 
-Local runs create **Models/**, **Cache/**, and **settings.json** next to the executable. These are runtime-only and are not committed to Git.
+Local runs create **Models/**, **Cache/**, and **settings.json** next to the executable — locally generated data that is safe to delete (models can be re-downloaded from inside the app).
 
 ## 更新摘要（中文）
 
