@@ -46,8 +46,7 @@ namespace BooruDatasetTagManager
             Items.Add(new HotkeyItem("DatasetFocus", "Focus on image list", Keys.D1, true, false, false));
             Items.Add(new HotkeyItem("TagsFocus", "Focus on tag list", Keys.D2, true, false, false));
             Items.Add(new HotkeyItem("AllTagsFocus", "Focus on all tag list", Keys.D3, true, false, false));
-            Items.Add(new HotkeyItem("AutoTagsFocus", "Focus on AutoTagger preview", Keys.D4, true, false, false));
-            Items.Add(new HotkeyItem("PreviewTabFocus", "Focus on preview tab", Keys.D5, true, false, false));
+            Items.Add(new HotkeyItem("PreviewTabFocus", "Focus on preview tab", Keys.D4, true, false, false));
 
             Items.Add(new HotkeyItem("MenuItemSaveChanges", "Save all changes", Keys.S, true, false, false));
             Items.Add(new HotkeyItem("MenuItemShowPreview", "Show preview window", Keys.P, true, false, false));
@@ -75,8 +74,8 @@ namespace BooruDatasetTagManager
             Items.Add(new HotkeyItem("BtnTagMultiModeSwitch", "Switch filted mode", Keys.Y, true, false, false));
             Items.Add(new HotkeyItem("BtnTagFilter", "Filter in all tags", Keys.F, false, true, false));
             Items.Add(new HotkeyItem("BtnTagExitFilter", "Reset filter in all tags", Keys.G, false, true, false));
-            Items.Add(new HotkeyItem("BtnMenuGenTagsWithCurrentSettings", "Generate tags with AutoTagger (current setting)", Keys.G, false, true, false));
-            Items.Add(new HotkeyItem("BtnMenuGenTagsWithSetWindow", "Generate tags with AutoTagger (open settings window)", Keys.H, false, true, false));
+            Items.Add(new HotkeyItem("BtnMenuGenTagsWithCurrentSettings", "Local model tagging (current settings)", Keys.G, false, true, false));
+            Items.Add(new HotkeyItem("BtnMenuGenTagsWithSetWindow", "Local model tagging (open settings window)", Keys.H, false, true, false));
             Items.Add(new HotkeyItem("toolStripPromptSortBtn", "Sort tags", Keys.Q, true, false, false));
             Items.Add(new HotkeyItem("BtnTagImageChecker", "Visual editor of the selected tag for selected images", Keys.T, false, true, false));
         }
@@ -86,7 +85,6 @@ namespace BooruDatasetTagManager
             this["DatasetFocus"].Text = I18n.GetText("HKDatasetFocus");
             this["TagsFocus"].Text = I18n.GetText("HKTagsFocus");
             this["AllTagsFocus"].Text = I18n.GetText("HKAllTagsFocus");
-            this["AutoTagsFocus"].Text = I18n.GetText("HKAutoTagsFocus");
             this["PreviewTabFocus"].Text = I18n.GetText("HKPreviewTabFocus");
             this["MenuItemSaveChanges"].Text = I18n.GetText("HKMenuItemSaveChanges");
             this["MenuItemShowPreview"].Text = I18n.GetText("HKMenuItemShowPreview");

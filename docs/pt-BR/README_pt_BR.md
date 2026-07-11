@@ -1,139 +1,173 @@
-
 <div align="center">
 
-[English](../../README_en.md) | [中文简体](../../README.md) | **Português do Brasil**
+[English](../../README_en.md) | [简体中文](../../README.md) | **Português do Brasil**
 
 </div>
 
-# BooruDatasetTagManagerPlus
+# BooruDatasetTagManager+ 1.1.2
 
-> Este repositório é o fork [storyAura/BooruDatasetTagManagerPlus](https://github.com/storyAura/BooruDatasetTagManagerPlus) do projeto original [starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager). A licença MIT original é mantida em [LICENSE](../../LICENSE).
+Ferramenta para Windows de marcação de datasets de LoRA e de personagens. Mantém o fluxo de trabalho original baseado em pastas com arquivos `.txt` e adiciona Marcação LLM (modos Tags / Linguagem natural), auditoria de tags de personagem e ferramentas localizadas em chinês. **O idioma padrão da interface é o chinês simplificado (zh-CN).**
 
-Um editor de tags simplificado para conjunto de dados usados no treinamento de hiper-redes, embeddings, LoRA, etc. Crie um conjunto de dados do zero usando apenas imagens ou edite um conjunto de dados pré-existente, criado com tags automáticas ([wd14-tagger](https://github.com/toriato/stable-diffusion-webui-wd14-tagger), [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui), etc.).
-Embora seja voltado para dados com tags no estilo booru, você pode adaptá-lo para outros tipos de conjunto de dados.
+![Janela principal](../images/main-window-wiki.png)
 
-# Como Usar
-Você precisará de um conjunto de dados com a seguinte estrutura:
+## Linhagem do projeto
 
-![Estrutura da Pasta](../../BooruDatasetTagManager/Assets/imgs/br/estrutura-pasta.png)
+Este repositório é um fork de **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**. Ele mantém o fluxo original de edição de tags baseado em pastas e adiciona Marcação LLM (Tags / Linguagem natural), auditoria de tags de personagem e ferramentas localizadas em chinês.
 
-*Caso deseje criar tags do zero, é possível especificar um conjunto de dados sem arquivos de texto. Os arquivos de texto serão criados ao salvar.*
+Licenciado sob a [Licença MIT](../../LICENSE). Mantenha os avisos de copyright do projeto original (upstream) ao redistribuir builds modificados.
 
-No programa, selecione "Arquivo -> Carregar pasta" e indique o diretório do conjunto de dados.
+## Funcionalidades
 
-![Pasta do Conjunto de Dados](../../BooruDatasetTagManager/Assets/imgs/br/cj-pasta-aberta.png)
+| Módulo | Descrição |
+| --- | --- |
+| **Configurações LLM** | Endpoint compatível com OpenAI; modelos separados de texto, de visão para auto-tag e de visão para auditoria; concorrência LLM |
+| **Marcação LLM** | Janela de execução unificada (no estilo do ONNX): fonte de entrada, **modos Tags / Tags → Linguagem natural**, modelo de prompt, modelo de visão, modo de gravação, concorrência LLM. O modo Tags grava de volta no dataset; o modo Linguagem natural (antigo TAG2NL) oferece conteúdo **Tags + linguagem natural / apenas linguagem natural**, cópia `_captioned` ou gravação no próprio `.txt`, e pode **executar o ONNX primeiro** em imagens sem tags |
+| **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas com salvamento transacional |
+| **Tagger ONNX** | Interface unificada WD14 + PixAI; download do HuggingFace; limites duplos; modos de gravação; tags de prefixo/sufixo |
+| **Ferramentas de vídeo** | Conversão de formato; todos os frames / por FPS / frames específicos; FFmpeg incluído |
+| **Remoção de fundo** | RMBG-1.4 ONNX embutido, executa localmente no cliente — **sem serviço externo**; download do modelo com um clique no primeiro uso (~176 MB, ou ~44 MB quantizado); fundo transparente ou de cor sólida (branco por padrão), sobrescreve o original ou salva uma cópia `_nobg.png` |
+| **Recortar imagem** | Recorte de região única ou de várias regiões; exporta `_r1`/`_r2` para a pasta de origem; importação automática para o dataset |
+| **Revisão de tags com seleção múltipla** | Selecione várias imagens e pressione Shift+T para abrir o editor visual; lista de tags à esquerda com contagem de ocorrências; verde = tem a tag, vermelho = não tem; clique para alternar, um único salvamento para todas as tags |
 
-O painel esquerdo exibe as imagens do conjunto de dados. O painel central exibe as tags das imagens selecionadas, que podem ser editadas. O painel direito possui duas abas. A primeira aba exibe todas as tags (ou as mais comuns) presentes no conjunto de dados. Na segunda aba, você pode gerar tags usando o serviço integrado (interrogator_rpc).
+## Novidades da versão 1.1.2
 
-Após as edições, selecione "Arquivo -> Salvar Alterações".
+Uma ampla rodada de reforço de segurança, estabilidade e usabilidade, além de uma janela unificada de **Marcação LLM**.
 
-# Multi Seleção
+- **Janela unificada de Marcação LLM** — modos Tags / Tags → Linguagem natural (antigo TAG2NL); formato de saída (Tags + linguagem natural / apenas linguagem natural), cópia `_captioned` ou gravação no local, ONNX primeiro em imagens sem tags; modelo de prompt e configurações de marcação incorporados à janela; a "marcação visual por IA" foi renomeada para "Marcação LLM", com uma configuração global de concorrência LLM
+- **Remoção de fundo movida para dentro do processo** — RMBG-1.4 ONNX embutido, sem serviço externo; fundo transparente / cor sólida, sobrescrever ou salvar uma cópia `_nobg.png`
+- **Robustez e segurança dos dados** — proteção global contra falhas (`crash.log`); salvamento atômico de tags sem perda de dados; as ferramentas em lote nunca destroem os originais; fechar no meio de uma tarefa cancela com segurança; downloads de modelos resistentes a interrupções + verificação de integridade antes do uso
+- **Segurança** — chaves de API criptografadas com DPAPI; autenticação e controle de acesso do servidor de IA; `BinaryFormatter` removido
+- **Usabilidade** — verificação de atualizações com um clique nas Configurações; revisão de tags com seleção múltipla (Shift+T) com lista de tags no lado esquerdo; tradução priorizando CSV (ativada por padrão)
+- Removidos a aba "Prévia do AutoTagger" e o menu TAG2NL independente; 264 testes unitários aprovados
 
-É possível selecionar várias imagens ao mesmo tempo. Isso facilita a edição de tags para imagens do mesmo tipo.
+Detalhes completos (Adicionado / Melhorado / Removido / Corrigido): **[notas da versão v1.1.2](../RELEASE_NOTES_v1.1.2.md)**.
 
-![Multi-Seleção](../../BooruDatasetTagManager/Assets/imgs/br/multi-selecao.png)
+## Novidades da versão 1.1.1
 
-# Configurações do Programa
+Salvamento mais rápido da auditoria de tags de personagem; diálogo unificado de **Recortar imagem** (várias regiões, exportação `_r1/_r2` na mesma pasta, importação automática para o dataset).
 
-No menu "Opções", acesse a janela de "Configurações" para personalizar o programa. Usuários com o Google Tradutor bloqueado podem alterar o serviço de tradução para chinês. Na aba "Interface do Usuário", selecione um esquema de cores. Na aba "Teclas de Atalho", configure o layout de teclas desejado.
+Detalhes completos: **[notas da versão v1.1.1](../RELEASE_NOTES_v1.1.1.md)**; versões anteriores: [v1.1](../RELEASE_NOTES_v1.1.md) (catálogo WD14, correção do PixAI) · [v1.0.5](../RELEASE_NOTES_v1.0.5.md) (Tagger ONNX unificado, ferramentas de vídeo)
 
-![Opções](../../BooruDatasetTagManager/Assets/imgs/br/opcoes.png)
+## Em relação ao upstream
 
-# Tradução de Tags
+- Marcação automática por LLM com quatro modelos de prompt integrados, além de importação/exportação de modelos personalizados
+- Modo "Linguagem natural" da Marcação LLM (antigo TAG2NL) para legendas em lote (concorrência LLM de 1–100)
+- Assistente de auditoria de personagem (estilo enxuto vs. completo, canonicalizador local)
+- Dados de origem somente leitura; gravações atômicas, suporte a cancelamento, isolamento de erros por arquivo
 
-Antes de usar a tradução de tags, selecione o idioma e o serviço de tradução nas configurações.
-No menu "Exibir", selecione "Traduzir Tags" para mostrar a coluna contendo as tags traduzidas. Dessa forma, todas as tags serão automaticamente traduzidas para o idioma selecionado. A tradução é salva na pasta "Translations" com o nome do idioma. Você pode editar manualmente as traduções neste arquivo, pois ele tem prioridade. Recomenda-se marcar as traduções manuais com o símbolo "*".
+## Fluxo de trabalho
 
-Exemplo de arquivo de tradução:
+1. **Arquivo → Carregar Pasta**
+2. Edite as tags; abra a **Wiki do Danbooru** quando necessário
+3. Configure os modelos em **Configurações LLM**
+4. Execute **Ferramentas → Marcação LLM...** (modos Tags / Tags → Linguagem natural) ou **Teste → Abrir auditoria de tags...**
 
+## Configurações LLM
+
+![Configurações LLM](../images/llm-settings.png)
+
+Conexão, modelo de texto, modelos de visão (auto-tag + auditoria de personagem), concorrência LLM (compartilhada pela marcação de tags e pela geração de legendas; padrão 5, de 1 a 100) e o prompt fixo de Linguagem natural (somente leitura, independente dos modelos de auto-tag).
+
+## Modelos de prompt de marcação automática
+
+![Modelos de prompt de marcação automática](../images/auto-tag-prompt-templates.png)
+
+Integrados: Danbooru Tag, Natural Language, Mixed Mode e Natural Language 2. Os modelos personalizados são exportados como JSON, sem credenciais.
+
+## Marcação LLM
+
+**Ferramentas → Marcação LLM...**, clique com o botão direito em uma imagem do dataset → **Marcação LLM**, ou o botão "Gerar tags automaticamente" na barra de ferramentas de tags.
+
+![Marcação LLM](../images/llm-tagger.png)
+
+- Comum: fonte de entrada (selecionadas / todas), modelo de visão, uma lista suspensa de **modelo de prompt**, concorrência LLM; **Config. de marcação...** abre o editor completo de prompt/parâmetros e **Configurações LLM...** configura o endpoint e os modelos.
+- **Modo Tags** — imagem → tags, gravadas de volta no dataset conforme o modo de gravação (substituir / acrescentar / ignorar existentes), com ordenação, prefixo/sufixo e pós-processamento de sublinhados.
+- **Modo Tags → Linguagem natural (antigo TAG2NL)** — tags + imagem → um parágrafo em linguagem natural.
+  - **Formato de saída** — **Tags + linguagem natural** (padrão, o formato original do TAG2NL) ou **apenas linguagem natural**.
+  - **Saída da legenda** — **Salvar cópia** (padrão) em `dataset_captioned/` (o `.txt` de origem permanece somente leitura; saídas existentes podem ser ignoradas) ou **Gravar no .txt no local**, no próprio `.txt` da imagem (por meio do gerenciador do dataset, de modo que memória e disco permaneçam consistentes).
+  - **Marcar com ONNX primeiro se sem tags** — quando habilitado, as imagens sem tags são primeiro marcadas pelo tagger ONNX WD14 local (que oferece baixar o modelo, se necessário) e depois entregues ao LLM — um pipeline automático de tags → linguagem natural.
+
+## Auditoria de tags de personagem LoRA
+
+**Teste → Abrir auditoria de tags...**
+
+1. **Configuração** — palavra de ativação, estilo enxuto/completo, imagem de referência  
+   ![Configuração da auditoria](../images/character-tag-audit-setup.png)
+2. **Revisão por IA** — triagem textual e, em seguida, revisão visual (não há como voltar etapas; cancele para recomeçar)
+3. **Revisar e aplicar** — edite as decisões, pré-visualize o prompt, salvamento transacional  
+   ![Revisão da auditoria](../images/character-tag-audit-review.png)
+
+O modo enxuto remove localmente as tags de aparência não essenciais após a revisão visual; o modo completo mantém os detalhes confirmados.
+
+## Tagger ONNX
+
+**Ferramentas → Tagger ONNX...** ou clique com o botão direito em **Retaguear com ONNX** nas imagens selecionadas.
+
+![Menu Ferramentas](../images/tools-menu.png)
+
+![Tagger ONNX](../images/onnx-tagger.png)
+
+![Menu de contexto Retaguear com ONNX](../images/context-menu-onnx-retag.png)
+
+- Seletor de modelo: catálogo WD14 completo (12 modelos) e PixAI 0.9; memorização dos limites por modelo
+- Download do HuggingFace oficial ou do espelho HF; as configurações são salvas automaticamente por modelo
+- Modo de gravação (substituir / acrescentar / ignorar existentes) e ordenação opcional das tags
+- Pós-processamento: substituir sublinhados por espaços (somente na inferência ONNX), tags de prefixo/sufixo
+- Barra de progresso para a marcação em lote; retaguear pelo botão direito abre o diálogo e inicia automaticamente
+
+## Ferramentas de vídeo
+
+**Ferramentas → Conversão de vídeo...** / **Extração de frames...**
+
+![Conversão de formato de vídeo](../images/video-format-conversion.png)
+
+![Extração de frames de vídeo](../images/video-frame-extraction.png)
+
+- Converta entre mp4, mkv, avi, webm, mov e flv; opção de substituir o arquivo original
+- Extraia todos os frames, por FPS, no FPS nativo ou por números de frame específicos, com pré-visualização e fluxo de bloqueio de frames
+- Os frames extraídos são importados para o dataset; o FFmpeg vem incluído nos builds de Release
+
+## Remoção de fundo
+
+**Ferramentas → Remover fundo**, ou clique com o botão direito em uma imagem do dataset → **Remover fundo**.
+
+![Remoção de fundo](../images/background-removal.png)
+
+- O RMBG-1.4 ONNX embutido executa localmente no cliente — **sem serviço externo**; um clique em "Baixar e carregar modelo" faz o download no primeiro uso (~176 MB, ou ~44 MB quantizado; fonte oficial / espelho), e um modelo já em cache carrega automaticamente ao abrir a janela
+- Escopo: todas as imagens ou apenas as selecionadas; fundo: **Transparente** ou **Cor sólida** (branco por padrão, com seletor de cores)
+- Saída: **Substituir original** ou **Salvar cópia (`_nobg.png`)** (ambas as escolhas são lembradas); o botão "Removing test" pré-visualiza primeiro uma única imagem
+- Em seguida, as miniaturas da grade e a pré-visualização são atualizadas (modo substituir) ou as cópias são importadas para o dataset (modo salvar cópia)
+
+## Revisão de tags com seleção múltipla
+
+Selecione várias imagens e pressione **Shift+T**.
+
+![Editor de tags com seleção múltipla](../images/multi-select-tag-editor.png)
+
+- Lista de tags à esquerda com contagem de ocorrências (ordenada por frequência); clique para trocar a tag em revisão
+- **Borda verde = tem a tag, vermelha = não tem**; clique em Y/N em uma miniatura para alternar
+- As edições em várias tags são aplicadas em um único salvamento; clique com o botão direito em uma miniatura para abrir a pré-visualização
+
+## Agradecimentos
+
+- **[starik222](https://github.com/starik222)** — autor do [BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)
+- **[FFmpeg](https://ffmpeg.org/)** — processamento de vídeo (componente GPL incluído nos Releases)
+
+## Instalação
+
+**Recomendado:** baixe `BooruDatasetTagManagerPlus-*-win-x64.zip` em [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases), extraia e execute `BooruDatasetTagManagerPlus.exe` (autocontido; não requer instalação separada do .NET).
+
+Compilar a partir do código-fonte:
+
+```powershell
+dotnet build BooruDatasetTagManager.sln -c Debug -f net8.0-windows
+dotnet test BooruDatasetTagManager.Tests\BooruDatasetTagManager.Tests.csproj
+dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -f net8.0-windows -r win-x64 --self-contained true -o dist
 ```
-// Formato da tradução: <original>=<tradução>
-black hair=cabelo preto
-*solo=Sozinho
-1girl=1garota
-```
 
-Atualmente, o filtro de tradução manual só funciona no modo Autocompletar (com a opção habilitada nas configurações). No futuro, poderá ser usado em outros locais.
+- `test_start.bat` — inicia a versão Release (ou Debug)
+- `quick_build.bat` — build local rápido para `dist/` (não é versionado; baixa o FFmpeg no primeiro build)
 
-# Lista de Tags para o Autocompletar
+A execução local cria **Models/** (pesos ONNX baixados), **Cache/** (por exemplo, miniaturas de vídeo) e **settings.json** (chaves de API e preferências) ao lado do executável. Esses arquivos existem apenas em tempo de execução e não devem ser commitados; os modelos ONNX são baixados de dentro do aplicativo.
 
-O programa permite carregar tags de arquivos CSV no formato usado em "[Booru tag autocompletion for A1111](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete)". Você também pode criar seus próprios arquivos TXT com uma lista de tags (uma por linha). No entanto, como carregar dados desses arquivos demora, o programa os converte para seu próprio formato. Portanto, se você alterar a lista de tags, esteja preparado para um longo tempo de espera. Todos os arquivos com tags estão localizados na pasta "Tags".
-
-# AutoTagger (interrogator_rpc)
-
-Gere tags para imagens diretamente no programa. Para isso, configure e execute o serviço "interrogator_rpc". O Python deve estar instalado para que ele seja executado.
-Para instalar as dependências do interrogator_rpc, execute o comando:
-
-```shell
-pip install -r requirements.txt
-```
-
-Para iniciar o serviço, execute:
-
-```shell
-python main.py
-```
-
-Caso encontre problemas para executar o serviço no Python Standalone, experimente usar o [Anaconda](https://www.anaconda.com/download) ou o [Miniconda](https://docs.conda.io/projects/miniconda/en/latest/).
-
-Após a instalação do Anaconda (ou do Miniconda), abra o terminal, crie um novo ambiente conda e instale todas as dependências necessárias.
-
-```shell
-#Crie um novo ambiente com python
-conda create -n bdtm python=3.10.9
-#Ative o ambiente criado
-conda activate bdtm
-#Instale as dependências necessárias.
-pip install -r requirements.txt
-#Execute o serviço
-python main.py
-```
-
-Para iniciar o serviço em um ambiente já configurado, abra o terminal e execute os seguintes comandos:
-
-```shell
-conda activate bdtm
-python main.py
-```
-
-Após iniciar o serviço, no BooruDatasetTagManager, gere tags para todas as imagens através do menu "Ferramentas", ou para imagens selecionadas usando o ícone ![](https://github.com/starik222/BooruDatasetTagManager/assets/1236582/230f47f9-5cef-49bc-8b44-a67890433c42) no painel "Prévia do AutoTagger". Para configurar os parâmetros de geração, use o item de menu correspondente ou acesse "Opções" -> "Configurações do AutoTagger".
-
-![Configurações AutoTagger](../../BooruDatasetTagManager/Assets/imgs/br/config-autotagger.png)
-
-O AutoTagger permite selecionar vários modelos ao mesmo tempo e especificar um método para combinar os resultados.
-
-# Tags com Pesos
-
-O BooruDatasetTagManager é possível trabalhar com pesos nas tags. Ao carregar as tags, os colchetes são automaticamente convertidos em pesos. Para alterar o peso de uma tag, selecione-a e mova a barra de controle "Peso" para a posição do número desejado. Uma posição equivale a um colchete.
-
-# Esquema de Cores
-
-Atualmente, o programa oferece dois esquemas de cores (Clássico e Escuro). Você pode criar ou alterar o esquema de cores manualmente. Ainda não há um editor de esquema de cores baseado em janela, mas você pode abrir o arquivo ColorScheme.json em um editor de texto e fazer as alterações necessárias.
-
-## Tradução da Interface
-
-Traduza a interface do BooruDatasetTagManager para o seu idioma. Para isso:
-
-1. Acesse o **diretório de idiomas** (`Languages`).
-2. Crie um arquivo de texto (TXT) com o código do seu idioma (por exemplo, `pt-BR.txt`). Consulte a [lista de códigos de idioma](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/6c085406-a698-4e12-9d4d-c3b0ee3dbc4a) para encontrar o código correto.
-3. Traduza o conteúdo do arquivo, seguindo o formato `StringOriginal=sua_tradução`.
-4. Compartilhe sua tradução conosco! Crie um tópico em "Issues" ou "Discussões" e anexe o arquivo.
-
-Sua tradução será incluída na próxima versão do BooruDatasetTagManager.
-
-# Compilação
-
-Esta ferramenta foi projetada em C e você precisará executá-la no Visual Studio (não no Visual Studio Code). As etapas para fazer isso são:
-
-1.  Baixe o [Visual Studio](https://visualstudio.microsoft.com/downloads/)
-2.  Clone este repositório em uma pasta em seu computador
-3.  Abra o repositório usando o Visual Studio: `Arquivo` > `Abrir` > `Projeto/Solução...` > selecione o arquivo `BooruDatasetTagManager.sln`
-4.  Compile a solução selecionando `Compilação` > `Compilar Solução` no menu (ou pressionando Ctrl+Shift+B).
-5.  Inicie o BooruDatasetTagManager em `Depurar` > `Iniciar Sem Depurar` (ou pressionando ctrl+F5).
-
-Obs: Também é possível iniciar o programa diretamente pelo arquivo `BooruDatasetTagManager.exe` na pasta `./BooruDatasetTagManager/bin/Debug/net6.0-windows/`.
-
-# Outros Recursos
-
-Use o menu "Exibir" para ocultar painéis desnecessários.
-No menu "Ferramentas", há uma função para substituir automaticamente o fundo transparente das imagens selecionadas pela cor que desejar.
+As imagens enviadas para a Marcação LLM (incluindo Tags → Linguagem natural) ou para a auditoria de personagem vão para o endpoint que você configurou; a remoção de fundo e as ferramentas de vídeo executam totalmente no local. As configurações de API ficam no arquivo local `settings.json`.

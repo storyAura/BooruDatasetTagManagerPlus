@@ -17,8 +17,8 @@ BooruDatasetTagManager/Form1.Designer.cs
 
 - 左侧：数据集图片列表。
 - 中间：当前图片 tags。
-- 右侧：All/Common tags、AutoTagger preview、Preview 等 tab。
-- 顶部：菜单、图片列表工具栏、tag 工具栏、All tags 工具栏、AutoTagger 工具栏。
+- 右侧：All/Common tags 与 Preview 两个 tab。
+- 顶部：菜单、图片列表工具栏、tag 工具栏、All tags 工具栏。
 - 底部：状态栏。
 
 ## 左侧数据集区域
@@ -35,6 +35,7 @@ gridViewDS
 - 支持单选、多选。
 - 当前选择会驱动中间 tag 列表和预览图更新。
 - 相关操作包括加载文件夹、保存全部、过滤、删除图片和 tags、打开图片所在目录。
+- 右键菜单：打开所在目录、删除图片和 tags、移除背景、裁剪图片、ONNX 重新推标、LLM 打标、视频处理（仅视频文件）。
 
 主要数据来源：
 
@@ -61,11 +62,15 @@ toolStripTags
 
 - 添加 tag。
 - 删除 tag。
+- 撤销/重做。
 - 上移/下移 tag。
 - 复制/粘贴 tags。
 - 设置当前 tag 列表到所有图片。
 - 权重调整。
 - prompt 排序。
+- 在全部标签中查找。
+- 多选标签校对（Shift+T，打开 `Form_TagImagesGrid`）。
+- LLM 打标按钮（打开 `Form_LlmTagger`）。
 - 当前 tag 右键菜单。
 
 添加 tag 弹窗：
@@ -113,28 +118,35 @@ AutoCompleteTextBox
 
 源 tag 保持下拉选择；新 tag 使用自动补全输入框。简体中文界面下，可以输入中文查找英文 tag。
 
-## 右侧 AutoTagger preview 区域
+## LLM 打标窗口
 
-核心控件：
+核心窗体：
 
 ```text
-gridViewAutoTags
-tabAutoTags
+Form_LlmTagger
 ```
 
 作用：
 
-- 调用 AiApiServer 或 OpenAI-compatible endpoint 为当前图片生成 tags。
-- 展示候选 tag 与置信度。
-- 允许把选中的自动 tag 添加到当前图片 tags。
-- 支持 AutoTagger 预览 tag 右键菜单。
+- 统一的外接 LLM 打标入口（工具菜单、数据集右键、tag 工具栏按钮均可打开）。
+- 两种模式：**标签**（图片 → 标签，按写入模式直接写回数据集）与 **标签→自然语言**（原 TAG2NL）。
+- 自然语言模式支持内容格式（标签+自然语言 / 仅自然语言）、另存 `_captioned` 副本或就地写回 `.txt`、无标注时先用 ONNX 推标。
+- 窗口内可直接选提示词模板；「打标设置…」打开 `Form_AutoTaggerOpenAiSettings`（提示词/参数），「LLM 设置…」打开 `Form_AiServerSet`（端点/密钥/模型）。
 
-相关配置窗口：
+说明：旧的「AutoTagger 预览窗口」tab（`tabAutoTags` / `gridViewAutoTags`）已从界面移除，打标结果不再经预览中转；`Form_AutoTaggerSettings`（AiApiServer 后端设置）仅在切换到 ai-api-server 提供方时可达，无菜单入口。
+
+## ONNX 推标窗口
+
+核心窗体：
 
 ```text
-Form_AutoTaggerSettings
-Form_AutoTaggerOpenAiSettings
+Form_OnnxTagger
 ```
+
+作用：
+
+- 本地 WD14 / PixAI ONNX 推标（工具菜单或数据集右键「ONNX 重新推标」打开）。
+- 模型下载（HuggingFace 官方/镜像）、双阈值、写入模式、排序、前后缀、下划线替换、进度与取消。
 
 ## Preview 区域
 
@@ -162,8 +174,10 @@ Form_preview
 
 - File：加载文件夹、带附加设置加载、保存全部。
 - View：显示预览、翻译 tags、显示 tag count、隐藏面板。
-- Options：设置、AutoTagger 设置、语言切换。
-- Tools：透明背景替换、批量生成 tags、裁剪、背景移除。
+- Options：设置、语言切换。
+- Tools：替换透明背景、视频格式转换、视频抽帧、ONNX 推标、背景移除、LLM 打标。
+- LLM 设置（AiServerSet）：打开 `Form_AiServerSet`（端点、密钥、文本/视觉模型、LLM 并发）。
+- 测试（Test）：打开 `Form_TestModule`（快速替换、角色标签审查入口）。
 - Debug：调试入口。
 
 菜单文本通过：
@@ -181,7 +195,6 @@ Languages/*.txt
 
 - `gridViewTags`
 - `gridViewAllTags`
-- `gridViewAutoTags`
 
 当前动作：
 
@@ -220,6 +233,7 @@ UI 行为：
 - 批量翻译在后台执行，失败的 tag 留空。
 - 右键“重新翻译”会强制刷新自动缓存，但不会覆盖手动翻译。
 - Wiki 浮窗“翻译 Wiki”只翻译正文。
+- 设置 → 翻译 中的「翻译前优先使用 danbooru-0-zh.csv」（默认开启）会在联网翻译前先查本地词表。
 
 ## 中文 tag 查找数据流
 

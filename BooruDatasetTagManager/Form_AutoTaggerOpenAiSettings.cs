@@ -175,7 +175,10 @@ namespace BooruDatasetTagManager
 
         private void SwitchLanguage()
         {
-            this.Text = I18n.GetText("UIAutoTagForm");
+            // Own title: this dialog opens from the LLM tagging window's
+            // "Tagging settings…" button; "Auto tagger settings" is the
+            // legacy local-model settings form's title.
+            this.Text = I18n.GetText("UILlmTaggerSettingsForm");
             labelModels.Text = I18n.GetText("UIAutoTagInterrogatorLabel");
             label5.Text = I18n.GetText("UIAutoTagResultOutputMode");
             label2.Text = I18n.GetText("UIAutoTagSortMode");

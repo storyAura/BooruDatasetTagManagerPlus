@@ -11,7 +11,7 @@ Guide for contributors working on BooruDatasetTagManager+, a .NET 8 Windows Form
 - `BooruDatasetTagManager/Data/` - bundled data such as `danbooru-0-zh.csv`.
 - `BooruDatasetTagManager/Translations/` - cached translation files written at runtime.
 - `BooruDatasetTagManager.Tests/` - xUnit test project. Source files from the main project are linked via `<Compile Include="..\..." Link="..." />` in the test `.csproj`.
-- `AiApiServer/` - companion AI API server (Python).
+- `AiApiServer/` - companion AI API server (Python); legacy/optional — the client no longer depends on it (background removal runs in-client via `RmbgBackgroundRemoverService`, and the "ai-api-server" auto-tag provider is a legacy code path with no menu entry).
 - `dist/` - self-contained publish output (gitignored; attach to GitHub Releases).
 
 ## Build, Test, and Development Commands
@@ -60,4 +60,4 @@ Enforced by `.editorconfig`:
 
 - When adding i18n keys, append to all five language files in `BooruDatasetTagManager/Languages/`. Do not reorder or rewrite existing files.
 - `AppSettings.cs` holds all persisted settings (JSON). Add new settings there with sensible defaults and include them in the `LoadData` copy block.
-- Caption generation outputs to a sibling `_captioned` folder and never overwrites original dataset tag files.
+- Caption generation defaults to a sibling `_captioned` folder, which never overwrites original dataset tag files. The LLM tagger's natural-language mode also offers an explicit in-place destination that writes captions back into the image's own `.txt` through the dataset manager (`Form_LlmTagger.ApplyCaptionsInPlace`).

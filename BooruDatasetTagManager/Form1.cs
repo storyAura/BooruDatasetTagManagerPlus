@@ -2838,7 +2838,6 @@ namespace BooruDatasetTagManager
             cmds["DatasetFocus"] = delegate () { DatasetFocus(); };
             cmds["TagsFocus"] = delegate () { TagsFocus(); };
             cmds["AllTagsFocus"] = delegate () { AllTagsFocus(); };
-            cmds["AutoTagsFocus"] = delegate () { AutoTagsFocus(); };
             cmds["PreviewTabFocus"] = delegate () { PreviewTabFocus(); };
 
             cmds["MenuItemSaveChanges"] = delegate () { saveAllChangesToolStripMenuItem.PerformClick(); };
@@ -2943,14 +2942,11 @@ namespace BooruDatasetTagManager
             gridViewAllTags.Focus();
         }
 
-        private void AutoTagsFocus()
-        {
-            tabControl1.SelectedIndex = 1;
-            gridViewAutoTags.Focus();
-        }
         private void PreviewTabFocus()
         {
-            tabControl1.SelectedIndex = 2;
+            // Index 1: the tab control holds only All/Common tags + Preview since the
+            // AutoTagger preview tab was removed; index 2 would throw out-of-range.
+            tabControl1.SelectedIndex = 1;
             gridViewDS.Focus();
         }
 

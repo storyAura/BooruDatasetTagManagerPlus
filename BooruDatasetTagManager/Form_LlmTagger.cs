@@ -522,7 +522,7 @@ namespace BooruDatasetTagManager
                 {
                     if (string.Equals(template.Id, library.SelectedTemplateId, StringComparison.Ordinal))
                         selectedIndex = comboPromptTemplate.Items.Count;
-                    comboPromptTemplate.Items.Add(template.Name);
+                    comboPromptTemplate.Items.Add(GetTemplateDisplayName(template));
                     promptTemplateIds.Add(template.Id);
                 }
 
@@ -533,6 +533,20 @@ namespace BooruDatasetTagManager
             {
                 loadingSettings = wasLoading;
             }
+        }
+
+        private static string GetTemplateDisplayName(AiPromptTemplateSettings template)
+        {
+            // Built-in template names are localized (the catalog stores fixed
+            // Chinese/English names); custom templates keep the user's name.
+            return template.Id switch
+            {
+                AiPromptTemplateCatalog.DanbooruTagId => I18n.GetText("PromptTemplateDanbooruTag"),
+                AiPromptTemplateCatalog.NaturalLanguageId => I18n.GetText("PromptTemplateNaturalLanguage"),
+                AiPromptTemplateCatalog.HybridModeId => I18n.GetText("PromptTemplateHybridMode"),
+                AiPromptTemplateCatalog.NaturalLanguage2Id => I18n.GetText("PromptTemplateNaturalLanguage2"),
+                _ => template.Name
+            };
         }
 
         private void OnPromptTemplateChanged()

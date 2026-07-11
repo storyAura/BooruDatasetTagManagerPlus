@@ -5,6 +5,7 @@ Security, stability, and performance hardening pass. No workflow or UI changes.
 ## Highlights
 
 ### Crash fixes
+- **Preview-tab hotkey no longer crashes.** After the AutoTagger preview tab was removed, the "focus preview tab" hotkey still selected tab index 2 (out of range for the remaining two tabs) and crashed; it now targets the correct tab and moves to Ctrl+4, and the orphaned Ctrl+4 "focus AutoTagger preview" hotkey was removed. In the same pass, missing/stale localization was fixed across all five languages: the save-error dialog no longer shows a raw `TipSaveErrors` key, the two unlocalized translation-service names and the Traditional-Chinese language-menu entry display properly, built-in prompt-template names localize in the LLM tagging window, the "Tagging settings…" dialog gets its own title, and dead keys from the removed TAG2NL/AutoTagger-preview/server-based background-removal flows were deleted.
 - **Deleting tagged images no longer crashes.** The dataset grid is bound to a plain `List<DataItem>`, which does not raise change notifications; after removing rows the grid kept stale entries with null cells, throwing `IndexOutOfRangeException` on paint and then a repeated `ArgumentNullException` (null key) in `LoadSelectedImageToGrid`. The grid now re-reads its row count via `CurrencyManager.Refresh()`, and the tag-loading code guards against stale/removed rows.
 - **Deleting several images at once no longer crashes with `ImageAnimator` "Parameter is not valid".** A PictureBox was being asked to animate an already-disposed image on `WM_SHOWWINDOW`. Two causes were fixed: (1) `GetImageFromFileWithCache` could return a disposed shared instance when a concurrent removal disposed the cache entry mid-clone — the cache now clones under its own lock (`TryGetClone`) and never hands out the shared instance; (2) the main-window and separate preview PictureBoxes now detach the previous image before disposing it, so a later show never animates a disposed image.
 
@@ -147,6 +148,7 @@ Local runs create **Models/**, **Cache/**, and **settings.json** next to the exe
 - **非英文区域解析修复**：`(tag:1.1)` 权重改用固定区域性解析（俄语 / 德语等小数逗号区域此前加载即报错）；畸形权重回退为 1
 - **模型下载抗中断**：HuggingFace 下载改 `.partial` + Content-Length 校验后改名；半截 `model.onnx` 不再被误判为有效缓存
 - **加载前完整性检测**：使用本地模型（WD14 / PixAI / 背景移除）前以「加载即校验」做完整性检测：模型文件损坏或不完整时自动清除坏文件并提示重新下载（背景移除自动重下一次），不再卡在反复报错；环境类错误（缺原生运行库等）不会误删有效模型
+- **热键与本地化修复**：「聚焦预览标签页」热键在预览页移除后仍指向越界索引、按下即崩，已修正并顺延为 Ctrl+4，同时移除指向已删页面的孤儿热键；补齐保存失败弹窗缺失的 `TipSaveErrors`（此前显示裸键名并丢失错误详情）、翻译服务下拉两个未本地化选项与语言菜单「繁體中文」项（含错别字）；LLM 打标窗口内置模板名随界面语言显示，「打标设置…」弹窗获得独立标题；清除原 TAG2NL / AutoTagger 预览 / 旧版服务端背景移除遗留的死键与过时提示（含「请启动 AiApiServer 并安装 RMBG-2.0」）
 - **背景移除界面修复**：三组单选（移除模式 / 背景 / 输出方式）不再互斥、可各自独立选择（此前同处一个 GroupBox 被 WinForms 强制互斥）；「移除测试」预览不再一闪而过（改为模态显示，此前 `using` 窗体非模态显示后立即被释放）
 - **加载与预览性能**：并行解码限半核 + 进度事件 1/32 节流并封送 UI；缩略图去 PNG 中转直接拷贝像素行；视频预览 `-ss` 按时间定位、临时帧即用即删、缩略图缓存上限 2000；审查向导写盘移后台线程；修复标签图片网格与右键预览的 GDI 句柄泄漏
 - **AI 服务端稳态**：pyvips 运行库下载移出 import 阶段（加超时 + 解压校验，离线首启不再挂死）；qwen / keye 可选依赖惰性导入（缺包只禁用对应模型）；OOM 恢复移入全局锁；抽帧参数加上限（fps≤60、max_frames≤768 等）；图像像素显式上限 100MP
