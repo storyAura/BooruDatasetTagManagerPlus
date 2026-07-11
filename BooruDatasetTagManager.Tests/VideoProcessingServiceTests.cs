@@ -86,6 +86,31 @@ public sealed class VideoProcessingServiceTests
     }
 
     [Fact]
+    public void GetConvertOutputPath_when_replacing_targets_original_name_with_new_extension()
+    {
+        // Regression: replaceOriginal used to return the input path itself, which
+        // handed ffmpeg the same file as input and output ("-y" truncates the
+        // output before reading -> source destroyed on old ffmpeg builds).
+        var service = VideoProcessingService.CreateDefault();
+
+        string output = service.GetConvertOutputPath(@"C:\videos\clip.mp4", "mkv", replaceOriginal: true);
+
+        Assert.Equal(@"C:\videos\clip.mkv", output);
+    }
+
+    [Fact]
+    public void GetConvertTempOutputPath_is_a_sibling_temp_file_distinct_from_input()
+    {
+        var service = VideoProcessingService.CreateDefault();
+        string input = @"C:\videos\clip.mp4";
+
+        string temp = service.GetConvertTempOutputPath(input, "mp4");
+
+        Assert.Equal(@"C:\videos\clip_convert_tmp.mp4", temp);
+        Assert.NotEqual(input, temp, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void GetFlatExtractOutputPattern_uses_flat_frame_naming()
     {
         var service = VideoProcessingService.CreateDefault();

@@ -30,15 +30,34 @@ namespace BooruDatasetTagManager
             indexedSortItems = new Dictionary<string, SortItem>();
         }
 
+        /// <summary>Per-file failures from the most recent copy run.</summary>
+        public List<string> LastCopyErrors { get; } = new List<string>();
+
         public void StartCopy()
         {
+            LastCopyErrors.Clear();
             foreach (var item in FileQueue)
             {
-                string dstDir = Path.Combine(RootDir, indexedSortItems[item.Key].Path);
-                Directory.CreateDirectory(dstDir);
-                foreach (var file in item.Value)
+                try
                 {
-                    File.Copy(file, GetDstFile(file, dstDir));
+                    string dstDir = Path.Combine(RootDir, indexedSortItems[item.Key].Path);
+                    Directory.CreateDirectory(dstDir);
+                    foreach (var file in item.Value)
+                    {
+                        try
+                        {
+                            File.Copy(file, GetDstFile(file, dstDir));
+                        }
+                        catch (Exception ex)
+                        {
+                            // A locked/missing source must not abort the whole batch.
+                            LastCopyErrors.Add($"{file}: {ex.Message}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LastCopyErrors.Add($"{item.Key}: {ex.Message}");
                 }
             }
             FileQueue.Clear();

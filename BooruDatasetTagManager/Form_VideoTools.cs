@@ -60,6 +60,8 @@ namespace BooruDatasetTagManager
         private bool isPlaying;
         private bool isLoadingFrame;
         private CancellationTokenSource jobCancellation;
+        // Deferred-close flag: see the FormClosing handler.
+        private bool closeAfterJob;
 
         public Form_VideoTools(MainForm owner, string initialVideoPath = null)
         {
@@ -247,6 +249,18 @@ namespace BooruDatasetTagManager
                 await RefreshPreviewVideoListAsync().ConfigureAwait(true);
             };
 
+            FormClosing += (_, e) =>
+            {
+                if (IsJobRunning())
+                {
+                    // Close mid-extract: cancel (which now really kills ffmpeg) and
+                    // close once the job unwinds, so worker callbacks never hit a
+                    // disposed form.
+                    e.Cancel = true;
+                    closeAfterJob = true;
+                    jobCancellation?.Cancel();
+                }
+            };
             FormClosed += (_, _) => CleanupPreviewResources();
             Load += (_, _) => ConfigureSplitContainer();
             Resize += (_, _) => ClampSplitterDistance();
@@ -630,17 +644,32 @@ namespace BooruDatasetTagManager
                     currentVideoPath,
                     frameIndex,
                     previewTempDirectory,
-                    CancellationToken.None).ConfigureAwait(true);
+                    CancellationToken.None,
+                    fps: currentVideoInfo?.Fps ?? 0).ConfigureAwait(true);
 
                 if (string.IsNullOrEmpty(framePath) || !File.Exists(framePath))
                     return;
 
-                using var loaded = Image.FromFile(framePath);
-                var clone = (Image)loaded.Clone();
+                Image clone;
+                using (var loaded = Image.FromFile(framePath))
+                {
+                    clone = (Image)loaded.Clone();
+                }
+                // The frame lives in the in-memory cache now; deleting the PNG
+                // immediately keeps %TEMP% from accumulating one file per
+                // scrubbed frame until the window closes.
+                try { File.Delete(framePath); } catch { }
                 AddFrameToCache(frameIndex, clone);
                 previewBox.Image?.Dispose();
                 previewBox.Image = (Image)clone.Clone();
                 UpdateFrameInfoLabel();
+            }
+            catch (Exception ex)
+            {
+                // A truncated/broken frame PNG (GDI+ "invalid parameter") or a
+                // failed ffmpeg run must not escape the async void scroll/tick
+                // handlers that call this on every seek.
+                UpdateStatus(ex.Message);
             }
             finally
             {
@@ -830,16 +859,7 @@ namespace BooruDatasetTagManager
 
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
-            var progress = new VideoProgressReporter(line =>
-            {
-                if (IsDisposed)
-                    return;
-
-                if (InvokeRequired)
-                    BeginInvoke(new Action(() => UpdateStatus(line)));
-                else
-                    UpdateStatus(line);
-            });
+            var progress = VideoProgressReporter.CreateForControl(this, UpdateStatus);
             int completed = 0;
             var errors = new List<string>();
             var extractedVideos = new List<string>();
@@ -934,6 +954,11 @@ namespace BooruDatasetTagManager
                 jobCancellation?.Dispose();
                 jobCancellation = null;
                 SetJobRunning(false);
+                if (closeAfterJob)
+                {
+                    closeAfterJob = false;
+                    Close();
+                }
             }
         }
 

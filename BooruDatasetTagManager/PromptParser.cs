@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -75,7 +76,17 @@ namespace BooruDatasetTagManager
                 else if (text == "[")
                     square_brackets.Add(res.Count);
                 else if (!string.IsNullOrEmpty(weight) && round_brackets.Count > 0)
-                    multiply_range(round_brackets.Pop(), (float)Convert.ToDouble(weight));
+                {
+                    // Invariant culture: Convert.ToDouble used CurrentCulture, so on
+                    // decimal-comma locales (ru-RU, de-DE, ...) a normal "(tag:1.1)"
+                    // weight threw FormatException while loading the dataset. The
+                    // regex also admits malformed numbers like "1.2.3"; fall back to
+                    // weight 1 instead of crashing the load.
+                    float parsedWeight = float.TryParse(weight, NumberStyles.Float, CultureInfo.InvariantCulture, out float w)
+                        ? w
+                        : 1.0f;
+                    multiply_range(round_brackets.Pop(), parsedWeight);
+                }
                 else if (text == ")")
                     multiply_range(round_brackets.Pop(), round_bracket_multiplier);
                 else if (text == "]")

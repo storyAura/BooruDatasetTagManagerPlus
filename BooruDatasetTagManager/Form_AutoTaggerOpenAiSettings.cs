@@ -143,21 +143,24 @@ namespace BooruDatasetTagManager
                     listBoxModels.SelectedItem = Program.Settings.OpenAiAutoTagger.Model;
                 checkBoxSplitString.Checked = Program.Settings.OpenAiAutoTagger.SplitString;
                 textBoxSplitter.Text = Program.Settings.OpenAiAutoTagger.Splitter;
+                // Clamp everything loaded from settings: out-of-range persisted
+                // values used to throw ArgumentOutOfRangeException while opening
+                // this window (same pattern as Form_AiServerSet).
                 if (Program.Settings.OpenAiAutoTagger.Temperature == -1)
                     trackBarTemperature.Value = -1;
                 else
-                    trackBarTemperature.Value = (int)(Program.Settings.OpenAiAutoTagger.Temperature * 100f);
+                    trackBarTemperature.Value = Math.Clamp((int)(Program.Settings.OpenAiAutoTagger.Temperature * 100f), trackBarTemperature.Minimum, trackBarTemperature.Maximum);
                 if (Program.Settings.OpenAiAutoTagger.TopP == -1)
                     trackBarTopP.Value = -1;
                 else
-                    trackBarTopP.Value = (int)(Program.Settings.OpenAiAutoTagger.TopP * 100f);
+                    trackBarTopP.Value = Math.Clamp((int)(Program.Settings.OpenAiAutoTagger.TopP * 100f), trackBarTopP.Minimum, trackBarTopP.Maximum);
                 if (Program.Settings.OpenAiAutoTagger.RepeatPenalty == 0)
                     trackBarRepeatPenalty.Value = 0;
                 else
-                    trackBarRepeatPenalty.Value = (int)(Program.Settings.OpenAiAutoTagger.RepeatPenalty * 100f);
+                    trackBarRepeatPenalty.Value = Math.Clamp((int)(Program.Settings.OpenAiAutoTagger.RepeatPenalty * 100f), trackBarRepeatPenalty.Minimum, trackBarRepeatPenalty.Maximum);
 
-                trackBarVideoFrameScale.Value = Program.Settings.OpenAiAutoTagger.VideoFrameScale;
-                numericUpDownVideoFrameCount.Value = Program.Settings.OpenAiAutoTagger.VideoFrameCount;
+                trackBarVideoFrameScale.Value = Math.Clamp(Program.Settings.OpenAiAutoTagger.VideoFrameScale, trackBarVideoFrameScale.Minimum, trackBarVideoFrameScale.Maximum);
+                numericUpDownVideoFrameCount.Value = Math.Clamp(Program.Settings.OpenAiAutoTagger.VideoFrameCount, numericUpDownVideoFrameCount.Minimum, numericUpDownVideoFrameCount.Maximum);
                 labelVideoFrameScaleValue.Text = (100 - trackBarVideoFrameScale.Value).ToString();
 
                 promptTemplatePanel.ReloadFromSettings();

@@ -8,6 +8,11 @@ from PIL import Image, UnidentifiedImageError
 if not hasattr(Image, 'Resampling'):  # Pillow<9.0
     Image.Resampling = Image
 
+# Explicit decompression cap. PIL's default bomb threshold (~178 MP) still lets
+# a "legal" huge image allocate multiple GB across decode/resize buffers per
+# worker thread; 100 MP is far above any sane tagging input.
+Image.MAX_IMAGE_PIXELS = 100_000_000
+
 
 def byte_array_to_image(data: bytes):
     try:

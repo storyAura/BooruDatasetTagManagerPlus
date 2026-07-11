@@ -12,8 +12,6 @@ namespace BooruDatasetTagManager
         private Label labelThreshold;
         private NumericUpDown numericThreshold;
         private Button buttonQuickReplace;
-        private GroupBox groupTranslation;
-        private CheckBox checkBoxUseCsv;
         private bool suppressSave;
         private GroupBox groupCharacterTagAudit;
         private Button buttonCharacterTagAudit;
@@ -43,10 +41,9 @@ namespace BooruDatasetTagManager
                 AutoSize = true,
                 Padding = new Padding(12),
                 ColumnCount = 1,
-                RowCount = 3
+                RowCount = 2
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
@@ -77,12 +74,6 @@ namespace BooruDatasetTagManager
             quickReplaceLayout.Controls.Add(buttonQuickReplace, 2, 0);
             groupQuickReplace.Controls.Add(quickReplaceLayout);
 
-            groupTranslation = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10), Margin = new Padding(3, 10, 3, 3) };
-            root.Controls.Add(groupTranslation, 0, 1);
-            checkBoxUseCsv = new CheckBox { Dock = DockStyle.Top, AutoSize = true, MaximumSize = new Size(530, 0) };
-            checkBoxUseCsv.CheckedChanged += (_, _) => SaveSettingsImmediate();
-            groupTranslation.Controls.Add(checkBoxUseCsv);
-
             groupCharacterTagAudit = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10), Margin = new Padding(3, 10, 3, 3) };
             buttonCharacterTagAudit = new Button { AutoSize = true, MinimumSize = new Size(220, 32) };
             buttonCharacterTagAudit.Click += (_, _) =>
@@ -91,7 +82,7 @@ namespace BooruDatasetTagManager
                 form.ShowDialog(this);
             };
             groupCharacterTagAudit.Controls.Add(buttonCharacterTagAudit);
-            root.Controls.Add(groupCharacterTagAudit, 0, 2);
+            root.Controls.Add(groupCharacterTagAudit, 0, 1);
         }
 
         private void ApplyLanguage()
@@ -100,8 +91,6 @@ namespace BooruDatasetTagManager
             groupQuickReplace.Text = I18n.GetText("TestQuickReplace");
             labelThreshold.Text = I18n.GetText("TestQuickReplaceThreshold");
             buttonQuickReplace.Text = I18n.GetText("TestQuickReplaceRun");
-            groupTranslation.Text = I18n.GetText("TestTranslation");
-            checkBoxUseCsv.Text = I18n.GetText("TestUseDanbooruCsvBeforeTranslation");
             groupCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditGroup");
             buttonCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditOpen");
         }
@@ -110,7 +99,6 @@ namespace BooruDatasetTagManager
         {
             suppressSave = true;
             numericThreshold.Value = Math.Clamp(Program.Settings.QuickReplaceThreshold, (int)numericThreshold.Minimum, (int)numericThreshold.Maximum);
-            checkBoxUseCsv.Checked = Program.Settings.UseDanbooruZhCsvBeforeTranslation;
             suppressSave = false;
         }
 
@@ -119,10 +107,8 @@ namespace BooruDatasetTagManager
             if (suppressSave)
                 return;
 
-            Program.Settings.UseDanbooruZhCsvBeforeTranslation = checkBoxUseCsv.Checked;
             Program.Settings.QuickReplaceThreshold = (int)numericThreshold.Value;
             Program.Settings.SaveSettings();
-            owner.ReloadTranslationManagerForCurrentSettings();
             owner.SetStatus(I18n.GetText("StatusSettingsSaved"));
         }
     }

@@ -17,7 +17,9 @@ from ..server_dataclasses import ObjectDataType
 class Moondream2Captioning:
 
     def __init__(self, model_name):
-        handle_pyvips_dll_error(download_dir=os.path.join("."))
+        # NOTE: no network access here. This constructor runs at `import models`
+        # time; downloading the pyvips runtime here used to block or kill the
+        # whole server before it could bind its port. Deferred to load().
         self.MODEL_REPO = model_name
         self.model = None
         self.cmd = None
@@ -25,6 +27,9 @@ class Moondream2Captioning:
         self.split = False
 
     def load(self, cmd, prompt, split, skip_online: bool = False):
+        # Fetch/verify the pyvips native runtime only when this model is
+        # actually requested (inside the request handler's error handling).
+        handle_pyvips_dll_error(download_dir=os.path.join("."))
         self.cmd = cmd
         self.prompt = prompt
         self.split = split

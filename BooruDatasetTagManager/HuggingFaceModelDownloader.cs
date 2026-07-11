@@ -27,13 +27,35 @@ namespace BooruDatasetTagManager
 
         public static string GetLocalDirectory(string repo)
         {
-            string safeRepo = repo.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-            return Path.Combine(Program.AppPath, "Models", safeRepo);
+            string safeRepo = (repo ?? string.Empty)
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Replace('\\', Path.DirectorySeparatorChar);
+            string modelsRoot = Path.Combine(Program.AppPath, "Models");
+            string combined = Path.GetFullPath(Path.Combine(modelsRoot, safeRepo));
+            EnsureWithinRoot(modelsRoot, combined, repo);
+            return combined;
         }
 
         public static string GetLocalPath(string repo, string filename)
         {
-            return Path.Combine(GetLocalDirectory(repo), filename);
+            string dir = GetLocalDirectory(repo);
+            string combined = Path.GetFullPath(Path.Combine(dir, filename ?? string.Empty));
+            // Guard against '..' or rooted filenames escaping the model directory.
+            EnsureWithinRoot(Path.Combine(Program.AppPath, "Models"), combined, $"{repo}/{filename}");
+            return combined;
+        }
+
+        private static void EnsureWithinRoot(string root, string candidate, string original)
+        {
+            string normalizedRoot = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string prefix = normalizedRoot + Path.DirectorySeparatorChar;
+            if (!candidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)
+                && !candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Resolved model path '{candidate}' escapes the Models directory (input: '{original}').");
+            }
         }
 
         public static string NormalizePathForOnnx(string path)
@@ -108,14 +130,26 @@ namespace BooruDatasetTagManager
             CancellationToken cancellationToken)
         {
             string localPath = GetLocalPath(repo, filename);
+            // Download into a .partial sidecar and rename only after the content is
+            // complete and validated. An interrupted download previously left a
+            // truncated model.onnx that passed the ">= 1MB" cache check forever.
+            string partialPath = localPath + ".partial";
             Directory.CreateDirectory(Path.GetDirectoryName(localPath) ?? Program.AppPath);
 
-            if (File.Exists(localPath) && !ValidateCachedFile(localPath, filename))
+            if (File.Exists(localPath))
+            {
+                if (ValidateCachedFile(localPath, filename))
+                {
+                    long length = new FileInfo(localPath).Length;
+                    progress?.Report((filename, length, length));
+                    return localPath;
+                }
                 DeleteCachedFile(repo, filename);
+            }
 
             string url = BuildDownloadUrl(source, repo, filename);
 
-            long existingLength = File.Exists(localPath) ? new FileInfo(localPath).Length : 0;
+            long existingLength = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (existingLength > 0)
                 request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingLength, null);
@@ -127,7 +161,9 @@ namespace BooruDatasetTagManager
 
             if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
             {
+                // The partial file already spans the full remote size.
                 progress?.Report((filename, existingLength, existingLength));
+                PromotePartialFile(partialPath, localPath);
                 EnsureValidDownloadedFile(repo, filename, localPath);
                 return localPath;
             }
@@ -137,7 +173,7 @@ namespace BooruDatasetTagManager
             string contentType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
             if (contentType.Contains("text/html", StringComparison.OrdinalIgnoreCase))
             {
-                DeleteCachedFile(repo, filename);
+                TryDelete(partialPath);
                 throw new InvalidOperationException(I18n.GetText("TaggerModelCorrupt"));
             }
 
@@ -152,7 +188,7 @@ namespace BooruDatasetTagManager
                 existingLength = 0;
 
             await using (Stream remote = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (FileStream local = new FileStream(localPath, fileMode, FileAccess.Write, FileShare.Read))
+            await using (FileStream local = new FileStream(partialPath, fileMode, FileAccess.Write, FileShare.Read))
             {
                 byte[] buffer = new byte[81920];
                 long downloaded = existingLength;
@@ -165,9 +201,36 @@ namespace BooruDatasetTagManager
                 }
             }
 
-            // The write stream must be fully closed before validating/deleting the file.
+            // The write stream must be fully closed before validating/moving the file.
+            if (total.HasValue && new FileInfo(partialPath).Length != total.Value)
+            {
+                TryDelete(partialPath);
+                throw new InvalidOperationException(I18n.GetText("TaggerModelCorrupt"));
+            }
+
+            PromotePartialFile(partialPath, localPath);
             EnsureValidDownloadedFile(repo, filename, localPath);
             return localPath;
+        }
+
+        private static void PromotePartialFile(string partialPath, string localPath)
+        {
+            File.Move(partialPath, localPath, overwrite: true);
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         private void EnsureValidDownloadedFile(string repo, string filename, string localPath)

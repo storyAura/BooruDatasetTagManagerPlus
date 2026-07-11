@@ -36,6 +36,7 @@ namespace BooruDatasetTagManager
             numericUpDown1 = new System.Windows.Forms.NumericUpDown();
             BtnSave = new System.Windows.Forms.Button();
             BtnCancel = new System.Windows.Forms.Button();
+            BtnCheckUpdate = new System.Windows.Forms.Button();
             AutoSortCheckBox = new System.Windows.Forms.CheckBox();
             CheckAskChange = new System.Windows.Forms.CheckBox();
             textBox2 = new System.Windows.Forms.TextBox();
@@ -180,9 +181,21 @@ namespace BooruDatasetTagManager
             BtnCancel.Text = "Cancel";
             BtnCancel.UseVisualStyleBackColor = true;
             BtnCancel.Click += BtnCancel_Click;
-            // 
+            //
+            // BtnCheckUpdate
+            //
+            BtnCheckUpdate.Anchor = System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right;
+            BtnCheckUpdate.Location = new System.Drawing.Point(496, 445);
+            BtnCheckUpdate.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            BtnCheckUpdate.Name = "BtnCheckUpdate";
+            BtnCheckUpdate.Size = new System.Drawing.Size(132, 27);
+            BtnCheckUpdate.TabIndex = 5;
+            BtnCheckUpdate.Text = "Check for updates";
+            BtnCheckUpdate.UseVisualStyleBackColor = true;
+            BtnCheckUpdate.Click += BtnCheckUpdate_Click;
+            //
             // AutoSortCheckBox
-            // 
+            //
             AutoSortCheckBox.AutoSize = true;
             AutoSortCheckBox.Location = new System.Drawing.Point(15, 360);
             AutoSortCheckBox.Name = "AutoSortCheckBox";
@@ -462,7 +475,8 @@ namespace BooruDatasetTagManager
             // 
             // numericUpDownTranslationTimeout
             // 
-            numericUpDownTranslationTimeout.Anchor = System.Windows.Forms.AnchorStyles.Left;
+            numericUpDownTranslationTimeout.Dock = System.Windows.Forms.DockStyle.Fill;
+            numericUpDownTranslationTimeout.MaximumSize = new System.Drawing.Size(120, 0);
             numericUpDownTranslationTimeout.Location = new System.Drawing.Point(201, 3);
             numericUpDownTranslationTimeout.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             numericUpDownTranslationTimeout.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
@@ -832,6 +846,7 @@ namespace BooruDatasetTagManager
             CancelButton = BtnCancel;
             ClientSize = new System.Drawing.Size(635, 479);
             Controls.Add(SettingFrame);
+            Controls.Add(BtnCheckUpdate);
             Controls.Add(BtnCancel);
             Controls.Add(BtnSave);
             Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
@@ -872,6 +887,7 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.NumericUpDown numericUpDown1;
         private System.Windows.Forms.Button BtnSave;
         private System.Windows.Forms.Button BtnCancel;
+        private System.Windows.Forms.Button BtnCheckUpdate;
         private System.Windows.Forms.Label labelTranslService;
         private System.Windows.Forms.ComboBox comboBox2;
         private System.Windows.Forms.CheckBox checkBoxLoadOnlyManual;

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -13,10 +14,27 @@ namespace BooruDatasetTagManager
         public Dictionary<string, Dictionary<string, string>> Langs { get; set; }
         public LanguageManager()
         {
+            // Startup path: a missing folder, duplicate key or read error here
+            // used to be an unrecoverable crash before any window appeared.
             Langs = new Dictionary<string, Dictionary<string, string>>();
-            string[] files = Directory.GetFiles(Path.Combine(Program.AppPath, "Languages"), "*.txt", SearchOption.TopDirectoryOnly);
-            foreach(string file in files)
-                LoadLanguageFromFile(file);
+            string langDir = Path.Combine(Program.AppPath, "Languages");
+            if (!Directory.Exists(langDir))
+            {
+                Trace.WriteLine($"LanguageManager: directory not found: {langDir}");
+                return;
+            }
+            string[] files = Directory.GetFiles(langDir, "*.txt", SearchOption.TopDirectoryOnly);
+            foreach (string file in files)
+            {
+                try
+                {
+                    LoadLanguageFromFile(file);
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"LanguageManager: failed to load '{file}': {ex}");
+                }
+            }
             FixOldLangFilesFromDefault();
         }
 
@@ -29,13 +47,17 @@ namespace BooruDatasetTagManager
                 int spIndex = line.IndexOf('=');
                 if (spIndex == -1)
                     continue;
-                langData.Add(line.Substring(0,spIndex).Trim(), line.Substring(spIndex+1));
+                // Indexer instead of Add: a duplicated key in a hand-edited file
+                // must not abort loading the whole language.
+                langData[line.Substring(0, spIndex).Trim()] = line.Substring(spIndex + 1);
             }
             Langs[Path.GetFileNameWithoutExtension(filename)] = langData;
         }
 
         private void FixOldLangFilesFromDefault()
         {
+            if (!Langs.ContainsKey(defaultLang))
+                return;
             List<string> langToSave = new List<string>();
             foreach (string index in Langs[defaultLang].Keys)
             {
@@ -58,12 +80,19 @@ namespace BooruDatasetTagManager
         private void SaveLangFile(string lang)
         {
             string filePath = Path.Combine(Program.AppPath, "Languages", lang + ".txt");
-            StreamWriter sw = new StreamWriter(filePath, false, Encoding.UTF8);
-            foreach (string key in Langs[lang].Keys)
+            try
             {
-                sw.WriteLine(key + "=" + Langs[lang][key]);
+                using StreamWriter sw = new StreamWriter(filePath, false, Encoding.UTF8);
+                foreach (string key in Langs[lang].Keys)
+                {
+                    sw.WriteLine(key + "=" + Langs[lang][key]);
+                }
             }
-            sw.Close();
+            catch (Exception ex)
+            {
+                // Read-only install dir: keep the merged keys in memory only.
+                Trace.WriteLine($"LanguageManager: failed to update '{filePath}': {ex}");
+            }
         }
     }
 }

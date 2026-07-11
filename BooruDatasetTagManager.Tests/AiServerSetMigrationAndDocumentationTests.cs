@@ -74,8 +74,8 @@ public class AiServerSetMigrationAndDocumentationTests
     }
 
     [Theory]
-    [InlineData("README.md", "## Project lineage", "## LLM Settings", "## TAG2NL", "## Acknowledgments")]
-    [InlineData("README_zh_CN.md", "## 项目渊源", "## LLM 设置", "## TAG2NL", "## 致谢")]
+    [InlineData("README_en.md", "## Project lineage", "## LLM Settings", "## LLM tagging", "## Acknowledgments")]
+    [InlineData("README.md", "## 项目渊源", "## LLM 设置", "## LLM 打标", "## 致谢")]
     public void BilingualReadmesContainFeatureSectionsAndImages(
         string fileName,
         string lineageHeading,

@@ -1,7 +1,10 @@
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
 namespace BooruDatasetTagManager
@@ -71,11 +74,39 @@ namespace BooruDatasetTagManager
 
         private static System.Drawing.Image ToDrawingImage(SixLabors.ImageSharp.Image image)
         {
-            using var stream = new MemoryStream();
-            image.SaveAsPng(stream);
-            stream.Position = 0;
-            using var bitmap = new Bitmap(stream);
-            return new Bitmap(bitmap);
+            // Direct pixel copy. The previous PNG-encode -> GDI+-decode -> clone
+            // round-trip made 4 transient copies per image and dominated dataset
+            // loading CPU. Bgra32 rows match GDI+ Format32bppArgb memory layout.
+            using var clone = image.CloneAs<Bgra32>();
+            var bitmap = new Bitmap(clone.Width, clone.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            try
+            {
+                var bounds = new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height);
+                BitmapData data = bitmap.LockBits(bounds, ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                try
+                {
+                    int rowBytes = clone.Width * 4;
+                    byte[] buffer = new byte[rowBytes];
+                    clone.ProcessPixelRows(accessor =>
+                    {
+                        for (int y = 0; y < accessor.Height; y++)
+                        {
+                            MemoryMarshal.AsBytes(accessor.GetRowSpan(y)).CopyTo(buffer);
+                            Marshal.Copy(buffer, 0, data.Scan0 + y * data.Stride, rowBytes);
+                        }
+                    });
+                }
+                finally
+                {
+                    bitmap.UnlockBits(data);
+                }
+                return bitmap;
+            }
+            catch
+            {
+                bitmap.Dispose();
+                throw;
+            }
         }
     }
 }

@@ -24,6 +24,15 @@ namespace BooruDatasetTagManager
         public string SystemPrompt { get; set; } = string.Empty;
         public string OutputTemplate { get; set; } = "{caption}";
         public int MaxConcurrency { get; set; } = 5;
+        // When true, output is "original tags + newline + caption" (the original TAG2NL
+        // format); when false, only the caption is written.
+        public bool IncludeOriginalTags { get; set; } = true;
+        // When set, each generated caption is handed to this sink (imagePath, caption)
+        // instead of being written to the "_captioned" output tree. The unified LLM
+        // tagging window uses it for in-place mode so captions are applied through the
+        // DataManager (in-memory + disk stay consistent), never as out-of-band writes.
+        // Must be thread-safe: it is invoked concurrently by ProcessAsync.
+        public Action<string, string> CaptionSink { get; set; }
     }
 
     public sealed class CaptionModelRequest
@@ -217,16 +226,26 @@ namespace BooruDatasetTagManager
                                         : response.ErrorMessage);
                             }
 
+                            // Content format: "tags + caption" (original TAG2NL) or caption only.
                             string finalText = CaptionOutputFormatter.FormatOriginalTagsAndCaption(
-                                originalTags,
+                                options.IncludeOriginalTags ? originalTags : string.Empty,
                                 response.Result);
-                            await WriteOutputAsync(
-                                scan.SourceRoot,
-                                imagePath,
-                                options.OutputSuffix,
-                                finalText,
-                                !options.SkipExisting,
-                                itemCancellationToken);
+                            if (options.CaptionSink != null)
+                            {
+                                // Collect mode (in-place output): the caller writes it through
+                                // the DataManager so in-memory and disk stay consistent.
+                                options.CaptionSink(imagePath, finalText);
+                            }
+                            else
+                            {
+                                await WriteOutputAsync(
+                                    scan.SourceRoot,
+                                    imagePath,
+                                    options.OutputSuffix,
+                                    finalText,
+                                    !options.SkipExisting,
+                                    itemCancellationToken);
+                            }
                             Interlocked.Increment(ref succeeded);
                         }
                         catch (OperationCanceledException) when (itemCancellationToken.IsCancellationRequested)

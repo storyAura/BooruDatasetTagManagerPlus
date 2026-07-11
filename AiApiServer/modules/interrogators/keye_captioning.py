@@ -4,8 +4,16 @@ import os
 import torch
 from PIL import Image
 from transformers import AutoModel, AutoTokenizer, AutoProcessor
-from keye_vl_utils import process_vision_info
-from transformers.video_utils import load_video
+
+# Deferred import: keye_vl_utils is optional; importing it at module level made
+# a missing package an ImportError at `import models` that prevented the whole
+# server from starting.
+# (`transformers.video_utils.load_video` was imported here but never used.)
+
+
+def _process_vision_info(*args, **kwargs):
+    from keye_vl_utils import process_vision_info
+    return process_vision_info(*args, **kwargs)
 
 from .. import settings
 from .. import devices as devices
@@ -30,10 +38,13 @@ class KeyeCaptionCaptioning:
         # self.cmd = cmd
         self.prompt = prompt
         self.split = split
-        self.fps = fps
-        self.max_frames = max_frames
-        self.min_pixels = min_pixels
-        self.max_pixels = max_pixels
+        # Clamp client-supplied limits (-1 = "unset" sentinel): unbounded values
+        # went straight into video decoding, so e.g. max_frames=10**6 filled RAM
+        # before any CUDA OOM guard could trigger.
+        self.fps = fps if fps == -1 else max(0.01, min(float(fps), 60.0))
+        self.max_frames = max_frames if max_frames == -1 else max(1, min(int(max_frames), 768))
+        self.min_pixels = min_pixels if min_pixels == -1 else max(1, min(int(min_pixels), 16_000_000))
+        self.max_pixels = max_pixels if max_pixels == -1 else max(1, min(int(max_pixels), 16_000_000))
         if self.model is None or self.processor is None:
             self.model = AutoModel.from_pretrained(self.MODEL_REPO,
                                                    trust_remote_code=True,
@@ -106,7 +117,7 @@ class KeyeCaptionCaptioning:
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        image_inputs, video_inputs, mm_processor_kwargs = process_vision_info(messages)
+        image_inputs, video_inputs, mm_processor_kwargs = _process_vision_info(messages)
         inputs = self.processor(
             text=[text],
             images=image_inputs,

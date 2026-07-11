@@ -17,14 +17,30 @@ namespace BooruDatasetTagManager
 
         public static void Initialize(string language)
         {
-            Thread.CurrentThread.CurrentCulture = new CultureInfo(language);
-            Thread.CurrentThread.CurrentUICulture = new CultureInfo(language);
+            // Runs before the message loop; any exception here used to be a
+            // silent startup crash, so every step falls back instead of throwing.
+            if (string.IsNullOrWhiteSpace(language))
+                language = LanguageManager.defaultLang;
+            try
+            {
+                Thread.CurrentThread.CurrentCulture = new CultureInfo(language);
+                Thread.CurrentThread.CurrentUICulture = new CultureInfo(language);
+            }
+            catch (CultureNotFoundException)
+            {
+                // Invalid culture string in settings: keep the system culture.
+            }
             currentLang = language;
             if (langManager == null)
             {
                 langManager = new LanguageManager();
             }
-            currentLangDict = langManager.Langs[currentLang];
+            if (!langManager.Langs.TryGetValue(currentLang, out currentLangDict) &&
+                !langManager.Langs.TryGetValue(LanguageManager.defaultLang, out currentLangDict))
+            {
+                // No language files at all: GetText will return raw keys.
+                currentLangDict = new Dictionary<string, string>();
+            }
         }
 
         public static string GetText(string key)

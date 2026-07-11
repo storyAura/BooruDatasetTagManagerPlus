@@ -191,10 +191,30 @@ namespace BooruDatasetTagManager
         {
             StatusLabel.Text = "Please wait, copying files...";
             this.Enabled = false;
-            await imgSorter.StartCopyAsync();
-            StatusLabel.Text = "Complete!";
-            this.Enabled = true;
-            listBoxFiles.Items.Clear();
+            try
+            {
+                await imgSorter.StartCopyAsync();
+                if (imgSorter.LastCopyErrors.Count > 0)
+                {
+                    StatusLabel.Text = "Completed with errors";
+                    MessageBox.Show(this, string.Join("\n", imgSorter.LastCopyErrors), Text,
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                else
+                {
+                    StatusLabel.Text = "Complete!";
+                }
+                listBoxFiles.Items.Clear();
+            }
+            catch (Exception ex)
+            {
+                StatusLabel.Text = ex.Message;
+            }
+            finally
+            {
+                // Was set inline before: any failure left the window disabled forever.
+                this.Enabled = true;
+            }
         }
     }
 }

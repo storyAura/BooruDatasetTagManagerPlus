@@ -70,6 +70,7 @@ namespace BooruDatasetTagManager
             {
                 Wd14TaggerSettings wd => wd.ReplaceUnderscoresWithSpaces,
                 PixAiTaggerSettings pix => pix.ReplaceUnderscoresWithSpaces,
+                OpenAiSettings openAi => openAi.ReplaceUnderscoresWithSpaces,
                 _ => false
             };
         }

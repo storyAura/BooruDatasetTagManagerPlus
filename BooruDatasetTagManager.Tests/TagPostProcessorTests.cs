@@ -73,4 +73,24 @@ public sealed class TagPostProcessorTests
 
         Assert.Equal(new[] { "long_hair" }, result);
     }
+
+    [Fact]
+    public void Process_replaces_underscores_for_openai_settings()
+    {
+        var settings = new OpenAiSettings { ReplaceUnderscoresWithSpaces = true };
+
+        List<string> result = TagPostProcessor.Process(new[] { "long_hair", "blue_eyes" }, settings);
+
+        Assert.Equal(new[] { "long hair", "blue eyes" }, result);
+    }
+
+    [Fact]
+    public void Process_skips_underscores_for_openai_settings_when_disabled()
+    {
+        var settings = new OpenAiSettings { ReplaceUnderscoresWithSpaces = false };
+
+        List<string> result = TagPostProcessor.Process(new[] { "long_hair" }, settings);
+
+        Assert.Equal(new[] { "long_hair" }, result);
+    }
 }

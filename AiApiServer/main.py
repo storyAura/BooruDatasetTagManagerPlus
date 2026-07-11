@@ -1,3 +1,4 @@
+import os
 import pathlib
 
 from flask import Flask, request
@@ -12,6 +13,7 @@ import io
 from PIL import Image
 from concurrent import futures
 from modules import settings
+from modules import cmd_args
 
 from modules.translators.seed_x_translator import LANGUAGES
 
@@ -26,9 +28,52 @@ INTERROGATOR_LOCK = threading.Lock()
 ACTIVE_INTERROGATOR = None
 ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = False
 
+# Requests carry base64-encoded images/videos inside the JSON body; cap the
+# body size so an oversized payload cannot exhaust memory.
+MAX_REQUEST_BODY_BYTES = 512 * 1024 * 1024
+
+VIDEO_PATH_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.gif'}
+
 app = Flask(__name__)
 api = Api(app)
 app.logger.setLevel(logging.ERROR)
+app.config['MAX_CONTENT_LENGTH'] = MAX_REQUEST_BODY_BYTES
+
+
+@app.before_request
+def check_api_key():
+    expected_key = cmd_args.get_args().api_key
+    if expected_key and request.headers.get('X-Api-Key') != expected_key:
+        return {'Success': False, 'ErrorMessage': 'Invalid or missing X-Api-Key header'}, 401
+
+
+def force_unload_all(model_map):
+    """Unload every model in the map, retrying because CUDA can still be
+    propagating errors from an earlier OOM when we get here."""
+    for model in model_map.values():
+        for _ in range(3):
+            try:
+                model.stop()
+                break
+            except Exception as e:
+                print("Failed to unload model, retrying: %s" % (e,))
+
+
+def validate_video_path(raw_path: str) -> str:
+    """Validate a client-supplied local video path before it reaches a model.
+
+    Returns an error message, or an empty string when the path is acceptable.
+    """
+    if not raw_path:
+        return "Empty video path"
+    normalized = os.path.normpath(raw_path)
+    if '..' in normalized.split(os.sep):
+        return "Video path must not contain '..'"
+    if pathlib.Path(normalized).suffix.lower() not in VIDEO_PATH_EXTENSIONS:
+        return "Unsupported video file extension: '%s'" % (pathlib.Path(normalized).suffix,)
+    if not os.path.isfile(normalized):
+        return "Video file not found: '%s'" % (normalized,)
+    return ""
 
 
 def interrogate_image(network_name, data_object, data_type, net_params, skip_online):
@@ -148,7 +193,11 @@ def get_model_base_info_list(model_map: dict, type_name: str = None):
             mbi = ModelBaseInfo()
             mbi.ModelName = key
             mbi.SupportedVideo = value.video_supported
-            if value.repo_name != "":
+            # Editors may provide a full repository URL (HuggingFace or ModelScope).
+            repo_link = getattr(value, "repo_link", "")
+            if repo_link:
+                mbi.RepositoryLink = repo_link
+            elif value.repo_name != "":
                 mbi.RepositoryLink = "https://huggingface.co/" + value.repo_name
             result.append(mbi)
     return result
@@ -347,6 +396,14 @@ class InterrogateImage(Resource):
             print(ret.ErrorMessage)
             return ret
 
+        if int_request.DataType == ObjectDataType.VIDEO_PATH:
+            path_error = validate_video_path(int_request.DataObject.decode("utf-8", errors="replace"))
+            if path_error:
+                ret.Success = False
+                ret.ErrorMessage = path_error
+                print(ret.ErrorMessage)
+                return ret
+
         global ONE_INTERROGATOR_IN_VRAM_AT_A_TIME
         ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = int_request.SerializeVramUsage
 
@@ -387,20 +444,14 @@ class InterrogateImage(Resource):
                 # Yes, this uses globals.
                 print("Ran out of VRAM while trying to perform image interrogation. Retrying without")
                 print("keeping all interrogator networks in VRAM simultaneously.")
-                ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = True
-
-                # unload all the interrogators.
-                # CUDA is annoying and can still be propagating errors from an earlier OOM
-                # when we get to this point (funky async magic).
-                # Anyways, retry a few times.
-                for int_tmp in models.INTERROGATOR_MAP.values():
-                    for _ in range(3):
-                        try:
-                            int_tmp.stop()
-                        except:
-                            pass
-
-                ACTIVE_INTERROGATOR = None
+                # Under the lock: this recovery used to run unlocked while another
+                # thread could be mid-inference, releasing models/CUDA state under
+                # its active kernels. Retry after the lock is released (the lock
+                # is not reentrant).
+                with INTERROGATOR_LOCK:
+                    ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = True
+                    force_unload_all(models.INTERROGATOR_MAP)
+                    ACTIVE_INTERROGATOR = None
 
                 return self.interrogate_image(int_request)
 
@@ -487,20 +538,10 @@ class EditImage(Resource):
                 # Yes, this uses globals.
                 print("Ran out of VRAM while trying to perform image interrogation. Retrying without")
                 print("keeping all interrogator networks in VRAM simultaneously.")
-                ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = True
-
-                # unload all the interrogators.
-                # CUDA is annoying and can still be propagating errors from an earlier OOM
-                # when we get to this point (funky async magic).
-                # Anyways, retry a few times.
-                for int_tmp in models.EDITOR_MAP.values():
-                    for _ in range(3):
-                        try:
-                            int_tmp.stop()
-                        except:
-                            pass
-
-                ACTIVE_INTERROGATOR = None
+                with INTERROGATOR_LOCK:
+                    ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = True
+                    force_unload_all(models.EDITOR_MAP)
+                    ACTIVE_INTERROGATOR = None
 
                 return self.edit_image(int_request)
 
@@ -566,20 +607,10 @@ class TranslateText(Resource):
                 # Yes, this uses globals.
                 print("Ran out of VRAM while trying to perform image interrogation. Retrying without")
                 print("keeping all interrogator networks in VRAM simultaneously.")
-                ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = True
-
-                # unload all the interrogators.
-                # CUDA is annoying and can still be propagating errors from an earlier OOM
-                # when we get to this point (funky async magic).
-                # Anyways, retry a few times.
-                for int_tmp in models.TRANSLATOR_MAP.values():
-                    for _ in range(3):
-                        try:
-                            int_tmp.stop()
-                        except:
-                            pass
-
-                ACTIVE_INTERROGATOR = None
+                with INTERROGATOR_LOCK:
+                    ONE_INTERROGATOR_IN_VRAM_AT_A_TIME = True
+                    force_unload_all(models.TRANSLATOR_MAP)
+                    ACTIVE_INTERROGATOR = None
 
                 return self.translate_text(tr_request)
 
@@ -608,5 +639,15 @@ api.add_resource(TranslateText, '/translate')
 api.add_resource(SetCustomSystemPrompt, '/setcustomsustemprompt')
 
 if __name__ == '__main__':
+    args = cmd_args.get_args()
+    host = '0.0.0.0' if args.listen else '127.0.0.1'
     models.init()
-    app.run(debug=False, host='0.0.0.0', port=50051)
+    print("Listening on %s:%d%s" % (host, args.port,
+                                    " (use --listen to accept remote connections)" if not args.listen else ""))
+    try:
+        from waitress import serve
+        serve(app, host=host, port=args.port, threads=4,
+              max_request_body_size=MAX_REQUEST_BODY_BYTES)
+    except ImportError:
+        print("waitress is not installed, falling back to the Flask development server.")
+        app.run(debug=False, host=host, port=args.port, threaded=True)

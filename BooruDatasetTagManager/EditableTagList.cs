@@ -28,12 +28,44 @@ namespace BooruDatasetTagManager
         private List<EditableTagHistory> History = new List<EditableTagHistory>();
         private int HistoryPosition = 0;
         private bool isStoreHistory = true;
+        private bool suppressTagsListChanged;
         private readonly object translationSync = new object();
         private Task translationTask = Task.CompletedTask;
 
         private List<string> _tags;
 
+        // Monotonic id source for GetNextId(). Bumped in OnInsert whenever a tag
+        // enters the list (including undo/clone paths that carry their own ids),
+        // replacing the old O(n) max-scan per insert.
+        private int _nextId;
+
+        // Count-map mirror of _tags membership for O(1) Contains (tags may repeat,
+        // so we track occurrence counts rather than a plain HashSet). Kept in sync
+        // at every _tags mutation point (OnInsert/OnRemove/OnClearComplete/OnSetComplete).
+        private readonly Dictionary<string, int> _tagCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+
         public List<string> TextTags { get { return _tags; } }
+
+        private void TagCountAdd(string tag)
+        {
+            if (tag == null)
+                return;
+            _tagCounts.TryGetValue(tag, out int c);
+            _tagCounts[tag] = c + 1;
+        }
+
+        private void TagCountRemove(string tag)
+        {
+            if (tag == null)
+                return;
+            if (_tagCounts.TryGetValue(tag, out int c))
+            {
+                if (c <= 1)
+                    _tagCounts.Remove(tag);
+                else
+                    _tagCounts[tag] = c - 1;
+            }
+        }
 
         public List<EditableTagHistory> HistoryForDebug { get { return History; } }
 
@@ -76,10 +108,27 @@ namespace BooruDatasetTagManager
             _tags = new List<string>();
         }
 
+        internal void ClearWithoutTagNotifications()
+        {
+            bool previousHistory = isStoreHistory;
+            isStoreHistory = false;
+            suppressTagsListChanged = true;
+            try
+            {
+                Clear();
+            }
+            finally
+            {
+                suppressTagsListChanged = false;
+                isStoreHistory = previousHistory;
+            }
+        }
+
         public void LoadFromPromptParserData(IEnumerable<PromptParser.PromptItem> tags)
         {
             isStoreHistory = false;
             _tags = new List<string>();
+            _tagCounts.Clear();
             foreach (var tag in tags)
             {
                 int index = GetNextId();
@@ -231,41 +280,36 @@ namespace BooruDatasetTagManager
         public void DeduplicateTags()
         {
             Program.EditableTagListLocker.Wait();
-            isStoreHistory = false;
-            for (int i = List.Count - 1; i >= 0; i--)
+            try
             {
-                string tagToSearch = ((EditableTag)List[i]).Tag;
-                if (string.IsNullOrWhiteSpace(tagToSearch))
+                isStoreHistory = false;
+                // Single pass: keep the first occurrence of every tag, drop empty
+                // tags and later duplicates (was an O(n²) rescan per tag).
+                HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+                List<int> indexesToRemove = new List<int>();
+                for (int i = 0; i < List.Count; i++)
                 {
-                    RemoveAt(i);
-                    continue;
+                    string tag = ((EditableTag)List[i]).Tag;
+                    if (string.IsNullOrWhiteSpace(tag) || !seen.Add(tag))
+                        indexesToRemove.Add(i);
                 }
-                List<int> foundedTagIndexes = IndexOfAll(tagToSearch, 0, i);
-                if (foundedTagIndexes.Count == 1)
-                {
-                    RemoveAt(i);
-                }
-                else if (foundedTagIndexes.Count > 1)
-                {
-                    RemoveAt(i);
-                    for (int j = foundedTagIndexes.Count - 1; j >= 1; j--)
-                        RemoveAt(j);
-                }
-
+                for (int i = indexesToRemove.Count - 1; i >= 0; i--)
+                    RemoveAt(indexesToRemove[i]);
             }
-            isStoreHistory = true;
-            Program.EditableTagListLocker.Release();
+            finally
+            {
+                isStoreHistory = true;
+                Program.EditableTagListLocker.Release();
+            }
         }
 
 
         public bool Contains(string tag)
         {
-            for (int i = 0; i < List.Count; i++)
-            {
-                if (((EditableTag)List[i]).Tag == tag)
-                    return true;
-            }
-            return false;
+            // O(1) membership check via the count-map mirror (was O(n) linear scan).
+            if (tag == null)
+                return false;
+            return _tagCounts.ContainsKey(tag);
         }
 
         public int IndexOf(string tag)
@@ -281,7 +325,7 @@ namespace BooruDatasetTagManager
         public List<int> IndexOfAll(string tag, int startIndex, int count)
         {
             List<int> list = new List<int>();
-            for (int i = startIndex; i < count & i < List.Count; i++)
+            for (int i = startIndex; i < count && i < List.Count; i++)
             {
                 if (((EditableTag)List[i]).Tag == tag)
                     list.Add(i);
@@ -696,9 +740,14 @@ namespace BooruDatasetTagManager
 
         protected override void OnClearComplete()
         {
-            foreach(var item in _tags)
-                TagsListChanged?.Invoke(this, null, item, ListChangedType.ItemDeleted);
+            if (!suppressTagsListChanged)
+            {
+                foreach (var item in _tags)
+                    TagsListChanged?.Invoke(this, null, item, ListChangedType.ItemDeleted);
+            }
             _tags.Clear();
+            _tagCounts.Clear();
+            _nextId = 0;
             OnListChanged(resetEvent);
         }
 
@@ -719,8 +768,12 @@ namespace BooruDatasetTagManager
                 h.Type = EditableTagHistory.HistoryType.Add;
                 AddHistory(h);
             }
-            _tags.Insert(index, ((EditableTag)value).Tag);
-            TagsListChanged?.Invoke(this, null, ((EditableTag)value).Tag, ListChangedType.ItemAdded);
+            _nextId = Math.Max(_nextId, ((EditableTag)value).Id + 1);
+            string insertedTag = ((EditableTag)value).Tag;
+            _tags.Insert(index, insertedTag);
+            TagCountAdd(insertedTag);
+            if (!suppressTagsListChanged)
+                TagsListChanged?.Invoke(this, null, insertedTag, ListChangedType.ItemAdded);
             base.OnInsert(index, value);
         }
 
@@ -734,7 +787,9 @@ namespace BooruDatasetTagManager
                 h.Type = EditableTagHistory.HistoryType.Remove;
                 AddHistory(h);
             }
-            TagsListChanged?.Invoke(this, null, _tags[index], ListChangedType.ItemDeleted);
+            if (!suppressTagsListChanged)
+                TagsListChanged?.Invoke(this, null, _tags[index], ListChangedType.ItemDeleted);
+            TagCountRemove(_tags[index]);
             _tags.RemoveAt(index);
             base.OnRemove(index, value);
         }
@@ -777,7 +832,11 @@ namespace BooruDatasetTagManager
                 string oldTagText = _tags[index];
                 _tags[index] = newdata.Tag;
                 if (oldTagText != newdata.Tag)
+                {
+                    TagCountRemove(oldTagText);
+                    TagCountAdd(newdata.Tag);
                     TagsListChanged?.Invoke(this, oldTagText, newdata.Tag, ListChangedType.ItemChanged);
+                }
                 OnListChanged(new ListChangedEventArgs(ListChangedType.ItemChanged, index));
             }
         }
@@ -858,13 +917,7 @@ namespace BooruDatasetTagManager
         {
             if (List.Count == 0)
                 return 0;
-            int index = 0;
-            for (int i = 0; i < this.Count; i++)
-            {
-                if (((EditableTag)List[i]).Id > index)
-                    index = ((EditableTag)List[i]).Id;
-            }
-            return index + 1;
+            return _nextId;
         }
 
         // Unsupported properties.

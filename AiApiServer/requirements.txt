@@ -11,9 +11,11 @@ pillow
 transformers==4.57.3
 bitsandbytes
 hf_xet
+modelscope
 dataclasses_json
 flask
 flask-restful
+waitress
 compressed-tensors
 qwen-vl-utils
 qwen-vl-utils[decord]

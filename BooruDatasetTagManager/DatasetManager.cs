@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Security.Policy;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Translator.Crypto;
@@ -18,7 +19,7 @@ using static BooruDatasetTagManager.Extensions;
 
 namespace BooruDatasetTagManager
 {
-    public class DatasetManager
+    public class DatasetManager : IDisposable
     {
         public ConcurrentDictionary<string, DataItem> DataSet;
         public AllTagsList AllTags;
@@ -26,7 +27,8 @@ namespace BooruDatasetTagManager
 
         public string DatasetRoot { get; private set; } = string.Empty;
 
-        private int originalHash;
+        // Order-independent signature of the key set at the last save/accept point.
+        private long originalStructureSignature;
 
         private bool isTranslate = false;
         private int bulkMutationDepth = 0;
@@ -35,30 +37,53 @@ namespace BooruDatasetTagManager
         private FilterType lastAndOperation = FilterType.Or;
         private IEnumerable<string> lastTagsFilter = null;
 
-        private Dictionary<string, Image> imagesCache;
+        // Capacity-bounded, thread-safe cache that disposes evicted images to
+        // avoid the unbounded memory / GDI-handle growth of the old Dictionary.
+        private const int ImageCacheCapacity = 256;
+        private readonly ImageLruCache imagesCache;
 
         public event ProgressHandler LoadingProgressChanged;
 
         public DatasetManager()
         {
-            imagesCache = new Dictionary<string, Image>();
+            imagesCache = new ImageLruCache(ImageCacheCapacity);
             DataSet = new ConcurrentDictionary<string, DataItem>();
             AllTags = new AllTagsList();
             AllTagsBindingSource = new BindingSource();
             AllTagsBindingSource.DataSource = AllTags;
         }
 
+        /// <summary>
+        /// Files that failed to write during the most recent <see cref="SaveAll"/>.
+        /// Items that failed stay marked as modified.
+        /// </summary>
+        public List<string> LastSaveErrors { get; } = new List<string>();
+
         public bool SaveAll()
         {
             bool saved = false;
+            LastSaveErrors.Clear();
             foreach (var item in DataSet)
             {
                 if (item.Value.IsModified)
                 {
-                    item.Value.DeduplicateTags();
-                    string promptText = item.Value.Tags.ToString();
-                    File.WriteAllText(item.Value.TextFilePath, promptText);
-                    saved = true;
+                    try
+                    {
+                        item.Value.DeduplicateTags();
+                        string promptText = item.Value.Tags.ToString();
+                        // Atomic write: a locked/read-only/full-disk failure must not
+                        // truncate the existing tag file or abort the whole batch.
+                        SafeFile.WriteAllText(item.Value.TextFilePath, promptText);
+                        // Reset the per-item saved snapshot so IsModified/IsDataSetChanged
+                        // correctly report "unchanged" after a successful write.
+                        item.Value.AcceptCurrentTagsAsSaved();
+                        saved = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        LastSaveErrors.Add($"{item.Value.TextFilePath}: {ex.Message}");
+                        Trace.WriteLine($"DatasetManager.SaveAll: failed to write '{item.Value.TextFilePath}': {ex}");
+                    }
                 }
             }
             return saved;
@@ -66,29 +91,119 @@ namespace BooruDatasetTagManager
 
         public bool Remove(string name)
         {
-            DataSet[name].Tags.Clear();
-            return DataSet.TryRemove(name, out _);
+            if (string.IsNullOrWhiteSpace(name) || !DataSet.ContainsKey(name))
+                return false;
+
+            RemoveMany(new[] { name });
+            return true;
         }
 
+        public void RemoveMany(IEnumerable<string> paths)
+        {
+            if (paths == null)
+                return;
+
+            List<string> normalizedPaths = paths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (normalizedPaths.Count == 0)
+                return;
+
+            bool removedAny = false;
+            ExecuteBulkMutation(() =>
+            {
+                foreach (string path in normalizedPaths)
+                {
+                    // Remove from the dataset first: only the thread that wins the
+                    // TryRemove race may touch the item's tags and global counts,
+                    // otherwise a concurrent removal would double-decrement AllTags.
+                    if (!DataSet.TryRemove(path, out DataItem item))
+                        continue;
+
+                    item.Tags.TagsListChanged -= Tags_TagsListChanged;
+                    List<string> tagSnapshot = item.Tags.TextTags.ToList();
+                    item.Tags.ClearWithoutTagNotifications();
+
+                    foreach (string tag in tagSnapshot)
+                        AllTags.RemoveTag(tag);
+
+                    RemoveFromCache(path);
+                    item.Img?.Dispose();
+                    item.Img = null;
+                    removedAny = true;
+                }
+            });
+
+            if (removedAny)
+                UpdateDatasetHash();
+        }
+
+        /// <summary>
+        /// Returns an image for <paramref name="path"/>. The caller owns the
+        /// returned instance and is responsible for disposing it. When caching
+        /// is enabled the cache keeps its own copy (which it disposes on
+        /// eviction/clear); callers receive an independent clone so a cache
+        /// eviction can never dispose an image still bound to a UI control.
+        /// </summary>
         public Image GetImageFromFileWithCache(string path)
         {
             if (Program.Settings.CacheOpenImages)
             {
-                if (imagesCache.ContainsKey(path))
-                    return imagesCache[path];
-                else
-                {
-                    Image img = Extensions.GetImageFromFile(path);
-                    imagesCache[path] = img;
-                    return img;
-                }
+                // Clone under the cache lock so a concurrent eviction/removal (e.g.
+                // during a multi-delete) can never dispose the source mid-clone and
+                // leave us returning a disposed image to a UI control.
+                if (imagesCache.TryGetClone(path, out Image cachedClone))
+                    return cachedClone;
+
+                Image img = Extensions.GetImageFromFile(path);
+                if (img == null)
+                    return null;
+                // Cache keeps its own copy; hand the freshly loaded original to the
+                // caller (which owns and disposes it). If for some reason it cannot
+                // be cached, the caller still gets a valid image.
+                Image forCache = CloneImage(img);
+                if (forCache != null)
+                    imagesCache.Set(path, forCache);
+                return img;
             }
             else
                 return Extensions.GetImageFromFile(path);
         }
 
+        private static Image CloneImage(Image source)
+        {
+            if (source == null)
+                return null;
+            try
+            {
+                return new Bitmap(source);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public void ClearCache()
         {
+            imagesCache.Clear();
+        }
+
+        /// <summary>
+        /// Deterministically releases every thumbnail bitmap and the image cache.
+        /// Without this, replacing the manager leaves thousands of GDI+ bitmaps
+        /// waiting on finalizers and can exhaust the process GDI handle limit.
+        /// </summary>
+        public void Dispose()
+        {
+            foreach (var item in DataSet)
+            {
+                item.Value.Tags.TagsListChanged -= Tags_TagsListChanged;
+                item.Value.Img?.Dispose();
+                item.Value.Img = null;
+            }
+            DataSet.Clear();
             imagesCache.Clear();
         }
 
@@ -360,16 +475,23 @@ namespace BooruDatasetTagManager
                 return false;
             int imgSize = Program.Settings.PreviewSize;
             int progress = 0;
-            imgs.AsParallel().ForAll(x =>
+            imgs.AsParallel()
+                // Half the cores: full-width parallel decode of large images
+                // spikes memory (each worker holds a full-resolution frame) and
+                // starves the UI thread.
+                .WithDegreeOfParallelism(Math.Max(1, Environment.ProcessorCount / 2))
+                .ForAll(x =>
             {
                 var dt = new DataItem();
                 dt.Tags.TagsListChanged += Tags_TagsListChanged;
                 dt.LoadData(x, loadPreviewImages ? imgSize : 0, readMetadata);
                 DataSet.TryAdd(dt.ImageFilePath, dt);
-                Program.LoadingLocker.Wait();
-                progress++;
-                LoadingProgressChanged?.Invoke(progress, imgs.Length);
-                Program.LoadingLocker.Release();
+                // Atomic increment instead of serializing the whole parallel body
+                // behind a SemaphoreSlim (which defeated the parallelism).
+                int current = Interlocked.Increment(ref progress);
+                // Throttle: one event per image was a cross-thread UI storm.
+                if (current % 32 == 0 || current == imgs.Length)
+                    LoadingProgressChanged?.Invoke(current, imgs.Length);
             });
             DatasetRoot = Path.GetFullPath(folder)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -453,35 +575,51 @@ namespace BooruDatasetTagManager
             }
         }
 
-        private ImageList GetImageList(int w, int h)
-        {
-            ImageList imgList = new ImageList();
-            imgList.ImageSize = new Size(w, h);
-            foreach (var item in DataSet)
-            {
-                imgList.Images.Add(item.Key, item.Value.Img);
-            }
-            return imgList;
-        }
-
+        /// <summary>
+        /// Returns true if the dataset has unsaved changes. A change is either:
+        /// (a) a structural change since the last <see cref="UpdateDatasetHash"/>
+        /// (items added/removed), detected via an order-independent signature so
+        /// it is not affected by <see cref="ConcurrentDictionary{TKey,TValue}"/>
+        /// enumeration order (fixes the previous order-sensitive false positives);
+        /// or (b) any individual item reporting <see cref="DataItem.IsModified"/>,
+        /// which now uses exact tag-text comparison instead of a collision-prone
+        /// 32-bit hash.
+        /// </summary>
         public bool IsDataSetChanged()
         {
-            return !originalHash.Equals(GetHashCode());
+            if (ComputeStructureSignature() != originalStructureSignature)
+                return true;
+            foreach (var item in DataSet)
+            {
+                if (item.Value.IsModified)
+                    return true;
+            }
+            return false;
         }
 
         public void UpdateDatasetHash()
         {
-            originalHash = GetHashCode();
+            originalStructureSignature = ComputeStructureSignature();
         }
-        public override int GetHashCode()
+
+        /// <summary>
+        /// Order-independent signature of the current key set (count + XOR of key
+        /// hashes). Detects additions/removals without depending on enumeration
+        /// order.
+        /// </summary>
+        private long ComputeStructureSignature()
         {
-            int result = 0;
+            long xor = 0;
+            int count = 0;
+            foreach (var item in DataSet)
+            {
+                xor ^= item.Key.GetHash();
+                count++;
+            }
             unchecked
             {
-                foreach (var item in DataSet)
-                    result = result * 31 + item.Value.GetHashCode();
+                return xor * 31 + count;
             }
-            return result;
         }
 
         public enum AddingType
@@ -521,11 +659,15 @@ namespace BooruDatasetTagManager
             {
                 get
                 {
-                    return originalHash != GetHashCode();
+                    // Exact text comparison instead of a 32-bit hash: avoids the
+                    // (unlikely but real) hash-collision that could silently drop
+                    // unsaved edits (#17).
+                    return !string.Equals(savedTagsSnapshot, Tags.ToString(), StringComparison.Ordinal);
                 }
             }
 
-            private int originalHash;
+            // Snapshot of the tag text at the last load/save/accept point.
+            private string savedTagsSnapshot = string.Empty;
 
             public DataItem()
             {
@@ -561,7 +703,7 @@ namespace BooruDatasetTagManager
             public void AcceptCurrentTagsAsSaved()
             {
                 TagsModifyTime = File.Exists(TextFilePath) ? File.GetLastWriteTime(TextFilePath) : DateTime.MinValue;
-                originalHash = GetHashCode();
+                savedTagsSnapshot = Tags.ToString();
             }
 
 
@@ -590,7 +732,7 @@ namespace BooruDatasetTagManager
                     TagsModifyTime = DateTime.MinValue;
                 }
 
-                originalHash = GetHashCode();
+                savedTagsSnapshot = Tags.ToString();
             }
 
             public override string ToString()

@@ -17,6 +17,7 @@ namespace BooruDatasetTagManager
         public Form_settings()
         {
             InitializeComponent();
+            AddCsvTranslationCheckbox();
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             Program.ColorManager.SchemeChanded += ColorManager_SchemeChanded;
@@ -26,6 +27,24 @@ namespace BooruDatasetTagManager
         }
         private FontSettings gridFontSettings = null;
         private FontSettings autocompleteFontSettings = null;
+        private System.Windows.Forms.CheckBox checkBoxUseDanbooruCsv;
+
+        // The CSV-before-online-translation toggle used to live in the Test module;
+        // it now belongs to the Translations settings tab (and defaults on).
+        private void AddCsvTranslationCheckbox()
+        {
+            checkBoxUseDanbooruCsv = new System.Windows.Forms.CheckBox
+            {
+                AutoSize = true,
+                Dock = System.Windows.Forms.DockStyle.Fill,
+                Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
+                Name = "checkBoxUseDanbooruCsv"
+            };
+            translationTableLayoutPanel.RowCount = 5;
+            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            translationTableLayoutPanel.Controls.Add(checkBoxUseDanbooruCsv, 0, 4);
+            translationTableLayoutPanel.SetColumnSpan(checkBoxUseDanbooruCsv, 2);
+        }
 
         private void Form_settings_Load(object sender, EventArgs e)
         {
@@ -36,7 +55,10 @@ namespace BooruDatasetTagManager
             checkBoxLoadOnlyManual.Checked = Program.Settings.OnlyManualTransInAutocomplete;
             comboBox2.Items.AddRange(Extensions.GetFriendlyEnumValues<TranslationService>());
             comboBox2.SelectedIndex = Extensions.GetEnumIndexFromValue<TranslationService>(Program.Settings.TransService.ToString());
-            numericUpDownTranslationTimeout.Value = Program.Settings.TranslationTimeoutSeconds <= 0 ? 5 : Program.Settings.TranslationTimeoutSeconds;
+            numericUpDownTranslationTimeout.Value = Math.Clamp(
+                (decimal)(Program.Settings.TranslationTimeoutSeconds <= 0 ? 5 : Program.Settings.TranslationTimeoutSeconds),
+                numericUpDownTranslationTimeout.Minimum, numericUpDownTranslationTimeout.Maximum);
+            checkBoxUseDanbooruCsv.Checked = Program.Settings.UseDanbooruZhCsvBeforeTranslation;
             comboAutocompMode.Items.AddRange(Extensions.GetFriendlyEnumValues<AutocompleteMode>());
             comboAutocompMode.SelectedIndex = Extensions.GetEnumIndexFromValue<AutocompleteMode>(Program.Settings.AutocompleteMode.ToString());
             comboAutocompSort.Items.AddRange(Extensions.GetFriendlyEnumValues<AutocompleteSort>());
@@ -47,14 +69,14 @@ namespace BooruDatasetTagManager
             textBox2.Text = Program.Settings.SeparatorOnSave;
             textBox3.Text = Program.Settings.DefaultTagsFileExtension;
             textBox4.Text = Program.Settings.CaptionFileExtensions;
-            numericUpDown1.Value = Program.Settings.PreviewSize;
-            numericUpDown2.Value = Program.Settings.ShowAutocompleteAfterCharCount;
+            numericUpDown1.Value = Math.Clamp((decimal)Program.Settings.PreviewSize, numericUpDown1.Minimum, numericUpDown1.Maximum);
+            numericUpDown2.Value = Math.Clamp((decimal)Program.Settings.ShowAutocompleteAfterCharCount, numericUpDown2.Minimum, numericUpDown2.Maximum);
             CheckAskChange.Checked = Program.Settings.AskSaveChanges;
             checkBoxFixOnLoad.Checked = Program.Settings.FixTagsOnSaveLoad;
             AutoSortCheckBox.Checked = Program.Settings.AutoSort;
             //UI
             checkBoxCacheImages.Checked = Program.Settings.CacheOpenImages;
-            numericUpDown3.Value = Program.Settings.GridViewRowHeight;
+            numericUpDown3.Value = Math.Clamp((decimal)Program.Settings.GridViewRowHeight, numericUpDown3.Minimum, numericUpDown3.Maximum);
             label11.Text = Program.Settings.GridViewFont.ToString();
             gridFontSettings = Program.Settings.GridViewFont;
             label14.Text = Program.Settings.AutocompleteFont.ToString();
@@ -95,6 +117,7 @@ namespace BooruDatasetTagManager
                 .ToList();
             Program.Settings.TranslationTimeoutSeconds = (int)numericUpDownTranslationTimeout.Value;
             Program.Settings.OnlyManualTransInAutocomplete = checkBoxLoadOnlyManual.Checked;
+            Program.Settings.UseDanbooruZhCsvBeforeTranslation = checkBoxUseDanbooruCsv.Checked;
             Program.Settings.AutocompleteMode = Extensions.GetEnumItemFromFriendlyText<AutocompleteMode>(comboAutocompMode.SelectedItem.ToString());
             Program.Settings.AutocompleteSort = Extensions.GetEnumItemFromFriendlyText<AutocompleteSort>(comboAutocompSort.SelectedItem.ToString());
             Program.Settings.FixTagsOnSaveLoad = checkBoxFixOnLoad.Checked;
@@ -109,8 +132,12 @@ namespace BooruDatasetTagManager
             Program.Settings.GridViewRowHeight = (int)numericUpDown3.Value;
             Program.Settings.GridViewFont = gridFontSettings;
             Program.Settings.AutocompleteFont = autocompleteFontSettings;
-            Program.Settings.Language = (string)comboBoxLanguage.SelectedItem;
-            Program.Settings.ColorScheme = (string)comboBoxColorScheme.SelectedItem;
+            // Persist only real selections: writing null here used to break the
+            // next startup (culture/color-scheme lookup).
+            if (comboBoxLanguage.SelectedItem is string selectedLanguage)
+                Program.Settings.Language = selectedLanguage;
+            if (comboBoxColorScheme.SelectedItem is string selectedScheme)
+                Program.Settings.ColorScheme = selectedScheme;
             Program.ColorManager.SelectScheme(Program.Settings.ColorScheme);
             Program.Settings.PreviewType = Extensions.GetEnumItemFromFriendlyText<ImagePreviewType>(comboBoxPreviewType.SelectedItem.ToString());
             //hotkeys
@@ -145,6 +172,89 @@ namespace BooruDatasetTagManager
         private void BtnCancel_Click(object sender, EventArgs e)
         {
             DialogResult = DialogResult.Cancel;
+        }
+
+        private async void BtnCheckUpdate_Click(object sender, EventArgs e)
+        {
+            BtnCheckUpdate.Enabled = false;
+            try
+            {
+                // Source checkout: update the working copy via git pull.
+                string repoRoot = UpdateChecker.FindSourceCheckoutRoot();
+                if (repoRoot != null)
+                {
+                    if (MessageBox.Show(this, string.Format(I18n.GetText("TipUpdateSourceConfirm"), repoRoot),
+                            Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                        return;
+                    BtnCheckUpdate.Text = I18n.GetText("TipUpdateInProgress");
+                    (bool pullOk, string pullOutput) = await UpdateChecker.PullSourceAsync(repoRoot);
+                    MessageBox.Show(this,
+                        string.Format(I18n.GetText(pullOk ? "TipUpdateSourceDone" : "TipUpdateSourceFailed"), pullOutput),
+                        Text, MessageBoxButtons.OK, pullOk ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Release install: query GitHub Releases and pull the zip asset.
+                BtnCheckUpdate.Text = I18n.GetText("TipUpdateInProgress");
+                UpdateCheckResult check = await UpdateChecker.CheckLatestReleaseAsync(Application.ProductVersion);
+                if (!check.Success)
+                {
+                    MessageBox.Show(this, string.Format(I18n.GetText("TipUpdateCheckFailed"), check.ErrorMessage),
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (!check.HasNewer)
+                {
+                    MessageBox.Show(this, string.Format(I18n.GetText("TipUpdateLatest"), "v" + Application.ProductVersion),
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                using (Form_UpdateInfo updateInfo = new Form_UpdateInfo())
+                {
+                    // The WinForms TextBox needs CRLF line breaks; localized text
+                    // and GitHub release bodies may carry bare LF.
+                    string infoText = string.Format(I18n.GetText("TipUpdateNewVersion"), check.LatestTag, check.ReleaseNotes)
+                        .Replace("\r\n", "\n").Replace("\n", "\r\n");
+                    updateInfo.SetText(infoText);
+                    if (updateInfo.ShowDialog(this) != DialogResult.OK)
+                        return;
+                }
+
+                if (string.IsNullOrEmpty(check.ZipAssetUrl))
+                {
+                    // No downloadable zip on the release: fall back to the page.
+                    UpdateChecker.OpenInBrowser(check.ReleasePageUrl);
+                    return;
+                }
+
+                var progress = new Progress<int>(pct => BtnCheckUpdate.Text = $"{pct}%");
+                string downloadedPath;
+                try
+                {
+                    downloadedPath = await UpdateChecker.DownloadReleaseAssetAsync(check.ZipAssetUrl, check.ZipAssetName, progress);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, string.Format(I18n.GetText("TipUpdateDownloadFailed"), ex.Message),
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    UpdateChecker.OpenInBrowser(check.ReleasePageUrl);
+                    return;
+                }
+                MessageBox.Show(this, string.Format(I18n.GetText("TipUpdateDownloaded"), downloadedPath),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                UpdateChecker.ShowInExplorer(downloadedPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(I18n.GetText("TipUpdateCheckFailed"), ex.Message),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                BtnCheckUpdate.Text = I18n.GetText("SettingBtnCheckUpdate");
+                BtnCheckUpdate.Enabled = true;
+            }
         }
 
         private void BtnGridviewFontChange_Click(object sender, EventArgs e)
@@ -193,6 +303,7 @@ namespace BooruDatasetTagManager
             AutoSortCheckBox.Text = I18n.GetText("SettingAutoSortCheck");
             BtnSave.Text = I18n.GetText("SettingBtnSave");
             BtnCancel.Text = I18n.GetText("SettingBtnCancel");
+            BtnCheckUpdate.Text = I18n.GetText("SettingBtnCheckUpdate");
             BtnGridviewFontChange.Text = I18n.GetText("SettingBtnChange");
             BtnAutocompFontChange.Text = I18n.GetText("SettingBtnChange");
             labelDelExt.Text = I18n.GetText("SettingDefExt");
@@ -207,6 +318,7 @@ namespace BooruDatasetTagManager
             labelTranslService.Text = I18n.GetText("SettingTranslationSrv");
             labelTranslationTimeout.Text = I18n.GetText("SettingTranslationTimeout");
             checkBoxLoadOnlyManual.Text = I18n.GetText("SettingLoadOnlyManualAutocomplete");
+            checkBoxUseDanbooruCsv.Text = I18n.GetText("SettingUseDanbooruCsvBeforeTranslation");
             checkBoxCacheImages.Text = I18n.GetText("SettingsCheckBoxCacheImages");
             LabelApApiEndpoint.Text = I18n.GetText("SettingsInterrogatorAddress");
             labelOpenAiEndpoint.Text = I18n.GetText("SettingsInterrogatorAddress");

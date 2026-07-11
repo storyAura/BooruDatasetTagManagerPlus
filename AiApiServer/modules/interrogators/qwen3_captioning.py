@@ -3,9 +3,16 @@ import os
 
 import torch
 from PIL import Image
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
-from qwen_vl_utils import process_vision_info
-from transformers.video_utils import load_video
+from transformers import AutoProcessor
+
+# Deferred imports: see qwen25_captioning.py — a missing/old optional
+# dependency must not prevent the whole server from starting.
+# (`transformers.video_utils.load_video` was imported here but never used.)
+
+
+def _process_vision_info(*args, **kwargs):
+    from qwen_vl_utils import process_vision_info
+    return process_vision_info(*args, **kwargs)
 
 from .. import settings
 from .. import devices as devices
@@ -31,12 +38,16 @@ class Qwen3CaptionCaptioning:
         # self.cmd = cmd
         self.prompt = prompt
         self.split = split
-        self.fps = fps
-        self.max_frames = max_frames
-        self.min_pixels = min_pixels
-        self.max_pixels = max_pixels
-        self.max_new_tokens = max_new_tokens
+        # Clamp client-supplied limits (-1 = "unset" sentinel): unbounded values
+        # went straight into video decoding/generation, so e.g. max_frames=10**6
+        # filled RAM before any CUDA OOM guard could trigger.
+        self.fps = fps if fps == -1 else max(0.01, min(float(fps), 60.0))
+        self.max_frames = max_frames if max_frames == -1 else max(1, min(int(max_frames), 768))
+        self.min_pixels = min_pixels if min_pixels == -1 else max(1, min(int(min_pixels), 16_000_000))
+        self.max_pixels = max_pixels if max_pixels == -1 else max(1, min(int(max_pixels), 16_000_000))
+        self.max_new_tokens = max(1, min(int(max_new_tokens), 4096))
         if self.model is None or self.processor is None:
+            from transformers import Qwen3VLForConditionalGeneration
             self.model = Qwen3VLForConditionalGeneration.from_pretrained(self.MODEL_REPO,
                                                                             torch_dtype=devices.get_torch_dtype(),
                                                                             cache_dir=paths.setting_model_path,
@@ -108,7 +119,7 @@ class Qwen3CaptionCaptioning:
             messages, tokenize=False, add_generation_prompt=True
         )
         if data_type == ObjectDataType.VIDEO_PATH:
-            image_inputs, video_inputs, video_kwargs = process_vision_info(messages, image_patch_size=16, return_video_kwargs=True, return_video_metadata=True)
+            image_inputs, video_inputs, video_kwargs = _process_vision_info(messages, image_patch_size=16, return_video_kwargs=True, return_video_metadata=True)
             # split the videos and according metadatas
             if video_inputs is not None:
                 video_inputs, video_metadatas = zip(*video_inputs)
@@ -126,7 +137,7 @@ class Qwen3CaptionCaptioning:
             )
             inputs = inputs.to(devices.device)
         else:
-            image_inputs, video_inputs = process_vision_info(messages, image_patch_size=16)
+            image_inputs, video_inputs = _process_vision_info(messages, image_patch_size=16)
             inputs = self.processor(
                 text=text,
                 images=image_inputs,

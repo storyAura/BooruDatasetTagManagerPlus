@@ -133,13 +133,45 @@ namespace BooruDatasetTagManager
 
         public string GetConvertOutputPath(string inputPath, string targetFormat, bool replaceOriginal)
         {
-            if (replaceOriginal)
-                return inputPath;
-
             string directory = Path.GetDirectoryName(inputPath) ?? string.Empty;
             string baseName = Path.GetFileNameWithoutExtension(inputPath);
             string ext = targetFormat.TrimStart('.').ToLowerInvariant();
+            // "Replace original" must never hand ffmpeg the input as its output:
+            // "-y" truncates the output before reading, destroying the source
+            // (modern ffmpeg refuses in-place editing outright). The caller
+            // converts to GetConvertTempOutputPath and then finalizes onto this.
+            if (replaceOriginal)
+                return Path.Combine(directory, baseName + "." + ext);
+
             return Path.Combine(directory, baseName + "_converted." + ext);
+        }
+
+        /// <summary>
+        /// Temp file the converter writes to when replacing the original.
+        /// </summary>
+        public string GetConvertTempOutputPath(string inputPath, string targetFormat)
+        {
+            string directory = Path.GetDirectoryName(inputPath) ?? string.Empty;
+            string baseName = Path.GetFileNameWithoutExtension(inputPath);
+            string ext = targetFormat.TrimStart('.').ToLowerInvariant();
+            return Path.Combine(directory, baseName + "_convert_tmp." + ext);
+        }
+
+        /// <summary>
+        /// Promotes a fully-written temp conversion over the original video.
+        /// The original is only removed after the new file is in place.
+        /// </summary>
+        public void FinalizeReplaceOriginal(string inputPath, string tempOutputPath, string finalPath)
+        {
+            if (string.Equals(Path.GetFullPath(finalPath), Path.GetFullPath(inputPath), StringComparison.OrdinalIgnoreCase))
+            {
+                File.Replace(tempOutputPath, inputPath, null, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                File.Move(tempOutputPath, finalPath, overwrite: true);
+                File.Delete(inputPath);
+            }
         }
 
         public string GetDefaultConvertOutputPath(string inputPath, string targetFormat)
@@ -213,6 +245,10 @@ namespace BooruDatasetTagManager
 
             if (string.IsNullOrWhiteSpace(outputPath))
                 throw new ArgumentException("Output path is required.", nameof(outputPath));
+            // "-y" truncates the output before ffmpeg reads the input; letting the
+            // two paths coincide would destroy the source file.
+            if (string.Equals(Path.GetFullPath(inputPath), Path.GetFullPath(outputPath), StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Output path must differ from the input path (in-place conversion is not supported).", nameof(outputPath));
 
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
 
@@ -220,7 +256,7 @@ namespace BooruDatasetTagManager
             {
                 "-hide_banner",
                 "-y",
-                "-i", Quote(inputPath)
+                "-i", inputPath
             };
 
             switch (codec)
@@ -236,7 +272,7 @@ namespace BooruDatasetTagManager
                     break;
             }
 
-            args.Add(Quote(outputPath));
+            args.Add(outputPath);
             return await RunFfmpegAsync(args, outputPath, progress, cancellationToken).ConfigureAwait(false);
         }
 
@@ -292,7 +328,7 @@ namespace BooruDatasetTagManager
                 "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate,nb_frames",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1",
-                Quote(inputPath)
+                inputPath
             };
 
             var result = await RunProcessAsync(locator.FfprobeExe, args, null, cancellationToken).ConfigureAwait(false);
@@ -352,7 +388,8 @@ namespace BooruDatasetTagManager
             string inputPath,
             int frameIndex,
             string tempDirectory,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            double fps = 0)
         {
             ValidateInputPath(inputPath);
             locator.EnsureAvailable();
@@ -362,15 +399,35 @@ namespace BooruDatasetTagManager
 
             Directory.CreateDirectory(tempDirectory);
             string outputPath = Path.Combine(tempDirectory, $"frame_{frameIndex:D8}.png");
-            var args = new List<string>
+            List<string> args;
+            if (fps > 0)
             {
-                "-hide_banner",
-                "-y",
-                "-i", Quote(inputPath),
-                "-vf", Quote($"select=eq(n\\,{frameIndex})"),
-                "-vframes", "1",
-                Quote(outputPath)
-            };
+                // Input-side "-ss" seek: without it ffmpeg decodes from frame 0 to
+                // frame N on every scrub of a long video (seconds of latency and
+                // full-file reads per seek).
+                double seconds = frameIndex / fps;
+                args = new List<string>
+                {
+                    "-hide_banner",
+                    "-y",
+                    "-ss", seconds.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture),
+                    "-i", inputPath,
+                    "-frames:v", "1",
+                    outputPath
+                };
+            }
+            else
+            {
+                args = new List<string>
+                {
+                    "-hide_banner",
+                    "-y",
+                    "-i", inputPath,
+                    "-vf", $"select=eq(n\\,{frameIndex})",
+                    "-vframes", "1",
+                    outputPath
+                };
+            }
 
             var result = await RunFfmpegAsync(args, outputPath, null, cancellationToken).ConfigureAwait(false);
             if (!result.Success || !File.Exists(outputPath))
@@ -396,17 +453,17 @@ namespace BooruDatasetTagManager
                 "-hide_banner",
                 "-y",
                 "-ss", "0",
-                "-i", Quote(inputPath),
+                "-i", inputPath,
                 "-vframes", "1"
             };
 
             if (maxSize > 0)
             {
                 args.Add("-vf");
-                args.Add(Quote($"scale='min({maxSize},iw)':'min({maxSize},ih)':force_original_aspect_ratio=decrease"));
+                args.Add($"scale='min({maxSize},iw)':'min({maxSize},ih)':force_original_aspect_ratio=decrease");
             }
 
-            args.Add(Quote(outputPath));
+            args.Add(outputPath);
             var result = await RunFfmpegAsync(args, outputPath, null, cancellationToken).ConfigureAwait(false);
             if (!result.Success || !File.Exists(outputPath))
             {
@@ -446,18 +503,18 @@ namespace BooruDatasetTagManager
             {
                 "-hide_banner",
                 "-y",
-                "-i", Quote(inputPath),
-                "-vf", Quote($"fps={fps.ToString(CultureInfo.InvariantCulture)}"),
+                "-i", inputPath,
+                "-vf", $"fps={fps.ToString(CultureInfo.InvariantCulture)}",
                 "-frames:v", count.ToString(CultureInfo.InvariantCulture)
             };
 
             if (percentResize > 0 && percentResize < 100)
             {
                 int scale = Math.Max(1, percentResize);
-                args[5] = Quote($"fps={fps.ToString(CultureInfo.InvariantCulture)},scale=iw*{scale}/100:ih*{scale}/100");
+                args[5] = $"fps={fps.ToString(CultureInfo.InvariantCulture)},scale=iw*{scale}/100:ih*{scale}/100";
             }
 
-            args.Add(Quote(pattern));
+            args.Add(pattern);
             var result = await RunFfmpegAsync(args, tempDirectory, null, cancellationToken).ConfigureAwait(false);
             if (!result.Success)
                 return Array.Empty<KeyValuePair<TimeSpan, string>>();
@@ -483,8 +540,8 @@ namespace BooruDatasetTagManager
             {
                 "-hide_banner",
                 "-y",
-                "-i", Quote(inputPath),
-                Quote(resolvedPattern)
+                "-i", inputPath,
+                resolvedPattern
             };
 
             var result = await RunFfmpegAsync(args, Path.GetDirectoryName(resolvedPattern), progress, cancellationToken).ConfigureAwait(false);
@@ -508,9 +565,9 @@ namespace BooruDatasetTagManager
             {
                 "-hide_banner",
                 "-y",
-                "-i", Quote(inputPath),
-                "-vf", Quote($"fps={fps.ToString(CultureInfo.InvariantCulture)}"),
-                Quote(resolvedPattern)
+                "-i", inputPath,
+                "-vf", $"fps={fps.ToString(CultureInfo.InvariantCulture)}",
+                resolvedPattern
             };
 
             var result = await RunFfmpegAsync(args, Path.GetDirectoryName(resolvedPattern), progress, cancellationToken).ConfigureAwait(false);
@@ -556,10 +613,10 @@ namespace BooruDatasetTagManager
                 {
                     "-hide_banner",
                     "-y",
-                    "-i", Quote(inputPath),
-                    "-vf", Quote($"select=eq(n\\,{frameNumber})"),
+                    "-i", inputPath,
+                    "-vf", $"select=eq(n\\,{frameNumber})",
                     "-vframes", "1",
-                    Quote(outputPath)
+                    outputPath
                 };
 
                 var result = await RunFfmpegAsync(args, outputPath, progress, cancellationToken).ConfigureAwait(false);
@@ -577,10 +634,10 @@ namespace BooruDatasetTagManager
                 {
                     "-hide_banner",
                     "-y",
-                    "-ss", Quote(timestamp.ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture)),
-                    "-i", Quote(inputPath),
+                    "-ss", timestamp.ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture),
+                    "-i", inputPath,
                     "-vframes", "1",
-                    Quote(outputPath)
+                    outputPath
                 };
 
                 var result = await RunFfmpegAsync(args, outputPath, progress, cancellationToken).ConfigureAwait(false);
@@ -605,7 +662,7 @@ namespace BooruDatasetTagManager
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
-                Quote(inputPath)
+                inputPath
             };
 
             var result = await RunProcessAsync(locator.FfprobeExe, args, null, cancellationToken).ConfigureAwait(false);
@@ -639,7 +696,6 @@ namespace BooruDatasetTagManager
             var psi = new ProcessStartInfo
             {
                 FileName = executable,
-                Arguments = string.Join(" ", arguments),
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
@@ -647,6 +703,12 @@ namespace BooruDatasetTagManager
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
+
+            // Use ArgumentList so the runtime performs correct per-argument quoting
+            // and escaping (handles spaces / special characters in paths safely),
+            // instead of manually joining a hand-quoted string.
+            foreach (string arg in arguments)
+                psi.ArgumentList.Add(arg ?? string.Empty);
 
             using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
             var stderr = new StringBuilder();
@@ -672,14 +734,23 @@ namespace BooruDatasetTagManager
 
             try
             {
-                await Task.Run(() => process.WaitForExit(), cancellationToken).ConfigureAwait(false);
+                // WaitForExitAsync is genuinely cancellable. The previous
+                // Task.Run(() => process.WaitForExit(), token) could not be
+                // interrupted once the blocking wait had started, so the Kill
+                // branch below was unreachable and cancel left ffmpeg running.
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 try
                 {
                     if (!process.HasExited)
+                    {
                         process.Kill(entireProcessTree: true);
+                        // Reap the process so it releases output-file handles
+                        // before the caller cleans up.
+                        process.WaitForExit(5000);
+                    }
                 }
                 catch
                 {
@@ -733,14 +804,6 @@ namespace BooruDatasetTagManager
 
             string searchPattern = Path.GetFileName(patternFileName)?.Replace("%06d", "*") ?? "*";
             return Directory.GetFiles(directory, searchPattern).Length;
-        }
-
-        private static string Quote(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return "\"\"";
-
-            return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
         }
 
         private sealed class ProcessExecutionResult

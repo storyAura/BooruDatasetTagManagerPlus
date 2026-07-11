@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set "VERSION=1.1.1"
+set "VERSION=1.1.2"
 set "PROJECT=BooruDatasetTagManager\BooruDatasetTagManager.csproj"
 set "CONFIG=Release"
 set "FRAMEWORK=net8.0-windows"

@@ -78,11 +78,23 @@ namespace BooruDatasetTagManager
                     throw new FileNotFoundException(I18n.GetText("TaggerModelMissing"), file);
             }
 
-            labels = PixAiSelectedTagsCsvLoader.Load(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "selected_tags.csv"));
-            LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "thresholds.csv"));
-            LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "preprocess.json"));
-            session = CreateSession(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx"));
-            ConfigureSessionMetadata(session);
+            try
+            {
+                // Loading the csv/json metadata + session is the integrity check:
+                // a corrupt file throws here. Purge the whole model so the next
+                // attempt re-downloads clean files.
+                labels = PixAiSelectedTagsCsvLoader.Load(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "selected_tags.csv"));
+                LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "thresholds.csv"));
+                LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "preprocess.json"));
+                session = CreateSession(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx"));
+                ConfigureSessionMetadata(session);
+            }
+            catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
+            {
+                Unload();
+                ClearModelCache();
+                throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+            }
         }
 
         public OnnxTagResult TagImageWithTiming(string imagePath, double generalThreshold, double characterThreshold)

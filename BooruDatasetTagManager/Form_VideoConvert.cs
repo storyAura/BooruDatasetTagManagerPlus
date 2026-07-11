@@ -28,6 +28,10 @@ namespace BooruDatasetTagManager
         private readonly Button buttonClose = new Button();
 
         private CancellationTokenSource jobCancellation;
+        // Set when the user closes the window mid-conversion: the close is deferred
+        // until ffmpeg is killed and the job unwinds, because disposing the form
+        // while the output-reader thread still reports progress crashes the process.
+        private bool closeAfterJob;
 
         public Form_VideoConvert(MainForm owner, string initialVideoPath = null)
         {
@@ -95,6 +99,15 @@ namespace BooruDatasetTagManager
             };
 
             Resize += (_, _) => UpdateHintLabelWidths();
+            FormClosing += (_, e) =>
+            {
+                if (IsJobRunning())
+                {
+                    e.Cancel = true;
+                    closeAfterJob = true;
+                    jobCancellation?.Cancel();
+                }
+            };
             FormClosed += (_, _) => toolTip.Dispose();
         }
 
@@ -385,16 +398,7 @@ namespace BooruDatasetTagManager
 
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
-            var progress = new VideoProgressReporter(line =>
-            {
-                if (IsDisposed)
-                    return;
-
-                if (InvokeRequired)
-                    BeginInvoke(new Action(() => UpdateStatus(line)));
-                else
-                    UpdateStatus(line);
-            });
+            var progress = VideoProgressReporter.CreateForControl(this, UpdateStatus);
 
             int completed = 0;
             var errors = new List<string>();
@@ -410,10 +414,32 @@ namespace BooruDatasetTagManager
                     UpdateStatus(Path.GetFileName(input));
                     progressBar.Value = 0;
 
-                    string output = videoService.GetConvertOutputPath(input, format, replaceOriginal);
-                    var result = await videoService.ConvertAsync(input, output, codec, progress, jobCancellation.Token).ConfigureAwait(true);
+                    string finalOutput = videoService.GetConvertOutputPath(input, format, replaceOriginal);
+                    // When replacing the original, ffmpeg writes to a temp file; the
+                    // source is only swapped out after a fully successful conversion.
+                    string ffmpegOutput = replaceOriginal
+                        ? videoService.GetConvertTempOutputPath(input, format)
+                        : finalOutput;
+                    var result = await videoService.ConvertAsync(input, ffmpegOutput, codec, progress, jobCancellation.Token).ConfigureAwait(true);
                     if (!result.Success)
+                    {
                         errors.Add(input + ": " + result.ErrorMessage);
+                        if (replaceOriginal)
+                        {
+                            try { File.Delete(ffmpegOutput); } catch { }
+                        }
+                    }
+                    else if (replaceOriginal)
+                    {
+                        try
+                        {
+                            videoService.FinalizeReplaceOriginal(input, ffmpegOutput, finalOutput);
+                        }
+                        catch (Exception ex)
+                        {
+                            errors.Add(input + ": " + ex.Message);
+                        }
+                    }
 
                     completed++;
                     progressBar.Value = Math.Min(100, (int)Math.Round(completed * 100.0 / inputs.Count));
@@ -441,6 +467,11 @@ namespace BooruDatasetTagManager
                 jobCancellation?.Dispose();
                 jobCancellation = null;
                 SetJobRunning(false);
+                if (closeAfterJob)
+                {
+                    closeAfterJob = false;
+                    Close();
+                }
             }
         }
 

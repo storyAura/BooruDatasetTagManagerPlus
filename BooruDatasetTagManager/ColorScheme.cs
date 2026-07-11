@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Text;
@@ -42,7 +43,11 @@ namespace UmaMusumeDBBrowser
 
         public void SelectScheme(string name)
         {
-            int index = Items.FindIndex(a => a.SchemeName.Equals(name));
+            int index = Items.FindIndex(a => string.Equals(a.SchemeName, name));
+            // Unknown scheme name (edited/corrupt settings) must not leave
+            // SelectedScheme null: everything downstream dereferences it.
+            if (index == -1 && Items.Count > 0)
+                index = 0;
             if (index != selectedSchemeIndex)
             {
                 selectedSchemeIndex = index;
@@ -52,18 +57,36 @@ namespace UmaMusumeDBBrowser
 
         public void Load(string path)
         {
-            if (File.Exists(path))
+            // Runs before the message loop: an exception here used to kill the
+            // process with no dialog, so recover with defaults instead.
+            try
             {
-                var res = JsonConvert.DeserializeObject<ColorSchemeManager>(File.ReadAllText(path));
-                Items = new List<ColorScheme>(res.Items);
-                res.Items.Clear();
+                if (File.Exists(path))
+                {
+                    var res = JsonConvert.DeserializeObject<ColorSchemeManager>(File.ReadAllText(path));
+                    if (res?.Items == null || res.Items.Count == 0)
+                        throw new InvalidDataException("Color scheme file contains no schemes.");
+                    Items = new List<ColorScheme>(res.Items);
+                    res.Items.Clear();
+                    return;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                Items = new List<ColorScheme>();
-                Items.Add(ColorScheme.GetDefaultColorScheme());
-                Items.Add(ColorScheme.GetDarkDefaultColorScheme());
+                Trace.WriteLine($"ColorSchemeManager.Load failed, falling back to defaults: {ex}");
+                try { File.Move(path, path + ".corrupt", true); } catch { }
+            }
+
+            Items = new List<ColorScheme>();
+            Items.Add(ColorScheme.GetDefaultColorScheme());
+            Items.Add(ColorScheme.GetDarkDefaultColorScheme());
+            try
+            {
                 Save(path);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"ColorSchemeManager.Save failed (read-only install dir?): {ex}");
             }
         }
 
@@ -74,6 +97,8 @@ namespace UmaMusumeDBBrowser
 
         public void ChangeColorScheme(Control ctrl, ColorScheme scheme)
         {
+            if (ctrl == null || scheme == null)
+                return;
             if (ctrl is Button)
             {
                 ((Button)ctrl).BackColor = scheme.ButtonStyle.BackColor;
@@ -217,6 +242,8 @@ namespace UmaMusumeDBBrowser
 
         public void ChangeColorSchemeInConteiner(Control.ControlCollection collection, ColorScheme scheme)
         {
+            if (collection == null || scheme == null)
+                return;
             foreach (Control item in collection)
             {
                 if (item.Controls.Count > 0)

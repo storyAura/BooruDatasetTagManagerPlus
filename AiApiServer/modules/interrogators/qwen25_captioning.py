@@ -3,9 +3,18 @@ import os
 
 import torch
 from PIL import Image
-from transformers import Qwen2_5_VLForConditionalGeneration, AutoTokenizer, AutoProcessor
-from qwen_vl_utils import process_vision_info
-from transformers.video_utils import load_video
+from transformers import AutoTokenizer, AutoProcessor
+
+# Deferred imports: the Qwen2.5-VL model class and qwen_vl_utils are optional
+# and version-sensitive. Importing them at module level made a missing/old
+# dependency an ImportError at `import models`, so the whole server failed to
+# start even for users who only wanted the WD/DeepDanbooru taggers.
+# (`transformers.video_utils.load_video` was imported here but never used.)
+
+
+def _process_vision_info(*args, **kwargs):
+    from qwen_vl_utils import process_vision_info
+    return process_vision_info(*args, **kwargs)
 
 from .. import settings
 from .. import devices as devices
@@ -30,11 +39,15 @@ class Qwen25CaptionCaptioning:
         # self.cmd = cmd
         self.prompt = prompt
         self.split = split
-        self.fps = fps
-        self.max_frames = max_frames
-        self.min_pixels = min_pixels
-        self.max_pixels = max_pixels
+        # Clamp client-supplied limits (-1 = "unset" sentinel): unbounded values
+        # went straight into video decoding, so e.g. max_frames=10**6 filled RAM
+        # before any CUDA OOM guard could trigger.
+        self.fps = fps if fps == -1 else max(0.01, min(float(fps), 60.0))
+        self.max_frames = max_frames if max_frames == -1 else max(1, min(int(max_frames), 768))
+        self.min_pixels = min_pixels if min_pixels == -1 else max(1, min(int(min_pixels), 16_000_000))
+        self.max_pixels = max_pixels if max_pixels == -1 else max(1, min(int(max_pixels), 16_000_000))
         if self.model is None or self.processor is None:
+            from transformers import Qwen2_5_VLForConditionalGeneration
             self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.MODEL_REPO,
                                                                             torch_dtype=devices.get_torch_dtype(),
                                                                             cache_dir=paths.setting_model_path,
@@ -104,7 +117,7 @@ class Qwen25CaptionCaptioning:
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        image_inputs, video_inputs = process_vision_info(messages, image_patch_size=14)
+        image_inputs, video_inputs = _process_vision_info(messages, image_patch_size=14)
         inputs = self.processor(
             text=[text],
             images=image_inputs,

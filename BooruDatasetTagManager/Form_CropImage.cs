@@ -84,7 +84,22 @@ namespace BooruDatasetTagManager
                 Type = "string"
             });
             var result = await Program.AutoTagger.InterrogateImage(imgFilePath, new List<ModelParameters>() { model }, Program.Settings.AutoTagger.SerializeVramUsage, Program.Settings.AutoTagger.SkipInternetRequests);
-            return JsonConvert.DeserializeObject<MoondreamRect[]>(result.Items.First().Value.First().Tag);
+            // A failed request / empty detection used to hit First() on an empty
+            // collection and crash the async void button handlers.
+            if (result == null || !result.Success || result.Items == null || !result.Items.Any())
+                return Array.Empty<MoondreamRect>();
+            var entries = result.Items.First().Value;
+            if (entries == null || !entries.Any())
+                return Array.Empty<MoondreamRect>();
+            try
+            {
+                return JsonConvert.DeserializeObject<MoondreamRect[]>(entries.First().Tag) ?? Array.Empty<MoondreamRect>();
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                // Model returned non-JSON text.
+                return Array.Empty<MoondreamRect>();
+            }
             //if (rects.Length == 0)
             //    return new Rectangle();
             //MoondreamRect maxRect = new MoondreamRect()
@@ -179,17 +194,29 @@ namespace BooruDatasetTagManager
             }
 
             button4.Enabled = false;
-            var res = await CalcCropRectangle(imagePath, textBoxInclude.Text, textBoxExclude.Text);
-
-            Image image = Image.FromFile(imagePath);
-
-            using (Graphics g = Graphics.FromImage(image))
+            try
             {
-                g.DrawRectangle(new Pen(Brushes.Green, 4), res);
+                var res = await CalcCropRectangle(imagePath, textBoxInclude.Text, textBoxExclude.Text);
+
+                Image image = Image.FromFile(imagePath);
+
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    g.DrawRectangle(new Pen(Brushes.Green, 4), res);
+                }
+                Form_preview preview = new Form_preview();
+                preview.Show(image);
             }
-            button4.Enabled = true;
-            Form_preview preview = new Form_preview();
-            preview.Show(image);
+            catch (Exception ex)
+            {
+                // Indexed-pixel PNGs make Graphics.FromImage throw; a service error
+                // used to escape this async void handler.
+                MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                button4.Enabled = true;
+            }
         }
 
         private async void button5_Click(object sender, EventArgs e)
@@ -202,30 +229,39 @@ namespace BooruDatasetTagManager
             }
 
             button5.Enabled = false;
-
-            Image image = Image.FromFile(imagePath);
-            Rectangle[] incObj = new Rectangle[0];
-            Rectangle[] exclObj = new Rectangle[0];
-            if (!string.IsNullOrEmpty(textBoxInclude.Text))
+            try
             {
-                incObj = (await DetectObjectsOnImage(imagePath, textBoxInclude.Text))
-                    .Select(a => a.ToRealRect(image.Width, image.Height)).ToArray();
+                Image image = Image.FromFile(imagePath);
+                Rectangle[] incObj = new Rectangle[0];
+                Rectangle[] exclObj = new Rectangle[0];
+                if (!string.IsNullOrEmpty(textBoxInclude.Text))
+                {
+                    incObj = (await DetectObjectsOnImage(imagePath, textBoxInclude.Text))
+                        .Select(a => a.ToRealRect(image.Width, image.Height)).ToArray();
+                }
+                if (!string.IsNullOrEmpty(textBoxExclude.Text))
+                {
+                    exclObj = (await DetectObjectsOnImage(imagePath, textBoxExclude.Text))
+                        .Select(a => a.ToRealRect(image.Width, image.Height)).ToArray();
+                }
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    foreach (var item in exclObj)
+                        g.DrawRectangle(new Pen(Brushes.Red, 4), item);
+                    foreach (var item in incObj)
+                        g.DrawRectangle(new Pen(Brushes.Green, 4), item);
+                }
+                Form_preview preview = new Form_preview();
+                preview.Show(image);
             }
-            if (!string.IsNullOrEmpty(textBoxExclude.Text))
+            catch (Exception ex)
             {
-                exclObj = (await DetectObjectsOnImage(imagePath, textBoxExclude.Text))
-                    .Select(a => a.ToRealRect(image.Width, image.Height)).ToArray();
+                MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            using (Graphics g = Graphics.FromImage(image))
+            finally
             {
-                foreach (var item in exclObj)
-                    g.DrawRectangle(new Pen(Brushes.Red, 4), item);
-                foreach (var item in incObj)
-                    g.DrawRectangle(new Pen(Brushes.Green, 4), item);
+                button5.Enabled = true;
             }
-            button5.Enabled = true;
-            Form_preview preview = new Form_preview();
-            preview.Show(image);
         }
 
         private void button2_Click(object sender, EventArgs e)

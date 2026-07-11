@@ -31,9 +31,30 @@ namespace BooruDatasetTagManager
 
         public void Show(Image img)
         {
-            if (!Program.Settings.CacheOpenImages)
-                pictureBox1.Image?.Dispose();
+            SetImage(img);
+            this.Show();
+        }
+
+        /// <summary>
+        /// Modal preview. Use this when the caller owns the form in a `using`
+        /// block: a non-modal Show() would return immediately and the form would
+        /// be disposed on scope exit (window flashes and vanishes).
+        /// </summary>
+        public DialogResult ShowDialog(Image img)
+        {
+            SetImage(img);
+            return this.ShowDialog();
+        }
+
+        private void SetImage(Image img)
+        {
+            // The caller owns img (the image cache hands out clones), so the
+            // previous image must always be disposed. Detach it from the
+            // PictureBox before disposing to avoid animating a disposed image.
+            Image old = pictureBox1.Image;
             pictureBox1.Image = img;
+            if (old != null && !ReferenceEquals(old, img))
+                old.Dispose();
 
             if (!loaded)
             {
@@ -43,19 +64,21 @@ namespace BooruDatasetTagManager
                 this.pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
                 loaded = true;
             }
-            this.Show();
         }
 
         private void Form_preview_VisibleChanged(object sender, EventArgs e)
         {
             if (!this.Visible)
             {
-                if (pictureBox1.Image != null && !Program.Settings.CacheOpenImages)
-                    pictureBox1.Image.Dispose();
-            }
-            else
-            {
-
+                if (pictureBox1.Image != null)
+                {
+                    Image old = pictureBox1.Image;
+                    // Detach before disposing so a subsequent show / WM_SHOWWINDOW
+                    // never asks the PictureBox to animate a disposed image
+                    // (ImageAnimator.CanAnimate throws "Parameter is not valid").
+                    pictureBox1.Image = null;
+                    old.Dispose();
+                }
             }
         }
         protected override bool ProcessDialogKey(Keys keyData)

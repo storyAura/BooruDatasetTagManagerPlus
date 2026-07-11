@@ -266,6 +266,55 @@ public class CaptionGenerationTests
         Assert.Equal(5, new CaptionGenerationOptions().MaxConcurrency);
     }
 
+    [Fact]
+    public async Task CaptionSinkReceivesCleanedCaptionAndSkipsFileOutput()
+    {
+        using var temp = new TemporaryDirectory();
+        string source = Path.Combine(temp.Path, "dataset");
+        Directory.CreateDirectory(source);
+        string image = Path.Combine(source, "a.png");
+        SaveImage(image);
+        File.WriteAllText(Path.Combine(source, "a.txt"), "1girl, solo");
+        var captured = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+        var service = new CaptionGenerationService((_, _) =>
+            Task.FromResult(new CaptionModelResponse("<think>reasoning</think>A girl stands alone.", string.Empty)));
+        CaptionScanResult scan = await CaptionGenerationService.ScanDirectoryAsync(source, "_captioned");
+
+        CaptionGenerationResult result = await service.ProcessAsync(
+            scan,
+            new CaptionGenerationOptions { IncludeOriginalTags = false, CaptionSink = (path, caption) => captured[path] = caption });
+
+        Assert.Equal(1, result.Succeeded);
+        // NL-only format: think block stripped, source tags NOT prepended.
+        Assert.Single(captured);
+        Assert.Equal("A girl stands alone.", captured.Values.Single());
+        // With a sink provided, the "_captioned" side file is never written.
+        Assert.False(File.Exists(CaptionGenerationService.GetOutputTextPath(source, image, "_captioned")));
+    }
+
+    [Fact]
+    public async Task CaptionSinkPrependsOriginalTagsWhenTagsPlusNlFormat()
+    {
+        using var temp = new TemporaryDirectory();
+        string source = Path.Combine(temp.Path, "dataset");
+        Directory.CreateDirectory(source);
+        string image = Path.Combine(source, "a.png");
+        SaveImage(image);
+        File.WriteAllText(Path.Combine(source, "a.txt"), "1girl, solo");
+        var captured = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+        var service = new CaptionGenerationService((_, _) =>
+            Task.FromResult(new CaptionModelResponse("A girl stands alone.", string.Empty)));
+        CaptionScanResult scan = await CaptionGenerationService.ScanDirectoryAsync(source, "_captioned");
+
+        CaptionGenerationResult result = await service.ProcessAsync(
+            scan,
+            new CaptionGenerationOptions { IncludeOriginalTags = true, CaptionSink = (path, caption) => captured[path] = caption });
+
+        Assert.Equal(1, result.Succeeded);
+        // Tags + natural language: original tags, one newline, then the caption.
+        Assert.Equal("1girl, solo" + Environment.NewLine + "A girl stands alone.", captured.Values.Single());
+    }
+
     private static void SaveImage(string path)
     {
         using var image = new Image<Rgba32>(8, 8, new Rgba32(20, 80, 160));

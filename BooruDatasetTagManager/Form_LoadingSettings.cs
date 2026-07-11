@@ -18,7 +18,7 @@ namespace BooruDatasetTagManager
             InitializeComponent();
             checkBoxLoadPreview.Checked = Program.Settings.LoadSettingsLoadPreviewImages;
             checkBoxTagsFromMetadata.Checked = Program.Settings.LoadSettingsReadMetadata;
-            numericUpDown1.Value= Program.Settings.PreviewSize;
+            numericUpDown1.Value = Math.Clamp((decimal)Program.Settings.PreviewSize, numericUpDown1.Minimum, numericUpDown1.Maximum);
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
 

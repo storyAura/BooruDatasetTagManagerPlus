@@ -22,6 +22,18 @@ namespace BooruDatasetTagManager
         [STAThread]
         static void Main()
         {
+            // Global exception backstops: without these, any exception escaping an
+            // async void handler or a worker thread killed the process silently.
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (s, e) => HandleUiThreadException(e.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                LogCrash(e.ExceptionObject as Exception, "AppDomain", e.IsTerminating);
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                LogCrash(e.Exception, "UnobservedTask", terminating: false);
+                e.SetObserved();
+            };
+
             PreloadDotnetDependenciesFromSubdirectoryManually();
             Application.EnableVisualStyles();
 #if NET5_0_OR_GREATER
@@ -55,42 +67,80 @@ namespace BooruDatasetTagManager
             ColorManager.ChangeColorScheme(f_wait, ColorManager.SelectedScheme);
             ColorManager.ChangeColorSchemeInConteiner(f_wait.Controls, ColorManager.SelectedScheme);
             
+            string startupLoadError = null;
             f_wait.Shown += async (o, i) =>
             {
-                await Task.Run(() =>
+                try
                 {
-                    string translationsDir = Path.Combine(Application.StartupPath, "Translations");
-                    if (!Directory.Exists(translationsDir))
-                        Directory.CreateDirectory(translationsDir);
-                    TransManager = CreateTranslationManager(translationsDir);
-                    TransManager.LoadTranslations();
-                    string tagsDir = Path.Combine(Application.StartupPath, "Tags");
-                    if(!Directory.Exists(tagsDir))
-                        Directory.CreateDirectory(tagsDir);
-                    string tagFile = Path.Combine(tagsDir, "List.tdb");
-                    TagsList = TagsDB.LoadFromTagFile(tagFile);
+                    await Task.Run(() =>
+                    {
+                        string translationsDir = Path.Combine(Application.StartupPath, "Translations");
+                        if (!Directory.Exists(translationsDir))
+                            Directory.CreateDirectory(translationsDir);
+                        TransManager = CreateTranslationManager(translationsDir);
+                        TransManager.LoadTranslations();
+                        string tagsDir = Path.Combine(Application.StartupPath, "Tags");
+                        if(!Directory.Exists(tagsDir))
+                            Directory.CreateDirectory(tagsDir);
+                        string tagFile = Path.Combine(tagsDir, "List.tdb");
+                        TagsList = TagsDB.LoadFromTagFile(tagFile);
+                        if (TagsList == null)
+                            TagsList = new TagsDB();
+                        if (TagsList.IsNeedUpdate(tagsDir))
+                        {
+                            TagsList.SetNeedFixTags(Program.Settings.FixTagsOnSaveLoad);
+                            TagsList.ClearDb();
+                            TagsList.ClearLoadedFiles();
+                            TagsList.ResetVersion();
+                            TagsList.LoadCSVFromDir(tagsDir);
+                            TagsList.LoadTxtFromDir(tagsDir);
+                            TagsList.SortTags();
+                            TagsList.SaveTags(tagFile);
+                        }
+                        TagsList.LoadTranslation(TransManager);
+                        string chineseTagFile = Path.Combine(Application.StartupPath, "Data", "danbooru-0-zh.csv");
+                        ChineseTagLookup = ChineseTagLookupService.LoadFromFile(chineseTagFile, Settings.FixTagsOnSaveLoad);
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // A failed startup load must never leave the wait form open forever;
+                    // fall back to empty data and surface the error after the form closes.
+                    LogCrash(ex, "StartupLoad", terminating: false);
+                    startupLoadError = ex.Message;
+                }
+                finally
+                {
                     if (TagsList == null)
                         TagsList = new TagsDB();
-                    if (TagsList.IsNeedUpdate(tagsDir))
+                    if (TransManager == null)
                     {
-                        TagsList.SetNeedFixTags(Program.Settings.FixTagsOnSaveLoad);
-                        TagsList.ClearDb();
-                        TagsList.ClearLoadedFiles();
-                        TagsList.ResetVersion();
-                        TagsList.LoadCSVFromDir(tagsDir);
-                        TagsList.LoadTxtFromDir(tagsDir);
-                        TagsList.SortTags();
-                        TagsList.SaveTags(tagFile);
+                        try
+                        {
+                            TransManager = CreateTranslationManager(Path.Combine(Application.StartupPath, "Translations"));
+                        }
+                        catch (Exception ex)
+                        {
+                            Trace.WriteLine($"Fallback TranslationManager creation failed: {ex}");
+                        }
                     }
-                    TagsList.LoadTranslation(TransManager);
-                    string chineseTagFile = Path.Combine(Application.StartupPath, "Data", "danbooru-0-zh.csv");
-                    ChineseTagLookup = ChineseTagLookupService.LoadFromFile(chineseTagFile, Settings.FixTagsOnSaveLoad);
-                });
-                f_wait.Close();
+                    f_wait.Close();
+                }
             };
             f_wait.ShowDialog();
+            if (startupLoadError != null)
+            {
+                MessageBox.Show(string.Format(I18n.GetText("TipStartupLoadFailed"), startupLoadError),
+                    "BooruDatasetTagManagerPlus", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             #endregion
+            if (SecretProtector.UnprotectFailureOccurred)
+            {
+                MessageBox.Show(I18n.GetText("TipApiKeyDecryptFailed"), "BooruDatasetTagManagerPlus",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             AutoTagger = new AiApiClient();
+            BackgroundRemover = new RmbgBackgroundRemoverService();
             if (!string.IsNullOrWhiteSpace(Settings.OpenAiAutoTagger.ConnectionAddress))
             {
                 try
@@ -100,7 +150,10 @@ namespace BooruDatasetTagManager
                         string.IsNullOrWhiteSpace(Settings.OpenAiAutoTagger.ApiKey) ? "not-required" : Settings.OpenAiAutoTagger.ApiKey,
                         Settings.OpenAiAutoTagger.RequestTimeout);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"Failed to initialize OpenAI client: {ex}");
+                }
             }
             AutoTagProviders = new AutoTagProviderRegistry(new IAutoTagProvider[]
             {
@@ -155,6 +208,64 @@ namespace BooruDatasetTagManager
             }
         }
 
+        /// <summary>
+        /// Last-resort handler for exceptions on the UI thread (including those
+        /// escaping async void event handlers): log to crash.log and tell the user
+        /// instead of the bare WinForms ThreadExceptionDialog.
+        /// </summary>
+        private static void HandleUiThreadException(Exception ex)
+        {
+            LogCrash(ex, "UI", terminating: false);
+            try
+            {
+                string text;
+                try
+                {
+                    text = string.Format(I18n.GetText("TipUnhandledError"), ex?.Message);
+                }
+                catch
+                {
+                    text = "An unexpected error occurred:\n" + ex?.Message + "\nDetails were written to crash.log.";
+                }
+                MessageBox.Show(text, "BooruDatasetTagManagerPlus", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch
+            {
+                // Never let the crash handler itself take the process down.
+            }
+        }
+
+        /// <summary>
+        /// Appends exception details to crash.log next to the executable, falling
+        /// back to %LOCALAPPDATA% when the install directory is not writable.
+        /// Must never throw.
+        /// </summary>
+        internal static void LogCrash(Exception ex, string source, bool terminating)
+        {
+            if (ex == null)
+                return;
+            string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{source}]{(terminating ? " [terminating]" : "")} {ex}{Environment.NewLine}";
+            try
+            {
+                File.AppendAllText(Path.Combine(AppPath ?? AppContext.BaseDirectory, "crash.log"), entry);
+            }
+            catch
+            {
+                try
+                {
+                    string fallbackDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "BooruDatasetTagManager");
+                    Directory.CreateDirectory(fallbackDir);
+                    File.AppendAllText(Path.Combine(fallbackDir, "crash.log"), entry);
+                }
+                catch
+                {
+                    // Out of options; swallowing is intentional here.
+                }
+            }
+        }
+
         public static TranslationManager CreateTranslationManager(string translationsDir)
         {
             var translator = FallbackTranslator.Create(
@@ -176,6 +287,8 @@ namespace BooruDatasetTagManager
         public static ChineseTagLookupService ChineseTagLookup = ChineseTagLookupService.Empty;
 
         public static AiApiClient AutoTagger;
+        // In-process RMBG-2.0 background removal (replaces the AiApiServer path).
+        public static RmbgBackgroundRemoverService BackgroundRemover;
         public static AiOpenAiClient OpenAiAutoTagger = null;
         public static AutoTagProviderRegistry AutoTagProviders;
 

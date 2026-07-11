@@ -1,9 +1,43 @@
 using System;
+using System.Windows.Forms;
 
 namespace BooruDatasetTagManager
 {
     public sealed class VideoProgressReporter : IProgress<string>
     {
+        /// <summary>
+        /// Creates a reporter that always marshals onto <paramref name="control"/>'s
+        /// UI thread and swallows the dispose race. Report() runs directly on the
+        /// worker thread (ffmpeg output reader), where an unhandled
+        /// ObjectDisposedException terminates the whole process.
+        /// </summary>
+        public static VideoProgressReporter CreateForControl(Control control, Action<string> updateAction, int throttleMilliseconds = 200)
+        {
+            if (control == null) throw new ArgumentNullException(nameof(control));
+            if (updateAction == null) throw new ArgumentNullException(nameof(updateAction));
+            return new VideoProgressReporter(line =>
+            {
+                try
+                {
+                    if (control.IsDisposed || !control.IsHandleCreated)
+                        return;
+                    control.BeginInvoke(new Action(() =>
+                    {
+                        if (!control.IsDisposed)
+                            updateAction(line);
+                    }));
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Control destroyed between the check and BeginInvoke.
+                }
+                catch (InvalidOperationException)
+                {
+                    // Handle torn down concurrently.
+                }
+            }, throttleMilliseconds);
+        }
+
         private readonly Action<string> updateAction;
         private readonly TimeSpan throttle;
         private DateTime lastReportUtc = DateTime.MinValue;

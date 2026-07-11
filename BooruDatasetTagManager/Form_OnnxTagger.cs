@@ -45,6 +45,13 @@ namespace BooruDatasetTagManager
         private readonly Button buttonClose = new Button();
 
         private CancellationTokenSource jobCancellation;
+        // Guards the window between the download sub-step and SetJobRunning(true),
+        // where a second Run click could race two inferences onto one session.
+        private bool runJobActive;
+        // Set when the user tries to close mid-job: the close is deferred until the
+        // background inference finishes, because disposing the native ONNX session
+        // under an in-flight Run() is an uncatchable AccessViolation.
+        private bool closeAfterJob;
         private bool loadingSettings;
         private readonly bool autoRunOnShown;
 
@@ -154,6 +161,18 @@ namespace BooruDatasetTagManager
                 UpdateIdleStatus();
                 if (autoRunOnShown)
                     await RunJobAsync().ConfigureAwait(true);
+            };
+
+            FormClosing += (_, e) =>
+            {
+                if (runJobActive || IsJobRunning())
+                {
+                    // Never dispose the services while inference/download runs:
+                    // cancel and close automatically once the job winds down.
+                    e.Cancel = true;
+                    closeAfterJob = true;
+                    jobCancellation?.Cancel();
+                }
             };
 
             FormClosed += (_, _) =>
@@ -722,16 +741,7 @@ namespace BooruDatasetTagManager
             SaveSettingsFromControls();
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
-            var reporter = new VideoProgressReporter(line =>
-            {
-                if (IsDisposed)
-                    return;
-
-                if (InvokeRequired)
-                    BeginInvoke(new Action(() => UpdateStatus(line)));
-                else
-                    UpdateStatus(line);
-            });
+            var reporter = VideoProgressReporter.CreateForControl(this, UpdateStatus);
 
             try
             {
@@ -774,6 +784,13 @@ namespace BooruDatasetTagManager
                 jobCancellation?.Dispose();
                 jobCancellation = null;
                 SetJobRunning(false);
+                // Direct download-button path: honor a close requested mid-download.
+                // When called from RunJobCoreAsync, the RunJobAsync wrapper closes.
+                if (closeAfterJob && !runJobActive)
+                {
+                    closeAfterJob = false;
+                    Close();
+                }
             }
         }
 
@@ -795,6 +812,12 @@ namespace BooruDatasetTagManager
                     }
                 }, jobCancellation.Token).ConfigureAwait(true);
             }
+            catch (ModelCorruptedException)
+            {
+                // The service already deleted the bad file(s) and localized the
+                // message; just propagate.
+                throw;
+            }
             catch (Exception ex)
             {
                 ClearModelCache(entry);
@@ -811,6 +834,26 @@ namespace BooruDatasetTagManager
         }
 
         private async Task RunJobAsync()
+        {
+            if (runJobActive || IsJobRunning())
+                return;
+            runJobActive = true;
+            try
+            {
+                await RunJobCoreAsync().ConfigureAwait(true);
+            }
+            finally
+            {
+                runJobActive = false;
+                if (closeAfterJob)
+                {
+                    closeAfterJob = false;
+                    Close();
+                }
+            }
+        }
+
+        private async Task RunJobCoreAsync()
         {
             SaveSettingsFromControls();
             List<string> inputs = ResolveInputImages();
@@ -837,16 +880,7 @@ namespace BooruDatasetTagManager
             var errors = new List<string>();
             var progressTracker = new OnnxTaggerProgressTracker();
             int totalImages = inputs.Count;
-            var progressReporter = new VideoProgressReporter(line =>
-            {
-                if (IsDisposed)
-                    return;
-
-                if (InvokeRequired)
-                    BeginInvoke(new Action(() => UpdateStatus(line)));
-                else
-                    UpdateStatus(line);
-            }, throttleMilliseconds: 100);
+            var progressReporter = VideoProgressReporter.CreateForControl(this, UpdateStatus, throttleMilliseconds: 100);
 
             try
             {
@@ -899,14 +933,17 @@ namespace BooruDatasetTagManager
 
                 Program.Settings.SaveSettings();
                 await Task.Run(() => Program.DataManager?.SaveAll()).ConfigureAwait(true);
+                if (Program.DataManager != null && Program.DataManager.LastSaveErrors.Count > 0)
+                    errors.AddRange(Program.DataManager.LastSaveErrors);
 
-                if (errors.Count > 0)
+                bool wasCanceled = jobCancellation?.Token.IsCancellationRequested == true;
+                if (errors.Count > 0 && !closeAfterJob)
                 {
                     MessageBox.Show(this, string.Join(Environment.NewLine, errors), I18n.GetText("TaggerCompletedWithErrors"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
                 else
                 {
-                    UpdateStatus(I18n.GetText("TaggerCompleted"));
+                    UpdateStatus(I18n.GetText(wasCanceled ? "TaggerCancelled" : "TaggerCompleted"));
                 }
             }
             catch (OperationCanceledException)
@@ -931,13 +968,25 @@ namespace BooruDatasetTagManager
                 return;
 
             int percent = Math.Min(100, (int)Math.Round(completed * 100.0 / total));
-            if (InvokeRequired)
+            try
             {
-                BeginInvoke(new Action(() => progressBar.Value = percent));
-                return;
-            }
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(() => progressBar.Value = percent));
+                    return;
+                }
 
-            progressBar.Value = percent;
+                progressBar.Value = percent;
+            }
+            catch (ObjectDisposedException)
+            {
+                // Form destroyed between the IsDisposed check and BeginInvoke:
+                // an exception here runs on the inference thread pool thread and
+                // would take the whole process down.
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
         private sealed class BatchInferenceResult
@@ -959,7 +1008,10 @@ namespace BooruDatasetTagManager
             var results = new List<BatchInferenceResult>(inputs.Count);
             foreach (string input in inputs)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                // Stop instead of throwing so results computed so far survive a
+                // cancel/close and still get applied and saved by the caller.
+                if (cancellationToken.IsCancellationRequested)
+                    break;
 
                 try
                 {

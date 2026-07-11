@@ -427,7 +427,7 @@ namespace BooruDatasetTagManager
             // toolStripSplitButton1
             // 
             toolStripSplitButton1.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
-            toolStripSplitButton1.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { BtnMenuOpenAiGenTagsWithCurrentSettings, BtnMenuOpenAiGenTagsWithSetWindow });
+            toolStripSplitButton1.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { BtnMenuOpenAiGenTagsWithCurrentSettings });
             toolStripSplitButton1.Image = Properties.Resources.AutoTaggerDef;
             toolStripSplitButton1.ImageTransparentColor = System.Drawing.Color.Magenta;
             toolStripSplitButton1.Name = "toolStripSplitButton1";
@@ -620,7 +620,7 @@ namespace BooruDatasetTagManager
             // 
             // MenuSetting
             // 
-            MenuSetting.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { settingsToolStripMenuItem, autoTaggerSettingsToolStripMenuItem, MenuLanguage });
+            MenuSetting.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { settingsToolStripMenuItem, MenuLanguage });
             MenuSetting.Name = "MenuSetting";
             MenuSetting.Size = new System.Drawing.Size(77, 25);
             MenuSetting.Text = "Options";
@@ -647,7 +647,7 @@ namespace BooruDatasetTagManager
             // 
             // toolsToolStripMenuItem
             // 
-            toolsToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { replaceTransparentBackgroundToolStripMenuItem, MenuOpenAiGenTagsForAllImages });
+            toolsToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { replaceTransparentBackgroundToolStripMenuItem });
             toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
             toolsToolStripMenuItem.Size = new System.Drawing.Size(57, 25);
             toolsToolStripMenuItem.Text = "Tools";
@@ -684,7 +684,7 @@ namespace BooruDatasetTagManager
             // 
             backgroundRemovalWithRMBG20ToolStripMenuItem.Name = "backgroundRemovalWithRMBG20ToolStripMenuItem";
             backgroundRemovalWithRMBG20ToolStripMenuItem.Size = new System.Drawing.Size(534, 26);
-            backgroundRemovalWithRMBG20ToolStripMenuItem.Text = "Background Removal with RMBG-2.0";
+            backgroundRemovalWithRMBG20ToolStripMenuItem.Text = "Remove background";
             backgroundRemovalWithRMBG20ToolStripMenuItem.Click += backgroundRemovalWithRMBG20ToolStripMenuItem_Click;
             // 
             // debugToolStripMenuItem
@@ -1259,7 +1259,6 @@ namespace BooruDatasetTagManager
             // 
             tabControl1.BorderStyle = System.Windows.Forms.BorderStyle.None;
             tabControl1.Controls.Add(tabAllTags);
-            tabControl1.Controls.Add(tabAutoTags);
             tabControl1.Controls.Add(tabPreview);
             tabControl1.Dock = System.Windows.Forms.DockStyle.Fill;
             tabControl1.Location = new System.Drawing.Point(0, 0);
@@ -1269,7 +1268,6 @@ namespace BooruDatasetTagManager
             tabControl1.TabIndex = 0;
             tabControl1.TabLocation = Manina.Windows.Forms.TabLocation.Near | Manina.Windows.Forms.TabLocation.Bottom;
             tabControl1.Tabs.Add(tabAllTags);
-            tabControl1.Tabs.Add(tabAutoTags);
             tabControl1.Tabs.Add(tabPreview);
             tabControl1.TabSizing = Manina.Windows.Forms.TabSizing.Stretch;
             // 

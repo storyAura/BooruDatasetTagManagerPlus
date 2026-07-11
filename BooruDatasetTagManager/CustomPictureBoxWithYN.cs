@@ -78,6 +78,17 @@ namespace BooruDatasetTagManager
             selectionMode = isSelectionMode;
         }
 
+        /// <summary>
+        /// Reprograms the box for a new baseline state (used when the tag editor
+        /// switches to another tag): both the current and the "unchanged"
+        /// reference state are set, so StateChanged starts out false.
+        /// </summary>
+        public void ResetState(bool isYes)
+        {
+            initialState = isYes;
+            SetStateYN(isYes);
+        }
+
         private void BNo_Click(object sender, EventArgs e)
         {
             SetStateYN(false);
@@ -114,7 +125,9 @@ namespace BooruDatasetTagManager
         {
             if (e.Button == MouseButtons.Right)
             {
-                Form f = new Form();
+                // using: ShowDialog does not dispose the form, so every right-click
+                // preview leaked a window handle before.
+                using Form f = new Form();
                 f.WindowState = FormWindowState.Maximized;
                 f.ControlBox = false;
                 PictureBox pictureBox = new PictureBox();
@@ -127,6 +140,9 @@ namespace BooruDatasetTagManager
                     f.Close();
                 };
                 f.ShowDialog();
+                // The picture box shares this control's Image; detach before
+                // dispose so the shared instance is not destroyed with the form.
+                pictureBox.Image = null;
             }
             else if (selectionMode && e.Button == MouseButtons.Left)
             {

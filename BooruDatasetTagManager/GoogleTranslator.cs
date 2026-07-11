@@ -34,47 +34,28 @@ namespace BooruDatasetTagManager
         private async Task<string> Translate(string str, string from, string to)
         {
 
-            //string val = string.Format(googleTemplateUrl, from, to, ConvertStringToHex(str, Encoding.UTF8));
-            string val = string.Format(googleTemplateUrl, from, to, str);
+            // Encode the query so tags containing &, #, +, spaces, etc. cannot break
+            // the request or inject extra query parameters.
+            string val = string.Format(googleTemplateUrl, from, to, Uri.EscapeDataString(str));
             string data = null;
             try
             {
                 data = await client.GetStringAsync(val).ConfigureAwait(false);
                 String extracted = data.GetBetween("class=\"result-container\">", "</div>");//<div class="result-container">тестовая строка</div>
+                // WebUtility.HtmlDecode already handles all HTML entities (including
+                // multi-byte ones). The previous hand-written entity decoder was both
+                // redundant and incorrect, so it has been removed.
                 string text = WebUtility.HtmlDecode(extracted ?? string.Empty);
                 if (string.IsNullOrEmpty(text))
                     return null;
                 text = text.Replace(ch_zero, "");
-                return ReplaceOtherChar(text);
+                return text;
             }
             catch (Exception)
             {
                 return null;
             }
 
-        }
-
-        private string ReplaceOtherChar(string text)
-        {
-            int index = 0;
-            string res = "";
-            while (text.IndexOf("&#", index) != -1)
-            {
-                int old_ind = index;
-                index = text.IndexOf("&#", index);
-                res += text.Substring(old_ind, index);
-                string chisl = text.Substring(index + 2, 2);
-                byte[] ch = new byte[1];
-                ch[0] = Convert.ToByte(chisl);
-                string ret = Encoding.UTF8.GetString(ch);
-                res += ret;
-                index += 5;
-            }
-            if (index + 1 != text.Length)
-            {
-                res += text.Substring(index);
-            }
-            return res;
         }
 
 

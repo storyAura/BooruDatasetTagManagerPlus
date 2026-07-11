@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -61,9 +62,18 @@ namespace BooruDatasetTagManager
 
         public bool LoadSettingsLoadPreviewImages { get; set; } = true;
         public bool LoadSettingsReadMetadata { get; set; } = false;
-        public bool UseDanbooruZhCsvBeforeTranslation { get; set; } = false;
+        public bool UseDanbooruZhCsvBeforeTranslation { get; set; } = true;
         public int QuickReplaceThreshold { get; set; } = 30;
+        // Unified concurrency for ALL external-LLM batch operations (tagging + TAG2NL),
+        // not just TAG2NL. Kept under the legacy JSON name for settings back-compat.
         public int LlmT2NlConcurrency { get; set; } = 5;
+        // Persisted state of the unified LLM tagging window (Form_LlmTagger).
+        public LlmTaggerMode LlmTaggerMode { get; set; } = LlmTaggerMode.Tags;
+        public LlmCaptionOutputTarget LlmCaptionOutputTarget { get; set; } = LlmCaptionOutputTarget.SeparateFolder;
+        public LlmCaptionFormat LlmCaptionFormat { get; set; } = LlmCaptionFormat.TagsAndNaturalLanguage;
+        public bool LlmTaggerReprocessExisting { get; set; } = false;
+        // Natural-language mode: run the local ONNX tagger first on images that have no tags.
+        public bool LlmTaggerAutoOnnxIfNoTags { get; set; } = true;
         public string CharacterTagAuditModel { get; set; } = string.Empty;
         public CharacterTagAuditStyle CharacterTagAuditStyle { get; set; } = CharacterTagAuditStyle.Sparse;
         public CharacterTagAuditExecutionMode CharacterTagAuditExecutionMode { get; set; } = CharacterTagAuditExecutionMode.Review;
@@ -73,6 +83,11 @@ namespace BooruDatasetTagManager
         public Wd14TaggerSettings Wd14Tagger { get; set; } = new Wd14TaggerSettings();
         public PixAiTaggerSettings PixAiTagger { get; set; } = new PixAiTaggerSettings();
         public string OnnxTaggerLastModelId { get; set; } = string.Empty;
+        public string BackgroundRemoverModelId { get; set; } = string.Empty;
+        // Background-removal output options (see Form_BGRemover).
+        public bool BackgroundRemoverFillBackground { get; set; } = true;   // true = solid color, false = transparent
+        public int BackgroundRemoverColorArgb { get; set; } = unchecked((int)0xFFFFFFFF); // default white
+        public bool BackgroundRemoverReplaceOriginal { get; set; } = true;  // true = overwrite, false = save a copy
         public string AiServerSetPromptTemplate { get; set; } = AiPromptTemplateCatalog.DanbooruTag;
         public string AiServerSetPromptTemplateId { get; set; } = AiPromptTemplateCatalog.DanbooruTagId;
         public List<AiPromptTemplateSettings> AiServerSetPromptTemplates { get; set; } =
@@ -107,22 +122,55 @@ namespace BooruDatasetTagManager
             if (!File.Exists(settingsFile))
             {
                 //Settings = new AppSettings();
-                File.WriteAllText(settingsFile, JsonConvert.SerializeObject(this));
+                try
+                {
+                    File.WriteAllText(settingsFile, JsonConvert.SerializeObject(this));
+                }
+                catch (Exception ex)
+                {
+                    // First run from a read-only location: run with in-memory
+                    // defaults instead of crashing before any window exists.
+                    Trace.WriteLine($"AppSettings.LoadData: failed to create settings file: {ex}");
+                }
             }
             else
             {
-            NextTry:
                 AppSettings tempSettings = null;
-                try
+                const int maxAttempts = 2;
+                for (int attempt = 0; attempt < maxAttempts && tempSettings == null; attempt++)
                 {
-                    string migratedJson = AiServerSetSettingsMigration.MigrateJson(File.ReadAllText(settingsFile));
-                    tempSettings = JsonConvert.DeserializeObject<AppSettings>(migratedJson);
+                    try
+                    {
+                        string migratedJson = AiServerSetSettingsMigration.MigrateJson(File.ReadAllText(settingsFile));
+                        tempSettings = JsonConvert.DeserializeObject<AppSettings>(migratedJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine($"AppSettings.LoadData: failed to parse settings (attempt {attempt + 1}): {ex}");
+                        // On the last attempt, don't try to overwrite again; just fall back to defaults.
+                        if (attempt < maxAttempts - 1)
+                        {
+                            // Preserve the unreadable file before resetting so users
+                            // can recover hand-written endpoints/keys from it.
+                            try { File.Copy(settingsFile, settingsFile + ".corrupt", true); } catch { }
+                            try
+                            {
+                                File.WriteAllText(settingsFile, JsonConvert.SerializeObject(this));
+                            }
+                            catch (Exception writeEx)
+                            {
+                                // Disk read-only / no permission: keep defaults in memory and stop retrying.
+                                Trace.WriteLine($"AppSettings.LoadData: failed to rewrite settings file: {writeEx}");
+                                break;
+                            }
+                        }
+                    }
                 }
-                catch (Exception)
-                {
-                    File.WriteAllText(settingsFile, JsonConvert.SerializeObject(this));
-                    goto NextTry;
-                }
+
+                // Could not load or recover a valid settings file: keep constructor defaults.
+                if (tempSettings == null)
+                    return;
+
                 TranslationLanguage = tempSettings.TranslationLanguage;
                 PreviewSize = tempSettings.PreviewSize;
                 TransService = tempSettings.TransService;
@@ -159,6 +207,11 @@ namespace BooruDatasetTagManager
                 UseDanbooruZhCsvBeforeTranslation = tempSettings.UseDanbooruZhCsvBeforeTranslation;
                 QuickReplaceThreshold = tempSettings.QuickReplaceThreshold <= 0 ? 30 : tempSettings.QuickReplaceThreshold;
                 LlmT2NlConcurrency = Math.Clamp(tempSettings.LlmT2NlConcurrency, 1, 100);
+                LlmTaggerMode = tempSettings.LlmTaggerMode;
+                LlmCaptionOutputTarget = tempSettings.LlmCaptionOutputTarget;
+                LlmCaptionFormat = tempSettings.LlmCaptionFormat;
+                LlmTaggerReprocessExisting = tempSettings.LlmTaggerReprocessExisting;
+                LlmTaggerAutoOnnxIfNoTags = tempSettings.LlmTaggerAutoOnnxIfNoTags;
                 CharacterTagAuditModel = tempSettings.CharacterTagAuditModel ?? string.Empty;
                 CharacterTagAuditStyle = tempSettings.CharacterTagAuditStyle;
                 CharacterTagAuditExecutionMode = tempSettings.CharacterTagAuditExecutionMode;
@@ -171,6 +224,10 @@ namespace BooruDatasetTagManager
                 Wd14Tagger.EnsureLegacyThresholdMigrated();
                 PixAiTagger = tempSettings.PixAiTagger ?? new PixAiTaggerSettings();
                 OnnxTaggerLastModelId = tempSettings.OnnxTaggerLastModelId ?? string.Empty;
+                BackgroundRemoverModelId = tempSettings.BackgroundRemoverModelId ?? string.Empty;
+                BackgroundRemoverFillBackground = tempSettings.BackgroundRemoverFillBackground;
+                BackgroundRemoverColorArgb = tempSettings.BackgroundRemoverColorArgb;
+                BackgroundRemoverReplaceOriginal = tempSettings.BackgroundRemoverReplaceOriginal;
                 if (!string.IsNullOrEmpty(tempSettings.ColorScheme))
                     ColorScheme = tempSettings.ColorScheme;
                 AutoTagger = tempSettings.AutoTagger;
@@ -213,7 +270,17 @@ namespace BooruDatasetTagManager
 
         public void SaveSettings()
         {
-            File.WriteAllText(settingsFile, JsonConvert.SerializeObject(this));
+            try
+            {
+                // Atomic write + .bak: a crash/power loss mid-write used to truncate
+                // settings.json, and the next startup silently reset all settings.
+                SafeFile.WriteAllTextWithBackup(settingsFile, JsonConvert.SerializeObject(this));
+            }
+            catch (Exception ex)
+            {
+                // Read-only dir / locked file: keep running with in-memory settings.
+                Trace.WriteLine($"AppSettings.SaveSettings failed: {ex}");
+            }
         }
 
         public string[] GetTagFilesExtensions()
@@ -405,7 +472,21 @@ namespace BooruDatasetTagManager
     public class OpenAiSettings : TaggerSettings
     {
         public new string ConnectionAddress { get; set; } = string.Empty;
+
+        // In-memory plaintext key. Never serialized directly.
+        [JsonIgnore]
         public string ApiKey { get; set; } = string.Empty;
+
+        // Persisted (DPAPI-encrypted) form. The JSON property is kept as "ApiKey"
+        // for backward compatibility: legacy plaintext values are read and then
+        // re-written encrypted on the next save.
+        [JsonProperty("ApiKey")]
+        public string ApiKeyProtected
+        {
+            get => SecretProtector.Protect(ApiKey);
+            set => ApiKey = SecretProtector.Unprotect(value);
+        }
+
         public int RequestTimeout { get; set; } = 3600;
         public string SystemPrompt { get; set; } = string.Empty;
         public string UserPrompt { get; set; } = string.Empty;
@@ -418,6 +499,8 @@ namespace BooruDatasetTagManager
         public string Splitter { get; set; } = ",";
         public int VideoFrameCount { get; set; } = 10;
         public int VideoFrameScale { get; set; } = 0;
+        // Applied to LLM tag output in Form_LlmTagger (Tags mode).
+        public bool ReplaceUnderscoresWithSpaces { get; set; } = true;
 
         public string ResolveVisionModel()
         {
@@ -449,6 +532,18 @@ namespace BooruDatasetTagManager
         public bool SerializeVramUsage { get; set; } = false;
         public bool SkipInternetRequests { get; set; } = false;
         public string CustomSystemPrompt { get; set; } = "";
+
+        // Optional key sent as the X-Api-Key header; must match the AiApiServer
+        // --api-key argument when the server is started with one.
+        [JsonIgnore]
+        public string ApiKey { get; set; } = string.Empty;
+
+        [JsonProperty("ApiKey")]
+        public string ApiKeyProtected
+        {
+            get => SecretProtector.Protect(ApiKey);
+            set => ApiKey = SecretProtector.Unprotect(value);
+        }
 
         public InterragatorSettings()
         {

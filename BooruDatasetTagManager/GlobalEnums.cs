@@ -71,6 +71,27 @@ namespace BooruDatasetTagManager
         SkipExistTagList
     }
 
+    // Output mode of the unified LLM tagging window (Form_LlmTagger).
+    public enum LlmTaggerMode
+    {
+        Tags,             // image -> booru tags, written back into the dataset
+        NaturalLanguage   // image (+ existing tags) -> natural-language caption (former TAG2NL)
+    }
+
+    // Where NaturalLanguage-mode captions are written.
+    public enum LlmCaptionOutputTarget
+    {
+        SeparateFolder,   // non-destructive: <folder>_captioned (original tags + caption)
+        InPlace           // replace the image's own .txt content with the caption
+    }
+
+    // Content of a NaturalLanguage-mode result (independent of the output target).
+    public enum LlmCaptionFormat
+    {
+        TagsAndNaturalLanguage,   // original tags + newline + caption (the original TAG2NL)
+        NaturalLanguageOnly       // just the natural-language caption
+    }
+
     public enum TagFilteringMode
     {
         None,

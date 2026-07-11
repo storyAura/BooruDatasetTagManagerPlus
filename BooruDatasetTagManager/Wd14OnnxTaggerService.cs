@@ -105,10 +105,22 @@ namespace BooruDatasetTagManager
             if (!File.Exists(modelPath) || !File.Exists(labelsPath))
                 throw new FileNotFoundException(I18n.GetText("TaggerModelMissing"));
 
-            labels = LoadLabels(labelsPath);
-            loadedModelPath = modelPath;
-            session = CreateSession(modelPath);
-            ConfigureSessionMetadata(session);
+            try
+            {
+                // Loading labels + session is the integrity check: a corrupt CSV
+                // or truncated ONNX throws here. Purge the whole model so the
+                // next attempt re-downloads clean files.
+                labels = LoadLabels(labelsPath);
+                loadedModelPath = modelPath;
+                session = CreateSession(modelPath);
+                ConfigureSessionMetadata(session);
+            }
+            catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
+            {
+                Unload();
+                ClearModelCache(repo);
+                throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+            }
             loadedRepo = repo;
         }
 

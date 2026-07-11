@@ -282,7 +282,10 @@ namespace BooruDatasetTagManager
                     });
                     panel.Controls.Add(bar, 0, panel.RowCount - 1);
                     bar.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
-                    bar.Value = (int)(Convert.ToSingle(item.Value, CultureInfo.InvariantCulture.NumberFormat) * 100);
+                    // The value comes from the AI server / persisted settings; a
+                    // malformed or out-of-range number must not crash the window.
+                    float parsedBarValue = float.TryParse(item.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out float bv) ? bv : 0f;
+                    bar.Value = Math.Clamp((int)(parsedBarValue * 100), bar.Minimum, bar.Maximum);
                     interrogatorSettingsControls.Add(bar.Name, bar);
                 }
                 else if (item.Type == "int")
@@ -295,7 +298,7 @@ namespace BooruDatasetTagManager
                     numeric.Maximum = decimal.MaxValue;
                     panel.Controls.Add(numeric, 0, panel.RowCount - 1);
                     numeric.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
-                    numeric.Value = Convert.ToInt32(item.Value);
+                    numeric.Value = int.TryParse(item.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv) ? iv : 0;
                     interrogatorSettingsControls.Add(numeric.Name, numeric);
                 }
                 else if (item.Type == "string")
@@ -331,7 +334,7 @@ namespace BooruDatasetTagManager
                     panel.Controls.Add(checkBox, 0, panel.RowCount - 1);
                     checkBox.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
                     checkBox.Text = item.Comment;
-                    checkBox.Checked = bool.Parse(item.Value);
+                    checkBox.Checked = bool.TryParse(item.Value, out bool bval) && bval;
                     interrogatorSettingsControls.Add(checkBox.Name, checkBox);
                 }
                 else if (item.Type == "list")
@@ -422,7 +425,7 @@ namespace BooruDatasetTagManager
                         else if (ctrl.GetType() == typeof(CheckBox))
                         {
                             CheckBox cb = (CheckBox)ctrl;
-                            cb.Checked = bool.Parse(item.Value);
+                            cb.Checked = bool.TryParse(item.Value, out bool cbVal) && cbVal;
                         }
                         else if (ctrl.GetType() == typeof(ComboBox))
                         {

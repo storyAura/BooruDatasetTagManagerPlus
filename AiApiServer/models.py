@@ -120,30 +120,31 @@ MOONDREAM2_COMMANDS = [
     "Pointing",
 ]
 
+# RMBG-2.0 background removal, offered from two download sources:
+#   - HuggingFace main site (briaai/RMBG-2.0)
+#   - ModelScope for users in mainland China (AI-ModelScope/RMBG-2.0)
+# Tuple layout: (display_name, repo_id, source, resolution, repo_link)
 BG_REMOVAL = [
-    "briaai/RMBG-2.0",
-    "ZhengPeng7/BiRefNet",
-    "ZhengPeng7/BiRefNet_HR",
-    "zhengpeng7/BiRefNet_lite",
-    "ZhengPeng7/BiRefNet_lite-2K",
-    "ZhengPeng7/BiRefNet-matting",
-    "ZhengPeng7/BiRefNet_512x512",
+    (
+        "RMBG-2.0 (HuggingFace)",
+        "briaai/RMBG-2.0",
+        "hf",
+        (1024, 1024),
+        "https://huggingface.co/briaai/RMBG-2.0",
+    ),
+    (
+        "RMBG-2.0 (ModelScope)",
+        "AI-ModelScope/RMBG-2.0",
+        "modelscope",
+        (1024, 1024),
+        "https://modelscope.cn/models/AI-ModelScope/RMBG-2.0",
+    ),
 ]
 
 SEED_X = [
     "ByteDance-Seed/Seed-X-PPO-7B",
     "ByteDance-Seed/Seed-X-PPO-7B-GPTQ-Int8",
     "ByteDance-Seed/Seed-X-PPO-7B-AWQ-Int4",
-]
-
-BG_REMOVAL_RESOLUTION = [
-    (1024, 1024),
-    (1024, 1024),
-    (2048, 2048),
-    (1024, 1024),
-    (2560, 1440),
-    (1024, 1024),
-    (512, 512),
 ]
 
 WD_TAGGER_THRESHOLDS = [
@@ -188,8 +189,8 @@ INTERROGATOR_MAP = dict(zip(INTERROGATOR_NAMES, INTERROGATORS))
 
 EDITORS = (
     [
-        editor.RMBG2(name, BG_REMOVAL_RESOLUTION[i], "rmbg2")
-        for i, name in enumerate(BG_REMOVAL)
+        editor.RMBG2(display_name, repo_id, source, resolution, repo_link, "rmbg2")
+        for display_name, repo_id, source, resolution, repo_link in BG_REMOVAL
     ]
 )
 

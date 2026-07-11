@@ -32,6 +32,8 @@ namespace BooruDatasetTagManager.AiApi
             connetionAddress = Program.Settings.AutoTagger.ConnectionAddress;
             if(!connetionAddress.EndsWith('/'))
                 connetionAddress += "/";
+            if (!string.IsNullOrEmpty(Program.Settings.AutoTagger.ApiKey))
+                client.DefaultRequestHeaders.Add("X-Api-Key", Program.Settings.AutoTagger.ApiKey);
         }
 
         public void Dispose()
@@ -237,8 +239,15 @@ namespace BooruDatasetTagManager.AiApi
             var response = await PostJsonAsync("getmodelparams", root.ToString());
             if (response.Success)
             {
-                return GetObjectFromResponse<ModelParamResponse>(response.JsonText);
-
+                // A proxy/portal can answer HTTP 200 with an HTML page: treat a
+                // parse failure as an error result instead of throwing into the
+                // async void callers.
+                ModelParamResponse parsed = TryGetObjectFromResponse<ModelParamResponse>(response.JsonText, out string parseError);
+                if (parsed != null)
+                    return parsed;
+                result.Success = false;
+                result.ErrorMessage = parseError;
+                return result;
             }
             else
             {
@@ -333,7 +342,9 @@ namespace BooruDatasetTagManager.AiApi
             var response = await GetJsonAsync("listmodelsbytype", $"name={modelType}");
             if (response.Success)
             {
-                result = GetObjectFromResponse<ConfigResponse>(response.JsonText);
+                ConfigResponse parsed = TryGetObjectFromResponse<ConfigResponse>(response.JsonText, out _);
+                if (parsed != null)
+                    result = parsed;
             }
             return result;
         }
@@ -461,6 +472,13 @@ namespace BooruDatasetTagManager.AiApi
                 result.ErrorMessage = ex.Message;
                 result.Success = false;
             }
+            catch (TaskCanceledException ex)
+            {
+                // HttpClient timeout surfaces as TaskCanceledException, not
+                // HttpRequestException; it previously escaped every caller.
+                result.ErrorMessage = ex.Message;
+                result.Success = false;
+            }
             return result;
         }
 
@@ -491,12 +509,31 @@ namespace BooruDatasetTagManager.AiApi
                 result.ErrorMessage = ex.Message;
                 result.Success = false;
             }
+            catch (TaskCanceledException ex)
+            {
+                result.ErrorMessage = ex.Message;
+                result.Success = false;
+            }
             return result;
         }
 
         private T GetObjectFromResponse<T>(string response)
         {
             return JsonConvert.DeserializeObject<T>(response);
+        }
+
+        private static T TryGetObjectFromResponse<T>(string response, out string error) where T : class
+        {
+            try
+            {
+                error = null;
+                return JsonConvert.DeserializeObject<T>(response);
+            }
+            catch (JsonException ex)
+            {
+                error = ex.Message;
+                return null;
+            }
         }
 
         #endregion

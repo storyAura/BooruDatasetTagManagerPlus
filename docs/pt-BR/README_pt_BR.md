@@ -1,7 +1,7 @@
 
 <div align="center">
 
-[English](../../README.md) | [中文简体](../../README_zh_CN.md) | **Português do Brasil**
+[English](../../README_en.md) | [中文简体](../../README.md) | **Português do Brasil**
 
 </div>
 

@@ -27,9 +27,15 @@ class editor:
 
 
 class RMBG2(editor):
-    def __init__(self, repo_name, resulution, intType):
-        self.editor = RMBG2Editor(repo_name)
-        self.repo_name = repo_name
+    def __init__(self, display_name, repo_id, source, resulution, repo_link, intType):
+        self.editor = RMBG2Editor(repo_id, source)
+        self.display_name = display_name
+        self.repo_id = repo_id
+        self.source = source
+        # repo_name kept empty so main.py falls back to the explicit repo_link below.
+        self.repo_name = ""
+        # Full repository URL shown in the client (HuggingFace or ModelScope).
+        self.repo_link = repo_link
         self.resolution = resulution
         self.type = intType
         self.video_supported = False
@@ -46,7 +52,7 @@ class RMBG2(editor):
         return res  # [t for t in tags if t]
 
     def name(self):
-        return self.repo_name
+        return self.display_name
 
     def mode_type(self):
         return self.type

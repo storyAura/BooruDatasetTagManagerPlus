@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <PrivateAssets>all</PrivateAssets>
@@ -22,6 +23,13 @@
   <ItemGroup>
     <Compile Include="..\BooruDatasetTagManager\AbstractTranslator.cs" Link="Source\AbstractTranslator.cs" />
     <Compile Include="..\BooruDatasetTagManager\Adler32.cs" Link="Source\Adler32.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagValue.cs" Link="Source\TagValue.cs" />
+    <Compile Include="..\BooruDatasetTagManager\DatasetManager.cs" Link="Source\DatasetManager.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageLruCache.cs" Link="Source\ImageLruCache.cs" />
+    <Compile Include="..\BooruDatasetTagManager\SecretProtector.cs" Link="Source\SecretProtector.cs" />
+    <Compile Include="..\BooruDatasetTagManager\SafeFile.cs" Link="Source\SafeFile.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ModelCorruptedException.cs" Link="Source\ModelCorruptedException.cs" />
+    <Compile Include="..\BooruDatasetTagManager\PromptParser.cs" Link="Source\PromptParser.cs" />
     <Compile Include="..\BooruDatasetTagManager\AllTagsItem.cs" Link="Source\AllTagsItem.cs" />
     <Compile Include="..\BooruDatasetTagManager\AllTagsList.cs" Link="Source\AllTagsList.cs" />
     <Compile Include="..\BooruDatasetTagManager\EditableTag.cs" Link="Source\EditableTag.cs" />

@@ -49,6 +49,11 @@ namespace BooruDatasetTagManager
         private readonly Button buttonNext = new Button();
         private readonly Button buttonCancel = new Button();
         private CancellationTokenSource cancellation;
+        // Deferred-close support: closing the wizard mid-audit/apply used to
+        // dispose the form under the awaiting continuation, which then touched
+        // disposed controls (ObjectDisposedException from an async void chain).
+        private bool closeAfterWork;
+        private bool applyInProgress;
         private readonly CancellationTokenSource translationCancellation = new CancellationTokenSource();
         private readonly SemaphoreSlim reasonTranslationSemaphore = new SemaphoreSlim(4, 4);
         private AbstractTranslator reasonTranslator;
@@ -110,6 +115,17 @@ namespace BooruDatasetTagManager
             Controls.Add(actions);
             AcceptButton = buttonNext;
             CancelButton = buttonCancel;
+            FormClosing += (_, e) =>
+            {
+                if (cancellation != null || applyInProgress)
+                {
+                    // Defer the close until the running audit/apply unwinds so its
+                    // continuations never run on a disposed form.
+                    e.Cancel = true;
+                    closeAfterWork = true;
+                    cancellation?.Cancel();
+                }
+            };
 
             pages.Dock = DockStyle.Fill;
             pages.TabPages.Add(CreateSelectionPage());
@@ -959,26 +975,39 @@ namespace BooruDatasetTagManager
             }
             catch (OperationCanceledException)
             {
-                MessageBox.Show(this, I18n.GetText("CharacterTagAuditCanceled"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                ResetAuditSession();
-                wizardPhase = 0;
-                ShowPage(0);
+                if (!IsDisposed && !closeAfterWork)
+                {
+                    MessageBox.Show(this, I18n.GetText("CharacterTagAuditCanceled"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ResetAuditSession();
+                    wizardPhase = 0;
+                    ShowPage(0);
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    this,
-                    CharacterTagAuditErrorFormatter.Format(ex, I18n.GetText),
-                    Text,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-                ShowPage(0);
+                if (!IsDisposed && !closeAfterWork)
+                {
+                    MessageBox.Show(
+                        this,
+                        CharacterTagAuditErrorFormatter.Format(ex, I18n.GetText),
+                        Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    ShowPage(0);
+                }
             }
             finally
             {
-                cancellation.Dispose();
+                cancellation?.Dispose();
                 cancellation = null;
-                buttonNext.Enabled = true;
+                if (!IsDisposed)
+                    buttonNext.Enabled = true;
+                if (closeAfterWork)
+                {
+                    closeAfterWork = false;
+                    if (!IsDisposed)
+                        Close();
+                }
             }
         }
 
@@ -1046,23 +1075,36 @@ namespace BooruDatasetTagManager
             }
             catch (OperationCanceledException)
             {
-                MessageBox.Show(this, I18n.GetText("CharacterTagAuditCanceled"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (!IsDisposed && !closeAfterWork)
+                    MessageBox.Show(this, I18n.GetText("CharacterTagAuditCanceled"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    this,
-                    CharacterTagAuditErrorFormatter.Format(ex, I18n.GetText),
-                    Text,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                if (!IsDisposed && !closeAfterWork)
+                {
+                    MessageBox.Show(
+                        this,
+                        CharacterTagAuditErrorFormatter.Format(ex, I18n.GetText),
+                        Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
             }
             finally
             {
-                cancellation.Dispose();
+                cancellation?.Dispose();
                 cancellation = null;
-                buttonNext.Enabled = true;
-                ShowPage(2);
+                if (!IsDisposed)
+                {
+                    buttonNext.Enabled = true;
+                    ShowPage(2);
+                }
+                if (closeAfterWork)
+                {
+                    closeAfterWork = false;
+                    if (!IsDisposed)
+                        Close();
+                }
             }
         }
 
@@ -1254,10 +1296,13 @@ namespace BooruDatasetTagManager
 
             buttonNext.Enabled = false;
             buttonBack.Enabled = false;
+            applyInProgress = true;
             try
             {
                 labelProgress.Text = I18n.GetText("CharacterTagAuditSavePreparing");
-                Application.DoEvents();
+                // Synchronous repaint instead of Application.DoEvents(): DoEvents
+                // pumps the queue and allows arbitrary reentrancy mid-apply.
+                labelProgress.Refresh();
 
                 List<(DataItem Item, IReadOnlyList<EditableTag> Tags)> affected = await Task.Run(() =>
                     Program.DataManager.DataSet.Values
@@ -1287,10 +1332,15 @@ namespace BooruDatasetTagManager
                 });
                 labelProgress.Text = string.Format(I18n.GetText("CharacterTagAuditSaveProgress"), 0, total);
 
-                await CharacterTagFileTransaction.CommitAsync(
+                // Off the UI thread: CommitAsync performs ~3 disk operations per
+                // file (stage/backup/rename); on the UI thread a large dataset
+                // froze the window and the progress label never repainted.
+                // Progress<T> was created on the UI thread, so callbacks still
+                // marshal back correctly.
+                await Task.Run(() => CharacterTagFileTransaction.CommitAsync(
                     Program.DataManager.DatasetRoot,
                     changes,
-                    progress: progress);
+                    progress: progress));
 
                 labelProgress.Text = I18n.GetText("CharacterTagAuditSaveUpdatingMemory");
                 Program.DataManager.ExecuteBulkMutation(() =>
@@ -1307,16 +1357,28 @@ namespace BooruDatasetTagManager
                 owner.RefreshAfterCharacterTagAudit();
                 MessageBox.Show(this, I18n.GetText("CharacterTagAuditSaved"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 DialogResult = DialogResult.OK;
+                applyInProgress = false;
                 Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, string.Format(I18n.GetText("CharacterTagAuditSaveFailed"), ex.Message), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!IsDisposed && !closeAfterWork)
+                    MessageBox.Show(this, string.Format(I18n.GetText("CharacterTagAuditSaveFailed"), ex.Message), Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
-                buttonNext.Enabled = true;
-                buttonBack.Enabled = true;
+                applyInProgress = false;
+                if (!IsDisposed)
+                {
+                    buttonNext.Enabled = true;
+                    buttonBack.Enabled = true;
+                }
+                if (closeAfterWork)
+                {
+                    closeAfterWork = false;
+                    if (!IsDisposed)
+                        Close();
+                }
             }
         }
 

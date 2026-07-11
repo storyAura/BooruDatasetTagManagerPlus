@@ -5,7 +5,6 @@ using System.Text;
 using System.Threading.Tasks;
 using System.ComponentModel;
 using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
 using Translator.Crypto;
 using System.Drawing;
 using System.Windows.Forms;
@@ -23,8 +22,12 @@ namespace BooruDatasetTagManager
     public static class Extensions
     {
 
-        public static string[] ImageExtensions = { ".jpg", ".png", ".bmp", ".jpeg", ".webp" };
-        public static string[] VideoExtensions = { ".mp4", ".flv", ".mkv", ".ts", ".avi", ".webm", ".mov" };
+        // HashSet with case-insensitive comparison: O(1) lookups and no need for
+        // per-call .ToLower() allocations when checking file extensions.
+        public static readonly HashSet<string> ImageExtensions =
+            new HashSet<string>(new[] { ".jpg", ".png", ".bmp", ".jpeg", ".webp" }, StringComparer.OrdinalIgnoreCase);
+        public static readonly HashSet<string> VideoExtensions =
+            new HashSet<string>(new[] { ".mp4", ".flv", ".mkv", ".ts", ".avi", ".webm", ".mov" }, StringComparer.OrdinalIgnoreCase);
 
         public delegate void ProgressHandler(int current, int max);
 
@@ -37,50 +40,6 @@ namespace BooruDatasetTagManager
         public static long GetHash(this string text)
         {
             return Adler32.GenerateHash(text);
-        }
-
-        public static object LoadDataSet(string path)
-        {
-            MemoryStream ms = new MemoryStream(File.ReadAllBytes(path));
-#pragma warning disable SYSLIB0011 // Тип или член устарел
-            var obj = new BinaryFormatter().Deserialize((Stream)ms);
-#pragma warning restore SYSLIB0011 // Тип или член устарел
-            ms.Close();
-            return obj;
-        }
-
-        public static object LoadDataSet(byte[] data)
-        {
-            MemoryStream ms = new MemoryStream(data);
-#pragma warning disable SYSLIB0011 // Тип или член устарел
-            var obj = new BinaryFormatter().Deserialize((Stream)ms);
-#pragma warning restore SYSLIB0011 // Тип или член устарел
-            ms.Close();
-            return obj;
-        }
-
-
-        public static void SaveDataSet(object lst, string path)
-        {
-            MemoryStream ms = new MemoryStream();
-#pragma warning disable SYSLIB0011 // Тип или член устарел
-            BinaryFormatter bf = new BinaryFormatter();
-#pragma warning restore SYSLIB0011 // Тип или член устарел
-            bf.Serialize(ms, lst);
-            File.WriteAllBytes(path, ms.ToArray());
-            ms.Close();
-        }
-
-        public static byte[] SaveDataSet(object objItem)
-        {
-            using (MemoryStream ms = new MemoryStream())
-            {
-#pragma warning disable SYSLIB0011 // Тип или член устарел
-                BinaryFormatter bf = new BinaryFormatter();
-#pragma warning restore SYSLIB0011 // Тип или член устарел
-                bf.Serialize(ms, objItem);
-                return ms.ToArray();
-            }
         }
 
         public static int CalcBracketsCount(float weight, bool positive)
@@ -293,6 +252,9 @@ namespace BooruDatasetTagManager
             return Path.Combine(cacheDir, hash + ".png");
         }
 
+        private const int MaxVideoThumbCacheFiles = 2000;
+        private static bool videoThumbCacheTrimmed;
+
         private static void SaveVideoThumbCache(string cachePath, string videoPath, Image image)
         {
             lock (VideoThumbCacheLock)
@@ -300,11 +262,38 @@ namespace BooruDatasetTagManager
                 try
                 {
                     image.Save(cachePath, ImageFormat.Png);
+                    TrimVideoThumbCache(Path.GetDirectoryName(cachePath));
                 }
                 catch
                 {
                     // ignored
                 }
+            }
+        }
+
+        /// <summary>
+        /// The thumb cache previously grew forever; drop the oldest files once per
+        /// session when the count exceeds the cap.
+        /// </summary>
+        private static void TrimVideoThumbCache(string cacheDir)
+        {
+            if (videoThumbCacheTrimmed || string.IsNullOrEmpty(cacheDir))
+                return;
+            videoThumbCacheTrimmed = true;
+            try
+            {
+                var files = new DirectoryInfo(cacheDir).GetFiles("*.png");
+                if (files.Length <= MaxVideoThumbCacheFiles)
+                    return;
+                foreach (var stale in files.OrderBy(f => f.LastAccessTimeUtc)
+                                           .Take(files.Length - MaxVideoThumbCacheFiles))
+                {
+                    try { stale.Delete(); } catch { }
+                }
+            }
+            catch
+            {
+                // Cache trimming must never break thumbnail generation.
             }
         }
 
@@ -386,6 +375,15 @@ namespace BooruDatasetTagManager
         }
 
 
+        private static readonly Lazy<HttpClient> updateHttpClient = new Lazy<HttpClient>(() =>
+        {
+            HttpClient client = new HttpClient();
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+            client.DefaultRequestHeaders.Add("User-Agent", "BooruDatasetTagManagerPlus");
+            return client;
+        });
+
         public static async void CheckForUpdateAsync(string currentVersion)
         {
             string data = null;
@@ -393,13 +391,7 @@ namespace BooruDatasetTagManager
             {
                 try
                 {
-                    using (HttpClient client = new HttpClient())
-                    {
-                        client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+jso");
-                        client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-                        client.DefaultRequestHeaders.Add("User-Agent", "BooruDatasetTagManagerPlus");
-                        data = await client.GetStringAsync("https://api.github.com/repos/storyAura/BooruDatasetTagManagerPlus/releases");
-                    }
+                    data = await updateHttpClient.Value.GetStringAsync("https://api.github.com/repos/storyAura/BooruDatasetTagManagerPlus/releases");
                 }
                 catch (Exception)
                 {
