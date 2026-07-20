@@ -87,10 +87,13 @@ namespace BooruDatasetTagManager
                 if (LooksLikeHtml(path))
                     return false;
 
-                if (string.Equals(filename, "model.onnx", StringComparison.OrdinalIgnoreCase))
+                // Repos can nest files in subfolders (e.g. "v2_01a/model.onnx"),
+                // so match validation rules on the file name only.
+                string name = Path.GetFileName(filename ?? string.Empty);
+                if (string.Equals(name, "model.onnx", StringComparison.OrdinalIgnoreCase))
                     return info.Length >= MinOnnxFileBytes;
 
-                if (string.Equals(filename, "selected_tags.csv", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(name, "selected_tags.csv", StringComparison.OrdinalIgnoreCase))
                 {
                     string firstLine = ReadFirstLineShared(path);
                     return firstLine.Contains("name", StringComparison.OrdinalIgnoreCase);
@@ -122,10 +125,21 @@ namespace BooruDatasetTagManager
                 File.Delete(path);
         }
 
+        public Task<string> DownloadFileAsync(
+            HuggingFaceDownloadSource source,
+            string repo,
+            string filename,
+            IProgress<(string file, long downloaded, long? total)> progress,
+            CancellationToken cancellationToken)
+        {
+            return DownloadFileAsync(source, repo, filename, authToken: null, progress, cancellationToken);
+        }
+
         public async Task<string> DownloadFileAsync(
             HuggingFaceDownloadSource source,
             string repo,
             string filename,
+            string authToken,
             IProgress<(string file, long downloaded, long? total)> progress,
             CancellationToken cancellationToken)
         {
@@ -153,6 +167,9 @@ namespace BooruDatasetTagManager
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (existingLength > 0)
                 request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingLength, null);
+            // Gated repos (e.g. cl_tagger_v2) require the user's own HF token.
+            if (!string.IsNullOrWhiteSpace(authToken))
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken.Trim());
 
             using HttpResponseMessage response = await SharedClient.SendAsync(
                 request,

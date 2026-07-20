@@ -59,6 +59,13 @@ namespace BooruDatasetTagManager
         /// </summary>
         public List<string> LastSaveErrors { get; } = new List<string>();
 
+        /// <summary>
+        /// Per-directory/per-file failures from the most recent
+        /// <see cref="LoadFromFolder"/>. Failed items are skipped; the rest of
+        /// the dataset still loads.
+        /// </summary>
+        public List<string> LastLoadErrors { get; } = new List<string>();
+
         public bool SaveAll()
         {
             bool saved = false;
@@ -461,11 +468,14 @@ namespace BooruDatasetTagManager
 
         public bool LoadFromFolder(string folder, bool loadPreviewImages, bool readMetadata)
         {
+            LastLoadErrors.Clear();
             CharacterTagFileTransaction.RecoverIncompleteAsync(folder).GetAwaiter().GetResult();
             List<string> allowedExt = new List<string>();
             allowedExt.AddRange(Extensions.ImageExtensions);
             allowedExt.AddRange(Extensions.VideoExtensions);
-            string[] imgs = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
+            // Tolerant walk: one protected/vanished subdirectory must not abort
+            // the whole load; its failure is collected for the caller instead.
+            string[] imgs = TolerantFileEnumerator.GetFiles(folder, LastLoadErrors).ToArray();
             if (imgs.Length == 0)
             {
                 return false;
@@ -482,10 +492,22 @@ namespace BooruDatasetTagManager
                 .WithDegreeOfParallelism(Math.Max(1, Environment.ProcessorCount / 2))
                 .ForAll(x =>
             {
-                var dt = new DataItem();
-                dt.Tags.TagsListChanged += Tags_TagsListChanged;
-                dt.LoadData(x, loadPreviewImages ? imgSize : 0, readMetadata);
-                DataSet.TryAdd(dt.ImageFilePath, dt);
+                try
+                {
+                    var dt = new DataItem();
+                    dt.Tags.TagsListChanged += Tags_TagsListChanged;
+                    dt.LoadData(x, loadPreviewImages ? imgSize : 0, readMetadata);
+                    DataSet.TryAdd(dt.ImageFilePath, dt);
+                }
+                catch (Exception ex)
+                {
+                    // A single locked tag file or unreadable image previously
+                    // failed the entire PLINQ query as an AggregateException.
+                    lock (LastLoadErrors)
+                    {
+                        LastLoadErrors.Add($"{x}: {ex.Message}");
+                    }
+                }
                 // Atomic increment instead of serializing the whole parallel body
                 // behind a SemaphoreSlim (which defeated the parallelism).
                 int current = Interlocked.Increment(ref progress);
@@ -493,6 +515,8 @@ namespace BooruDatasetTagManager
                 if (current % 32 == 0 || current == imgs.Length)
                     LoadingProgressChanged?.Invoke(current, imgs.Length);
             });
+            if (DataSet.IsEmpty)
+                return false;
             DatasetRoot = Path.GetFullPath(folder)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             UpdateDatasetHash();

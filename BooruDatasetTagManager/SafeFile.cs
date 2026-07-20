@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
 
@@ -13,6 +14,14 @@ namespace BooruDatasetTagManager
     /// </summary>
     public static class SafeFile
     {
+        // Concurrent saves of the same target (e.g. the main window and an
+        // LLM/ONNX window both running SaveAll) used to share one fixed
+        // "path.tmp" name and could move each other's half-written content
+        // into place. A unique temp name per call plus a per-path lock keeps
+        // last-writer-wins semantics intact.
+        private static readonly ConcurrentDictionary<string, object> pathLocks =
+            new ConcurrentDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
         public static void WriteAllText(string path, string contents)
         {
             // Match File.WriteAllText's default: UTF-8 without BOM.
@@ -21,23 +30,62 @@ namespace BooruDatasetTagManager
 
         public static void WriteAllText(string path, string contents, Encoding encoding)
         {
-            string tmp = path + ".tmp";
-            File.WriteAllText(tmp, contents, encoding);
-            ReplaceOrMove(tmp, path, null);
+            WriteCore(path, tmp => File.WriteAllText(tmp, contents, encoding), null);
         }
 
         public static void WriteAllTextWithBackup(string path, string contents)
         {
-            string tmp = path + ".tmp";
-            File.WriteAllText(tmp, contents, new UTF8Encoding(false));
-            ReplaceOrMove(tmp, path, path + ".bak");
+            WriteCore(path, tmp => File.WriteAllText(tmp, contents, new UTF8Encoding(false)), path + ".bak");
         }
 
         public static void WriteAllBytes(string path, byte[] bytes)
         {
-            string tmp = path + ".tmp";
-            File.WriteAllBytes(tmp, bytes);
-            ReplaceOrMove(tmp, path, null);
+            WriteCore(path, tmp => File.WriteAllBytes(tmp, bytes), null);
+        }
+
+        private static void WriteCore(string path, Action<string> writeTemp, string backupPath)
+        {
+            string tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            lock (LockFor(path))
+            {
+                try
+                {
+                    writeTemp(tmp);
+                    ReplaceOrMove(tmp, path, backupPath);
+                }
+                finally
+                {
+                    // A failed replace must not leave this call's temp file behind.
+                    TryDelete(tmp);
+                }
+            }
+        }
+
+        private static object LockFor(string path)
+        {
+            string key;
+            try
+            {
+                key = Path.GetFullPath(path);
+            }
+            catch (Exception)
+            {
+                key = path;
+            }
+            return pathLocks.GetOrAdd(key, _ => new object());
+        }
+
+        private static void TryDelete(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+                // Best-effort cleanup only; the write outcome was already decided.
+            }
         }
 
         /// <summary>

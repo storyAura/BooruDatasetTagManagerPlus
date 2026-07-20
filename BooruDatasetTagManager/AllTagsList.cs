@@ -337,6 +337,54 @@ namespace BooruDatasetTagManager
             return -1;
         }
 
+        /// <summary>
+        /// Case-insensitive search used by the All Tags search box. Scans from
+        /// <paramref name="startIndex"/> and wraps around; a prefix match wins
+        /// over the first substring match.
+        /// </summary>
+        public int FindTagBestMatch(string text, int startIndex)
+        {
+            return FindTagBestMatch(text, startIndex, null);
+        }
+
+        /// <summary>
+        /// Match priority: tag prefix > tag substring > translation substring >
+        /// alias hit. <paramref name="aliasTags"/> carries English tags resolved
+        /// from the Chinese CSV dictionary so typing Chinese finds their rows.
+        /// </summary>
+        public int FindTagBestMatch(string text, int startIndex, ISet<string> aliasTags)
+        {
+            int count = List.Count;
+            if (string.IsNullOrEmpty(text) || count == 0)
+                return -1;
+            startIndex = ((startIndex % count) + count) % count;
+            int containsMatch = -1;
+            int translationMatch = -1;
+            int aliasMatch = -1;
+            for (int offset = 0; offset < count; offset++)
+            {
+                int i = (startIndex + offset) % count;
+                var item = (AllTagsItem)List[i];
+                string tag = item.Tag;
+                if (tag == null)
+                    continue;
+                if (tag.StartsWith(text, StringComparison.OrdinalIgnoreCase))
+                    return i;
+                if (containsMatch == -1 && tag.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    containsMatch = i;
+                if (translationMatch == -1 && !string.IsNullOrEmpty(item.Translation)
+                    && item.Translation.Contains(text, StringComparison.OrdinalIgnoreCase))
+                    translationMatch = i;
+                if (aliasMatch == -1 && aliasTags != null && aliasTags.Contains(tag))
+                    aliasMatch = i;
+            }
+            if (containsMatch != -1)
+                return containsMatch;
+            if (translationMatch != -1)
+                return translationMatch;
+            return aliasMatch;
+        }
+
         private bool CheckFilterOnTag(AllTagsItem tagsItem, string filter)
         {
             if (filterText == string.Empty)

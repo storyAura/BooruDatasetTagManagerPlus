@@ -33,13 +33,32 @@ namespace BooruDatasetTagManager
             currentLang = language;
             if (langManager == null)
             {
-                langManager = new LanguageManager();
+                langManager = CreateLanguageManagerSafe();
             }
-            if (!langManager.Langs.TryGetValue(currentLang, out currentLangDict) &&
-                !langManager.Langs.TryGetValue(LanguageManager.defaultLang, out currentLangDict))
+            if (langManager == null ||
+                (!langManager.Langs.TryGetValue(currentLang, out currentLangDict) &&
+                 !langManager.Langs.TryGetValue(LanguageManager.defaultLang, out currentLangDict)))
             {
                 // No language files at all: GetText will return raw keys.
                 currentLangDict = new Dictionary<string, string>();
+            }
+        }
+
+        /// <summary>
+        /// The constructor itself is guarded, but keep a second boundary here:
+        /// this runs before Application.Run, where any escaped exception kills
+        /// the process without a window.
+        /// </summary>
+        private static LanguageManager CreateLanguageManagerSafe()
+        {
+            try
+            {
+                return new LanguageManager();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"I18n: language manager initialization failed: {ex}");
+                return null;
             }
         }
 
@@ -47,7 +66,7 @@ namespace BooruDatasetTagManager
         {
             if (langManager == null)
             {
-                langManager = new LanguageManager();
+                langManager = CreateLanguageManagerSafe();
             }
             try
             {
@@ -75,6 +94,8 @@ namespace BooruDatasetTagManager
 
         public static List<string> GetLanguages()
         {
+            if (langManager == null)
+                return new List<string>();
             var langs = langManager.Langs.Keys.ToList();
             langs.Sort();
             return langs;

@@ -36,6 +36,8 @@ namespace BooruDatasetTagManager
             contextMenuImageGridHeader.ItemClicked += ContextMenuImageGridHeader_ItemClicked;
             gridViewTags.CellFormatting += GridViewTags_CellFormatting;
             InitializeTagContextMenu();
+            InitializeAllTagsSearch();
+            InitializeImageTagsSearch();
             switchLanguage();
         }
 
@@ -76,6 +78,7 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuContextDSVideoTools;
         private ToolStripMenuItem menuContextDSRetagOnnx;
         private ToolStripMenuItem menuContextDSRetagLlm;
+        private ToolStripMenuItem menuContextDSEditImage;
 
         internal List<string> GetSelectedDatasetVideoPaths()
         {
@@ -250,6 +253,11 @@ namespace BooruDatasetTagManager
 
             menuContextDSRetagLlm = new ToolStripMenuItem { Name = "menuContextDSRetagLlm", Text = "LLM tagging" };
             menuContextDSRetagLlm.Click += (_, _) => ShowLlmTagger();
+
+            menuContextDSEditImage = new ToolStripMenuItem { Name = "menuContextDSEditImage", Text = "Edit image" };
+            menuContextDSEditImage.Click += (_, _) => EditSelectedImage();
+            int editImageIndex = contextMenuStrip1.Items.IndexOf(cropImageToolStripMenuItem) + 1;
+            contextMenuStrip1.Items.Insert(editImageIndex, menuContextDSEditImage);
 
             contextMenuStrip1.Items.Add(menuContextDSRetagOnnx);
             contextMenuStrip1.Items.Add(menuContextDSRetagLlm);
@@ -661,7 +669,6 @@ namespace BooruDatasetTagManager
         private PictureBox previewPicBox;
         private int previewRowIndex = -1;
         private FilterType filterAnd = FilterType.Or;
-        private bool isLoading = false;
         private bool selectionMode = false;
         private HashSet<string> selectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -718,6 +725,10 @@ namespace BooruDatasetTagManager
             {
                 Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
                 Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
+                // The "no match" tint restores this color, so track scheme changes.
+                allTagsSearchDefaultBackColor = toolStripTextBox1.BackColor;
+                if (toolStripImageTagsSearchBox != null)
+                    imageTagsSearchDefaultBackColor = toolStripImageTagsSearchBox.BackColor;
             }
         }
 
@@ -739,8 +750,15 @@ namespace BooruDatasetTagManager
                 if (result == DialogResult.Yes)
                 {
                     Program.DataManager.SaveAll();
-                    ReportSaveErrorsIfAny();
+                    // The user chose to save before switching: a failed write
+                    // must abort the switch so they can fix permissions or
+                    // explicitly discard, instead of the old dataset (and its
+                    // unsaved edits) being disposed below.
+                    if (ReportSaveErrorsIfAny())
+                        return;
                 }
+                else if (result == DialogResult.Cancel)
+                    return;
             }
             OpenFolderDialog openFolderDialog = new OpenFolderDialog();
             if (openFolderDialog.ShowDialog() != DialogResult.OK)
@@ -761,18 +779,30 @@ namespace BooruDatasetTagManager
             LoadingStatusText = I18n.GetText("TipLoadingStart");
             SetStatus(LoadingStatusText);
             LockEdit(true);
-            isLoading = true;
             try
             {
-                DatasetManager oldDataManager = Program.DataManager;
-                Program.DataManager = new DatasetManager();
-                if (oldDataManager != null)
+                // Load into a candidate manager first: the old dataset (and its
+                // in-memory state) is only discarded after the new folder has
+                // actually loaded, so a failed/partial load keeps the current
+                // dataset fully intact.
+                DatasetManager candidateManager = new DatasetManager();
+                candidateManager.LoadingProgressChanged += DataManager_LoadingProgressChanged;
+                bool loaded;
+                try
                 {
-                    // Unbind before disposing so the grid cannot paint disposed bitmaps.
-                    gridViewDS.DataSource = null;
-                    oldDataManager.Dispose();
+                    loaded = await candidateManager.LoadFromFolderAsync(openFolderDialog.Folder, loadPreviewImages, readMetadata);
                 }
-                Program.DataManager.LoadingProgressChanged += DataManager_LoadingProgressChanged;
+                catch
+                {
+                    candidateManager.Dispose();
+                    throw;
+                }
+                if (!loaded)
+                {
+                    candidateManager.Dispose();
+                    SetStatus(I18n.GetText("TipFolderWrong"));
+                    return;
+                }
                 TrackBarRowHeight.ValueChanged -= TrackBarRowHeight_ValueChanged;
                 TrackBarRowHeight.TrackBar.Minimum = 1;
                 TrackBarRowHeight.TrackBar.Maximum = Program.Settings.PreviewSize;
@@ -781,21 +811,33 @@ namespace BooruDatasetTagManager
                 TrackBarRowHeight.TrackBar.LargeChange = 50;
                 TrackBarRowHeight.Value = Program.Settings.PreviewSize;
                 TrackBarRowHeight.ValueChanged += TrackBarRowHeight_ValueChanged;
-                //Program.DataManager.SetTranslationMode(isTranslate);
-                if (!await Program.DataManager.LoadFromFolderAsync(openFolderDialog.Folder, loadPreviewImages, readMetadata))
+                DatasetManager oldDataManager = Program.DataManager;
+                Program.DataManager = candidateManager;
+                if (oldDataManager != null)
                 {
-                    SetStatus(I18n.GetText("TipFolderWrong"));
-                    return;
+                    // Unbind before disposing so the grid cannot paint disposed bitmaps.
+                    gridViewDS.DataSource = null;
+                    oldDataManager.Dispose();
                 }
                 gridViewDS.DataSource = Program.DataManager.GetDataSource();
                 isAllTags = true;
                 toolStripLabelAllTags.Text = I18n.GetText("UILabelAllTags");
                 gridViewAllTags.DataSource = Program.DataManager.AllTagsBindingSource;
+                HookAllTagsSelectionAnchor();
                 ApplyDataSetGridStyle();
                 await ApplyTranslation(isTranslate);
                 gridViewDS.AutoResizeColumns();
                 SetStatus(I18n.GetText("TipLoadingComplete"));
                 SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+                var loadErrors = Program.DataManager.LastLoadErrors;
+                if (loadErrors.Count > 0)
+                {
+                    string details = string.Join("\n", loadErrors.Take(10));
+                    if (loadErrors.Count > 10)
+                        details += "\n...";
+                    MessageBox.Show(this, string.Format(I18n.GetText("TipLoadErrors"), loadErrors.Count, details),
+                        "BooruDatasetTagManagerPlus", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
             catch (Exception ex)
             {
@@ -809,7 +851,6 @@ namespace BooruDatasetTagManager
             }
             finally
             {
-                isLoading = false;
                 LockEdit(false);
             }
         }
@@ -1592,7 +1633,6 @@ namespace BooruDatasetTagManager
 
         private void SetFilter()
         {
-            isLoading = true;
             if (gridViewAllTags.SelectedCells.Count > 0)
             {
                 SaveSelectedInViewDs();
@@ -1608,13 +1648,11 @@ namespace BooruDatasetTagManager
                 LoadSelectedInViewDs();
                 BtnImageExitFilter.Enabled = true;
             }
-            isLoading = false;
             SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
         }
 
         private void ResetFilter()
         {
-            isLoading = true;
             if (isFiltered)
             {
                 SaveSelectedInViewDs();
@@ -1623,7 +1661,6 @@ namespace BooruDatasetTagManager
                 BtnImageExitFilter.Enabled = false;
                 LoadSelectedInViewDs();
             }
-            isLoading = false;
             SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
         }
 
@@ -1817,7 +1854,11 @@ namespace BooruDatasetTagManager
                 if (result == DialogResult.Yes)
                 {
                     Program.DataManager.SaveAll();
-                    ReportSaveErrorsIfAny();
+                    // The user explicitly chose to save: a locked/read-only tag
+                    // file must block the exit, otherwise the failed items'
+                    // in-memory edits are silently lost with the process.
+                    if (ReportSaveErrorsIfAny())
+                        e.Cancel = true;
                 }
                 else if (result == DialogResult.Cancel)
                     e.Cancel = true;
@@ -1828,7 +1869,44 @@ namespace BooruDatasetTagManager
         {
             if (e.RowIndex == -1 || e.ColumnIndex == -1)
                 return;
-            AddSelectedAllTagsToImageTags();
+            ExecuteAllTagsQuickAction();
+        }
+
+        /// <summary>
+        /// Double-click on an All Tags row runs the configurable quick action
+        /// (Settings → General; default opens "Replace all" with the tag as
+        /// source). Each action maps onto one of the All Tags toolbar buttons;
+        /// the double-clicked row is already selected by the first click.
+        /// </summary>
+        private void ExecuteAllTagsQuickAction()
+        {
+            switch (Program.Settings.AllTagsDoubleClickAction)
+            {
+                case AllTagsQuickAction.QuickActionAddTagToAll:
+                    BtnTagAddToAll.PerformClick();
+                    break;
+                case AllTagsQuickAction.QuickActionDeleteTagFromAll:
+                    BtnTagDeleteForAll.PerformClick();
+                    break;
+                case AllTagsQuickAction.QuickActionAddTagToSelected:
+                    BtnTagAddToSelected.PerformClick();
+                    break;
+                case AllTagsQuickAction.QuickActionDeleteTagFromSelected:
+                    BtnTagDeleteForSelected.PerformClick();
+                    break;
+                case AllTagsQuickAction.QuickActionAddTagToFiltered:
+                    BtnTagAddToFiltered.PerformClick();
+                    break;
+                case AllTagsQuickAction.QuickActionDeleteTagFromFiltered:
+                    BtnTagDeleteForFiltered.PerformClick();
+                    break;
+                case AllTagsQuickAction.QuickActionFilterByTag:
+                    BtnTagFilter.PerformClick();
+                    break;
+                default:
+                    BtnTagReplace.PerformClick();
+                    break;
+            }
         }
 
         private void dataGridView3_DataSourceChanged(object sender, EventArgs e)
@@ -1851,10 +1929,18 @@ namespace BooruDatasetTagManager
 
         private void ApplyDataSetColumnHeaders()
         {
+            // These header texts also feed the header right-click menu used to
+            // toggle column visibility, so every column needs a translation.
             if (gridViewDS.Columns.Contains("Img"))
                 gridViewDS.Columns["Img"].HeaderText = I18n.GetText("GridImage");
             if (gridViewDS.Columns.Contains("Name"))
                 gridViewDS.Columns["Name"].HeaderText = I18n.GetText("GridName");
+            if (gridViewDS.Columns.Contains("ImageFilePath"))
+                gridViewDS.Columns["ImageFilePath"].HeaderText = I18n.GetText("GridImageFilePath");
+            if (gridViewDS.Columns.Contains("ImageModifyTime"))
+                gridViewDS.Columns["ImageModifyTime"].HeaderText = I18n.GetText("GridImageModifyTime");
+            if (gridViewDS.Columns.Contains("TagsModifyTime"))
+                gridViewDS.Columns["TagsModifyTime"].HeaderText = I18n.GetText("GridTagsModifyTime");
         }
 
         private void dataGridView3_SelectionChanged(object sender, EventArgs e)
@@ -2125,9 +2211,7 @@ namespace BooruDatasetTagManager
             {
                 if (Enum.IsDefined(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name))
                 {
-                    isLoading = true;
                     gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter((DatasetManager.OrderType)Enum.Parse(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name));
-                    isLoading = false;
                 }
             }
         }
@@ -2151,6 +2235,7 @@ namespace BooruDatasetTagManager
                 {
                     gridViewAllTags.ClearSelection();
                     gridViewAllTags.Rows[i].Selected = true;
+                    SetAllTagsSelectionAnchor(searchedTag);
                     if (i < gridViewAllTags.FirstDisplayedScrollingRowIndex || i > gridViewAllTags.FirstDisplayedScrollingRowIndex + gridViewAllTags.DisplayedRowCount(false))
                     {
                         gridViewAllTags.FirstDisplayedScrollingRowIndex = i;
@@ -2213,20 +2298,18 @@ namespace BooruDatasetTagManager
                 foreach (string file in pathsToDelete)
                 {
                     string tagFile = Path.Combine(Path.GetDirectoryName(file) ?? string.Empty, Path.GetFileNameWithoutExtension(file) + ".txt");
-                    try
+                    // Staged two-phase delete: image and tag file are removed
+                    // together or not at all, so a locked/read-only tag file can
+                    // no longer leave the image permanently deleted while the
+                    // item is reported as "failed" and kept in the dataset.
+                    if (ImageFileDeleter.DeleteImageWithTags(file, tagFile, out string deleteError))
                     {
-                        if (File.Exists(file))
-                            File.Delete(file);
-                        if (File.Exists(tagFile))
-                            File.Delete(tagFile);
-                        // Only mark as removed after a successful delete so the
-                        // dataset stays consistent with what is actually on disk.
                         deletedPaths.Add(file);
                         deletedPathSet.Add(file);
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Trace.WriteLine($"Failed to delete '{file}': {ex}");
+                        Trace.WriteLine($"Failed to delete '{file}': {deleteError}");
                         failedPaths.Add(file);
                     }
                 }
@@ -2312,6 +2395,8 @@ namespace BooruDatasetTagManager
             bool isVideo = VideoProcessingService.IsVideoFile(file);
             cropImageToolStripMenuItem.Visible = !isVideo;
             removeBackgroundToolStripMenuItem.Visible = !isVideo;
+            if (menuContextDSEditImage != null)
+                menuContextDSEditImage.Visible = !isVideo;
             if (menuContextDSRetagOnnx != null)
                 menuContextDSRetagOnnx.Visible = !isVideo;
             if (menuContextDSRetagLlm != null)
@@ -2404,78 +2489,363 @@ namespace BooruDatasetTagManager
                 grid.BorderStyle = BorderStyle.Fixed3D;
         }
 
-        private void ShowAllTagsFilter(bool show)
+        private Color allTagsSearchDefaultBackColor = SystemColors.Window;
+
+        /// <summary>
+        /// The All Tags search box used to be hidden until a key was pressed on
+        /// the grid; it is now always visible above the list. Typing locates the
+        /// first match (prefix first, then substring), Enter jumps to the next
+        /// match, Escape/the clear button reset the search.
+        /// </summary>
+        private void InitializeAllTagsSearch()
         {
-            if (!show)
-                toolStripTextBox1.TextChanged -= TextBox1_TextChanged;
-            toolStripTextBox1.Clear();
-            toolStripTextBox1.Visible = show;
-            toolStripButton1.Visible = show;
-            if (show)
-            {
-                toolStripTextBox1.Focus();
-                toolStripTextBox1.TextChanged += TextBox1_TextChanged;
-            }
-            else
-            {
-                gridViewAllTags.Focus();
-            }
+            toolStripTextBox1.Visible = true;
+            toolStripButton1.Visible = true;
+            allTagsSearchDefaultBackColor = toolStripTextBox1.BackColor;
+            toolStripTextBox1.TextChanged += TextBox1_TextChanged;
         }
 
         private void TextBox1_TextChanged(object sender, EventArgs e)
         {
-            if (toolStripTextBox1.Text.Length > 0)
+            LocateAllTagsSearchMatch(0);
+        }
+
+        private void LocateAllTagsSearchMatch(int startIndex)
+        {
+            string query = toolStripTextBox1.Text.Trim();
+            if (query.Length == 0 || Program.DataManager == null)
             {
-                isLoading = true;
-                int index = Program.DataManager.AllTags.FindTagStartWith(toolStripTextBox1.Text);
-                if (index != -1)
-                {
-                    //gridViewAllTags.ClearSelection();
-                    //gridViewAllTags.Rows[index].Selected = true;
-                    gridViewAllTags.CurrentCell = gridViewAllTags.Rows[index].Cells[0];
-                    if (index < gridViewAllTags.FirstDisplayedScrollingRowIndex || index > gridViewAllTags.FirstDisplayedScrollingRowIndex + gridViewAllTags.DisplayedRowCount(false))
-                    {
-                        gridViewAllTags.FirstDisplayedScrollingRowIndex = index;
-                    }
-                }
-                else
-                {
-                    toolStripTextBox1.Text = toolStripTextBox1.Text.Substring(0, toolStripTextBox1.Text.Length - 1);
-                    toolStripTextBox1.SelectionStart = toolStripTextBox1.TextLength;
-                }
-                isLoading = false;
+                toolStripTextBox1.BackColor = allTagsSearchDefaultBackColor;
+                return;
             }
+            // Chinese input also matches through the CSV dictionary (synonyms
+            // included) and the translation column, not only the tag text.
+            var aliasTags = Program.ChineseTagLookup.FindEnglishTagsByChineseName(query, Program.Settings.Language);
+            int index = Program.DataManager.AllTags.FindTagBestMatch(query, startIndex, aliasTags);
+            if (index < 0 || index >= gridViewAllTags.RowCount)
+            {
+                // Keep the text and tint the box instead of silently eating keys.
+                toolStripTextBox1.BackColor = Color.MistyRose;
+                return;
+            }
+            toolStripTextBox1.BackColor = allTagsSearchDefaultBackColor;
+            gridViewAllTags.CurrentCell = gridViewAllTags.Rows[index].Cells[0];
+            SetAllTagsSelectionAnchor(gridViewAllTags[0, index].Value as string);
+            if (index < gridViewAllTags.FirstDisplayedScrollingRowIndex
+                || index > gridViewAllTags.FirstDisplayedScrollingRowIndex + gridViewAllTags.DisplayedRowCount(false))
+            {
+                gridViewAllTags.FirstDisplayedScrollingRowIndex = index;
+            }
+        }
+
+        private void ResetAllTagsSearch()
+        {
+            toolStripTextBox1.Clear();
+            toolStripTextBox1.BackColor = allTagsSearchDefaultBackColor;
+            gridViewAllTags.Focus();
         }
 
         private void gridViewAllTags_KeyPress(object sender, KeyPressEventArgs e)
         {
-            ShowAllTagsFilter(true);
+            // Typing while the grid has focus redirects into the search box.
+            if (char.IsControl(e.KeyChar))
+                return;
+            toolStripTextBox1.Focus();
             toolStripTextBox1.Text = e.KeyChar.ToString();
-            toolStripTextBox1.SelectionStart = 1;
+            toolStripTextBox1.SelectionStart = toolStripTextBox1.TextLength;
+            e.Handled = true;
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
-            ShowAllTagsFilter(false);
+            ResetAllTagsSearch();
         }
 
         private void gridViewAllTags_SelectionChanged(object sender, EventArgs e)
         {
-            if (!isLoading)
-                ShowAllTagsFilter(false);
+            // Selecting rows no longer hides or clears the search box.
+            // Update the by-tag anchor only for user-driven changes: list resets
+            // also move the selection (by index) before the restore handler runs,
+            // and those must not overwrite the anchor.
+            if (restoringAllTagsSelection || !gridViewAllTags.Focused)
+                return;
+            CaptureAllTagsSelectionAnchor();
+        }
+
+        private AllTagsList anchoredAllTags;
+        private readonly List<string> allTagsSelectionAnchor = new List<string>();
+        private bool restoringAllTagsSelection;
+
+        /// <summary>
+        /// Count-sorted lists re-sort when tag counts change; the grid keeps the
+        /// selection by row index, silently moving it onto a different tag.
+        /// Anchor the selection by tag text and restore it after every reset.
+        /// </summary>
+        private void HookAllTagsSelectionAnchor()
+        {
+            if (anchoredAllTags != null)
+                anchoredAllTags.ListChanged -= AllTags_ListChangedRestoreSelection;
+            allTagsSelectionAnchor.Clear();
+            anchoredAllTags = Program.DataManager?.AllTags;
+            if (anchoredAllTags != null)
+                anchoredAllTags.ListChanged += AllTags_ListChangedRestoreSelection;
+        }
+
+        private void AllTags_ListChangedRestoreSelection(object sender, ListChangedEventArgs e)
+        {
+            if (e.ListChangedType != ListChangedType.Reset || allTagsSelectionAnchor.Count == 0)
+                return;
+            if (!IsHandleCreated || IsDisposed)
+                return;
+            // The grid processes the reset inside the BindingSource's handler
+            // (subscribed before this one); restore only after it has finished.
+            BeginInvoke(new Action(RestoreAllTagsSelectionFromAnchor));
+        }
+
+        private void RestoreAllTagsSelectionFromAnchor()
+        {
+            if (IsDisposed || Program.DataManager == null || allTagsSelectionAnchor.Count == 0)
+                return;
+            var indexes = new List<int>();
+            foreach (string tag in allTagsSelectionAnchor)
+            {
+                int index = Program.DataManager.AllTags.IndexOfList(tag);
+                if (index >= 0 && index < gridViewAllTags.RowCount && !indexes.Contains(index))
+                    indexes.Add(index);
+            }
+            if (indexes.Count == 0)
+                return;
+            restoringAllTagsSelection = true;
+            try
+            {
+                gridViewAllTags.CurrentCell = gridViewAllTags.Rows[indexes[0]].Cells[0];
+                gridViewAllTags.ClearSelection();
+                foreach (int index in indexes)
+                    gridViewAllTags.Rows[index].Selected = true;
+                if (indexes[0] < gridViewAllTags.FirstDisplayedScrollingRowIndex
+                    || indexes[0] > gridViewAllTags.FirstDisplayedScrollingRowIndex + gridViewAllTags.DisplayedRowCount(false))
+                {
+                    gridViewAllTags.FirstDisplayedScrollingRowIndex = indexes[0];
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Best effort: the grid can reject CurrentCell mid-layout.
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+            }
+            finally
+            {
+                restoringAllTagsSelection = false;
+            }
+        }
+
+        private void CaptureAllTagsSelectionAnchor()
+        {
+            // Keep the last non-empty anchor: grids clear the selection while
+            // processing a reset, and that must not erase the anchor either.
+            if (gridViewAllTags.SelectedCells.Count == 0)
+                return;
+            allTagsSelectionAnchor.Clear();
+            string current = null;
+            if (gridViewAllTags.CurrentCell != null
+                && TryGetAllTagsRowTag(gridViewAllTags.CurrentCell.RowIndex, out string currentTag))
+            {
+                current = currentTag;
+            }
+            var seenRows = new HashSet<int>();
+            foreach (DataGridViewCell cell in gridViewAllTags.SelectedCells)
+            {
+                if (!seenRows.Add(cell.RowIndex))
+                    continue;
+                if (TryGetAllTagsRowTag(cell.RowIndex, out string tag) && tag != current)
+                    allTagsSelectionAnchor.Add(tag);
+            }
+            if (current != null)
+                allTagsSelectionAnchor.Insert(0, current);
+        }
+
+        private void SetAllTagsSelectionAnchor(string tag)
+        {
+            allTagsSelectionAnchor.Clear();
+            if (!string.IsNullOrEmpty(tag))
+                allTagsSelectionAnchor.Add(tag);
+        }
+
+        private bool TryGetAllTagsRowTag(int rowIndex, out string tag)
+        {
+            tag = null;
+            if (rowIndex < 0 || rowIndex >= gridViewAllTags.RowCount)
+                return false;
+            tag = gridViewAllTags[0, rowIndex].Value as string;
+            return !string.IsNullOrEmpty(tag);
         }
 
         private void textBox1_KeyDown(object sender, KeyEventArgs e)
         {
-            int pos = -1;
-            if (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)
+            if (e.KeyCode == Keys.Enter)
             {
-                ShowAllTagsFilter(false);
-                if (e.KeyCode == Keys.Down)
-                    pos = 1;
-                int index = gridViewAllTags.CurrentCell.RowIndex;
-                gridViewAllTags.CurrentCell = gridViewAllTags.Rows[index + pos].Cells[0];
+                int start = gridViewAllTags.CurrentCell == null ? 0 : gridViewAllTags.CurrentCell.RowIndex + 1;
+                LocateAllTagsSearchMatch(start);
+                e.Handled = true;
+                e.SuppressKeyPress = true;
             }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                ResetAllTagsSearch();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)
+            {
+                int offset = e.KeyCode == Keys.Down ? 1 : -1;
+                int index = (gridViewAllTags.CurrentCell == null ? 0 : gridViewAllTags.CurrentCell.RowIndex) + offset;
+                if (index >= 0 && index < gridViewAllTags.RowCount)
+                    gridViewAllTags.CurrentCell = gridViewAllTags.Rows[index].Cells[0];
+                e.Handled = true;
+            }
+        }
+
+        private ToolStripTextBox toolStripImageTagsSearchBox;
+        private ToolStripButton toolStripImageTagsSearchClear;
+        private Color imageTagsSearchDefaultBackColor = SystemColors.Window;
+
+        /// <summary>
+        /// Search box on the Image Tags toolbar, mirroring the All Tags search:
+        /// typing locates the first match (tag prefix > tag substring >
+        /// translation substring > Chinese CSV dictionary hit), Enter jumps to
+        /// the next match, Escape/the clear button reset the search.
+        /// </summary>
+        private void InitializeImageTagsSearch()
+        {
+            toolStripImageTagsSearchBox = new ToolStripTextBox
+            {
+                Name = "toolStripImageTagsSearchBox",
+                AutoSize = false,
+                // Runtime-added controls skip WinForms auto-scaling.
+                Width = LogicalToDeviceUnits(140)
+            };
+            toolStripImageTagsSearchClear = new ToolStripButton
+            {
+                Name = "toolStripImageTagsSearchClear",
+                DisplayStyle = ToolStripItemDisplayStyle.Image,
+                Image = Properties.Resources.Delete,
+                ImageTransparentColor = Color.Magenta
+            };
+            int insertIndex = toolStripTagsHeader.Items.IndexOf(toolStripLabelImageTags) + 1;
+            toolStripTagsHeader.Items.Insert(insertIndex, toolStripImageTagsSearchClear);
+            toolStripTagsHeader.Items.Insert(insertIndex, toolStripImageTagsSearchBox);
+            imageTagsSearchDefaultBackColor = toolStripImageTagsSearchBox.BackColor;
+            toolStripImageTagsSearchBox.TextChanged += (_, _) => LocateImageTagsSearchMatch(0);
+            toolStripImageTagsSearchBox.KeyDown += ImageTagsSearchBox_KeyDown;
+            toolStripImageTagsSearchClear.Click += (_, _) => ResetImageTagsSearch();
+        }
+
+        private void ImageTagsSearchBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                int start = gridViewTags.CurrentCell == null ? 0 : gridViewTags.CurrentCell.RowIndex + 1;
+                LocateImageTagsSearchMatch(start);
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                ResetImageTagsSearch();
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private void LocateImageTagsSearchMatch(int startIndex)
+        {
+            if (toolStripImageTagsSearchBox == null)
+                return;
+            string query = toolStripImageTagsSearchBox.Text.Trim();
+            if (query.Length == 0)
+            {
+                toolStripImageTagsSearchBox.BackColor = imageTagsSearchDefaultBackColor;
+                return;
+            }
+            int index = FindImageTagRowBestMatch(query, startIndex);
+            if (index < 0 || index >= gridViewTags.RowCount)
+            {
+                // Keep the text and tint the box instead of silently eating keys.
+                toolStripImageTagsSearchBox.BackColor = Color.MistyRose;
+                return;
+            }
+            toolStripImageTagsSearchBox.BackColor = imageTagsSearchDefaultBackColor;
+            gridViewTags.CurrentCell = gridViewTags.Rows[index].Cells["ImageTags"];
+            if (index < gridViewTags.FirstDisplayedScrollingRowIndex
+                || index > gridViewTags.FirstDisplayedScrollingRowIndex + gridViewTags.DisplayedRowCount(false))
+            {
+                gridViewTags.FirstDisplayedScrollingRowIndex = index;
+            }
+        }
+
+        /// <summary>
+        /// Same match priority as the All Tags search. In multi-select view the
+        /// tag text lives only on the first row of each group, so continuation
+        /// rows fall back to the group tag text.
+        /// </summary>
+        private int FindImageTagRowBestMatch(string query, int startIndex)
+        {
+            int count = gridViewTags.RowCount;
+            if (count == 0)
+                return -1;
+            var aliasTags = Program.ChineseTagLookup.FindEnglishTagsByChineseName(query, Program.Settings.Language);
+            startIndex = ((startIndex % count) + count) % count;
+            int containsMatch = -1;
+            int translationMatch = -1;
+            int aliasMatch = -1;
+            for (int offset = 0; offset < count; offset++)
+            {
+                int i = (startIndex + offset) % count;
+                string tag = GetImageTagRowText(i);
+                if (string.IsNullOrEmpty(tag))
+                    continue;
+                if (tag.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                    return i;
+                if (containsMatch == -1 && tag.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    containsMatch = i;
+                if (translationMatch == -1
+                    && gridViewTags.Columns.Contains("Translation")
+                    && gridViewTags["Translation", i].Value is string translation
+                    && translation.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    translationMatch = i;
+                if (aliasMatch == -1 && aliasTags.Contains(tag))
+                    aliasMatch = i;
+            }
+            if (containsMatch != -1)
+                return containsMatch;
+            if (translationMatch != -1)
+                return translationMatch;
+            return aliasMatch;
+        }
+
+        private string GetImageTagRowText(int rowIndex)
+        {
+            string tag = gridViewTags["ImageTags", rowIndex].Value as string;
+            if (!string.IsNullOrEmpty(tag))
+                return tag;
+            if (gridViewTags.DataSource is MultiSelectDataTable dt
+                && rowIndex < dt.Rows.Count
+                && dt.Rows[rowIndex] is MultiSelectDataRow row
+                && row.RowState != System.Data.DataRowState.Deleted
+                && row.RowState != System.Data.DataRowState.Detached)
+            {
+                return row.GetTagText();
+            }
+            return tag;
+        }
+
+        private void ResetImageTagsSearch()
+        {
+            toolStripImageTagsSearchBox.Clear();
+            toolStripImageTagsSearchBox.BackColor = imageTagsSearchDefaultBackColor;
+            gridViewTags.Focus();
         }
 
         private void toolStripButton24_Click(object sender, EventArgs e)
@@ -2538,6 +2908,15 @@ namespace BooruDatasetTagManager
             saveAllChangesToolStripMenuItem.Text = I18n.GetText("MenuItemSaveChanges");
             MenuShowPreview.Text = I18n.GetText("MenuItemShowPreview");
             MenuItemTranslateTags.Text = I18n.GetText("MenuItemTranslateTags");
+            toolStripTextBox1.TextBox.PlaceholderText = I18n.GetText("AllTagsSearchPlaceholder");
+            toolStripTextBox1.ToolTipText = I18n.GetText("AllTagsSearchPlaceholder");
+            toolStripButton1.ToolTipText = I18n.GetText("AllTagsSearchClear");
+            if (toolStripImageTagsSearchBox != null)
+            {
+                toolStripImageTagsSearchBox.TextBox.PlaceholderText = I18n.GetText("AllTagsSearchPlaceholder");
+                toolStripImageTagsSearchBox.ToolTipText = I18n.GetText("AllTagsSearchPlaceholder");
+                toolStripImageTagsSearchClear.ToolTipText = I18n.GetText("AllTagsSearchClear");
+            }
             MenuHideAllTags.Text = I18n.GetText("MenuHideAllTags");
             MenuHideTags.Text = I18n.GetText("MenuHideTags");
             MenuHideDataset.Text = I18n.GetText("MenuHideDataset");
@@ -2567,6 +2946,8 @@ namespace BooruDatasetTagManager
             toolStripMenuItem1.Text = I18n.GetText("MenuContextDSOpenFolder");
             toolStripMenuItem2.Text = I18n.GetText("MenuContextDSDeleteImage");
             cropImageToolStripMenuItem.Text = I18n.GetText("MenuContextDSCropImage");
+            if (menuContextDSEditImage != null)
+                menuContextDSEditImage.Text = I18n.GetText("MenuContextDSEditImage");
             if (menuContextDSVideoTools != null)
                 menuContextDSVideoTools.Text = I18n.GetText("MenuContextDSVideoTools");
             if (menuContextDSRetagOnnx != null)
@@ -3765,6 +4146,63 @@ namespace BooruDatasetTagManager
                 RefreshDatasetGrid();
                 if (added.Count > 0)
                     SetStatus(string.Format(I18n.GetText("CropImageImportedCount"), added.Count));
+            }
+        }
+
+        private void EditSelectedImage()
+        {
+            if (gridViewDS.SelectedRows.Count == 0 || Program.DataManager == null)
+                return;
+            string imagePath = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
+            if (VideoProcessingService.IsVideoFile(imagePath) || !File.Exists(imagePath))
+                return;
+            Bitmap image = Program.DataManager.GetImageFromFileWithCache(imagePath) as Bitmap;
+            if (image == null)
+            {
+                MessageBox.Show(this, I18n.GetText("TipImgLoadError"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            using Form_ImageEditor editor = new Form_ImageEditor(imagePath, image);
+            if (editor.ShowDialog(this) != DialogResult.OK || editor.Result == null)
+                return;
+
+            if (editor.Result.Mode == ImageEditorSaveMode.Overwrite)
+            {
+                // Same refresh sequence as background removal: drop the cached
+                // original, rebuild the thumbnail from the just-written file,
+                // then rebind the grid and the open preview.
+                Program.DataManager.RemoveFromCache(imagePath);
+                if (Program.DataManager.DataSet.TryGetValue(imagePath, out DataItem item))
+                {
+                    Image oldThumb = item.Img;
+                    try
+                    {
+                        item.Img = Extensions.MakeThumb(imagePath, Program.Settings.PreviewSize);
+                    }
+                    catch (Exception)
+                    {
+                        item.Img = null;
+                    }
+                    // No message pump runs between the swap and the rebind below,
+                    // so nothing can still be painting the old thumbnail.
+                    oldThumb?.Dispose();
+                }
+                RefreshDatasetGrid();
+                if (isShowPreview && gridViewDS.SelectedRows.Count == 1
+                    && string.Equals((string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value, imagePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowPreview(imagePath);
+                }
+                SetStatus(I18n.GetText("ImageEditorSavedOverwrite"));
+            }
+            else
+            {
+                IReadOnlyList<string> added = Program.DataManager.AddImages(
+                    new[] { editor.Result.OutputPath },
+                    loadPreviewImages: true,
+                    readMetadata: false);
+                RefreshDatasetGrid(added);
+                SetStatus(string.Format(I18n.GetText("ImageEditorSavedNewFile"), Path.GetFileName(editor.Result.OutputPath)));
             }
         }
 

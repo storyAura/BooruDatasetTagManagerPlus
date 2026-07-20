@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -23,6 +24,7 @@ namespace BooruDatasetTagManager
     public static class CharacterTagFileTransaction
     {
         public const string DirectoryPrefix = ".bdtm-character-tag-txn-";
+        public const string QuarantinePrefix = ".bdtm-quarantined-txn-";
         private const string ManifestName = "manifest.json";
 
         public static async Task CommitAsync(
@@ -85,7 +87,7 @@ namespace BooruDatasetTagManager
             catch
             {
                 if (!preserveTransactionOnFailure)
-                    await RecoverTransactionAsync(transactionDirectory, CancellationToken.None);
+                    await RecoverTransactionAsync(root, transactionDirectory, CancellationToken.None);
                 throw;
             }
         }
@@ -96,11 +98,11 @@ namespace BooruDatasetTagManager
             foreach (string directory in Directory.GetDirectories(root, DirectoryPrefix + "*", SearchOption.TopDirectoryOnly))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await RecoverTransactionAsync(directory, cancellationToken);
+                await RecoverTransactionAsync(root, directory, cancellationToken);
             }
         }
 
-        private static async Task RecoverTransactionAsync(string transactionDirectory, CancellationToken cancellationToken)
+        private static async Task RecoverTransactionAsync(string root, string transactionDirectory, CancellationToken cancellationToken)
         {
             if (!Directory.Exists(transactionDirectory))
                 return;
@@ -110,28 +112,113 @@ namespace BooruDatasetTagManager
                 Directory.Delete(transactionDirectory, true);
                 return;
             }
-            TransactionManifest manifest = JsonConvert.DeserializeObject<TransactionManifest>(
-                await File.ReadAllTextAsync(manifestPath, cancellationToken)) ?? new TransactionManifest();
+            // The manifest is re-read from disk, so it must be treated as
+            // untrusted input: a tampered/corrupted TargetPath could otherwise
+            // overwrite or delete files outside the dataset during recovery.
+            TransactionManifest manifest;
+            try
+            {
+                manifest = JsonConvert.DeserializeObject<TransactionManifest>(
+                    await File.ReadAllTextAsync(manifestPath, cancellationToken)) ?? new TransactionManifest();
+            }
+            catch (JsonException ex)
+            {
+                QuarantineTransaction(transactionDirectory, "unreadable manifest: " + ex.Message);
+                return;
+            }
+            if (!TryValidateManifest(root, manifest, out string validationError))
+            {
+                QuarantineTransaction(transactionDirectory, validationError);
+                return;
+            }
             foreach (TransactionEntry entry in manifest.Entries.AsEnumerable().Reverse())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                string target = Path.GetFullPath(entry.TargetPath);
                 if (entry.Existed)
                 {
                     string backup = Path.Combine(transactionDirectory, entry.BackupFile);
                     if (File.Exists(backup))
                     {
-                        string targetDirectory = Path.GetDirectoryName(entry.TargetPath);
+                        string targetDirectory = Path.GetDirectoryName(target);
                         if (!string.IsNullOrEmpty(targetDirectory))
                             Directory.CreateDirectory(targetDirectory);
-                        File.Copy(backup, entry.TargetPath, true);
+                        File.Copy(backup, target, true);
                     }
                 }
-                else if (File.Exists(entry.TargetPath))
+                else if (File.Exists(target))
                 {
-                    File.Delete(entry.TargetPath);
+                    File.Delete(target);
                 }
             }
             Directory.Delete(transactionDirectory, true);
+        }
+
+        private static bool TryValidateManifest(string root, TransactionManifest manifest, out string error)
+        {
+            foreach (TransactionEntry entry in manifest.Entries)
+            {
+                if (string.IsNullOrWhiteSpace(entry.TargetPath))
+                {
+                    error = "manifest entry has an empty target path";
+                    return false;
+                }
+                string target;
+                try
+                {
+                    target = Path.GetFullPath(entry.TargetPath);
+                }
+                catch (Exception ex)
+                {
+                    error = $"manifest target '{entry.TargetPath}' is not a valid path: {ex.Message}";
+                    return false;
+                }
+                if (!IsWithinRoot(root, target))
+                {
+                    error = $"manifest target '{entry.TargetPath}' is outside the dataset root";
+                    return false;
+                }
+                if (!IsSimpleFileName(entry.StagedFile))
+                {
+                    error = $"manifest staged file '{entry.StagedFile}' is not a plain file name";
+                    return false;
+                }
+                if (entry.Existed && !IsSimpleFileName(entry.BackupFile))
+                {
+                    error = $"manifest backup file '{entry.BackupFile}' is not a plain file name";
+                    return false;
+                }
+            }
+            error = null;
+            return true;
+        }
+
+        private static bool IsSimpleFileName(string name)
+        {
+            return !string.IsNullOrWhiteSpace(name)
+                && name != "." && name != ".."
+                && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+                && string.Equals(name, Path.GetFileName(name), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// A manifest that fails validation is moved aside instead of being
+        /// executed or deleted: nothing outside the root may be touched, and
+        /// the evidence is preserved without being retried on every load.
+        /// </summary>
+        private static void QuarantineTransaction(string transactionDirectory, string reason)
+        {
+            Trace.WriteLine($"CharacterTagFileTransaction: refusing to recover '{transactionDirectory}': {reason}");
+            try
+            {
+                string parent = Path.GetDirectoryName(transactionDirectory);
+                string quarantined = Path.Combine(parent ?? transactionDirectory, QuarantinePrefix + Guid.NewGuid().ToString("N"));
+                Directory.Move(transactionDirectory, quarantined);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"CharacterTagFileTransaction: failed to quarantine '{transactionDirectory}': {ex}");
+            }
         }
 
         private static Task WriteManifestAsync(string transactionDirectory, TransactionManifest manifest, CancellationToken cancellationToken)
@@ -154,9 +241,14 @@ namespace BooruDatasetTagManager
 
         private static void EnsureWithinRoot(string root, string target)
         {
-            string prefix = root + Path.DirectorySeparatorChar;
-            if (!target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            if (!IsWithinRoot(root, target))
                 throw new InvalidOperationException("A transaction target is outside the dataset root: " + target);
+        }
+
+        private static bool IsWithinRoot(string root, string target)
+        {
+            string prefix = root + Path.DirectorySeparatorChar;
+            return target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private sealed class TransactionManifest

@@ -1,163 +1,29 @@
-<div align="center">
+# BooruDatasetTagManager+ 1.1.3
 
-[English](../../README_en.md) | [简体中文](../../README.md) | **Português do Brasil**
+[English](../../README_en.md) | [简体中文](../../README.md)
 
-</div>
-
-# BooruDatasetTagManager+ 1.1.2
-
-Ferramenta para Windows de marcação de datasets de LoRA e de personagens. Mantém o fluxo de trabalho original baseado em pastas com arquivos `.txt` e adiciona Marcação LLM (modos Tags / Linguagem natural), auditoria de tags de personagem e ferramentas localizadas em chinês. **O idioma padrão da interface é o chinês simplificado (zh-CN).**
+Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork de **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**. Mantém o fluxo original "carregar uma pasta → editar o `.txt` correspondente" e adiciona Marcação LLM (modos Tags / Linguagem natural), auditoria de tags de personagem, marcação ONNX local e um fluxo de trabalho de tags em chinês. **O idioma padrão da interface é o chinês simplificado (zh-CN).** Licenciado sob a [Licença MIT](../../LICENSE).
 
 ![Janela principal](../images/main-window-wiki.png)
 
-## Linhagem do projeto
+## Histórico de versões
 
-Este repositório é um fork de **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**. Ele mantém o fluxo original de edição de tags baseado em pastas e adiciona Marcação LLM (Tags / Linguagem natural), auditoria de tags de personagem e ferramentas localizadas em chinês.
+- **1.1.3** (atual) — reforço de E/S de arquivos e segurança de dados (corrige os 8 riscos confirmados por uma auditoria interna: falhas de salvamento mantêm as edições, exclusão transacional, gravações concorrentes seguras, …); adiciona o editor de imagem, os modelos ONNX da família CL, a busca de tags com dicionário chinês e a ação rápida por clique duplo em Todas as tags. [Notas da versão](../RELEASE_NOTES_v1.1.3.md)
+- **1.1.2** — janela unificada de Marcação LLM (modos Tags / Linguagem natural); remoção de fundo dentro do processo (RMBG-1.4); proteção contra falhas, gravações atômicas, chaves criptografadas e outros reforços de robustez/segurança. [Notas da versão](../RELEASE_NOTES_v1.1.2.md)
+- **1.1.1** — salvamento mais rápido da auditoria de tags de personagem; diálogo unificado de Recortar imagem. [Notas da versão](../RELEASE_NOTES_v1.1.1.md)
+- **1.1** — catálogo WD14 completo, limites por modelo, correção do PixAI. [Notas da versão](../RELEASE_NOTES_v1.1.md)
+- **1.0.5** — Tagger ONNX unificado, ferramentas de vídeo. [Notas da versão](../RELEASE_NOTES_v1.0.5.md)
 
-Licenciado sob a [Licença MIT](../../LICENSE). Mantenha os avisos de copyright do projeto original (upstream) ao redistribuir builds modificados.
+## Primeiros passos
 
-## Funcionalidades
+Baixe `BooruDatasetTagManagerPlus-*-win-x64.zip` em [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases), extraia e execute `BooruDatasetTagManagerPlus.exe` (autocontido; não requer instalação separada do .NET).
 
-| Módulo | Descrição |
-| --- | --- |
-| **Configurações LLM** | Endpoint compatível com OpenAI; modelos separados de texto, de visão para auto-tag e de visão para auditoria; concorrência LLM |
-| **Marcação LLM** | Janela de execução unificada (no estilo do ONNX): fonte de entrada, **modos Tags / Tags → Linguagem natural**, modelo de prompt, modelo de visão, modo de gravação, concorrência LLM. O modo Tags grava de volta no dataset; o modo Linguagem natural (antigo TAG2NL) oferece conteúdo **Tags + linguagem natural / apenas linguagem natural**, cópia `_captioned` ou gravação no próprio `.txt`, e pode **executar o ONNX primeiro** em imagens sem tags |
-| **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas com salvamento transacional |
-| **Tagger ONNX** | Interface unificada WD14 + PixAI; download do HuggingFace; limites duplos; modos de gravação; tags de prefixo/sufixo |
-| **Ferramentas de vídeo** | Conversão de formato; todos os frames / por FPS / frames específicos; FFmpeg incluído |
-| **Remoção de fundo** | RMBG-1.4 ONNX embutido, executa localmente no cliente — **sem serviço externo**; download do modelo com um clique no primeiro uso (~176 MB, ou ~44 MB quantizado); fundo transparente ou de cor sólida (branco por padrão), sobrescreve o original ou salva uma cópia `_nobg.png` |
-| **Recortar imagem** | Recorte de região única ou de várias regiões; exporta `_r1`/`_r2` para a pasta de origem; importação automática para o dataset |
-| **Revisão de tags com seleção múltipla** | Selecione várias imagens e pressione Shift+T para abrir o editor visual; lista de tags à esquerda com contagem de ocorrências; verde = tem a tag, vermelho = não tem; clique para alternar, um único salvamento para todas as tags |
+1. **Arquivo → Carregar Pasta**; *Carregar Pasta (opções de carregamento)…* permite ainda pular as miniaturas (mais rápido em datasets grandes) ou ler tags iniciais dos metadados das imagens (útil para gerações recentes ainda sem arquivos `.txt`)
+2. Edite as tags diretamente: as caixas de busca de "Todas as tags" e "Tags da imagem" entendem o dicionário chinês (digitar 头发 encontra long hair, black hair, …); o clique duplo em uma linha de "Todas as tags" executa uma ação rápida (abre "Substituir em todas" por padrão, configurável nas Configurações); abra a Wiki do Danbooru para tags desconhecidas
+3. Antes de usar qualquer recurso LLM, configure o endpoint compatível com OpenAI e os modelos em **Configurações LLM**
+4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / ferramentas de vídeo**, ou **Teste → Abrir auditoria de tags**, conforme necessário
 
-## Novidades da versão 1.1.2
-
-Uma ampla rodada de reforço de segurança, estabilidade e usabilidade, além de uma janela unificada de **Marcação LLM**.
-
-- **Janela unificada de Marcação LLM** — modos Tags / Tags → Linguagem natural (antigo TAG2NL); formato de saída (Tags + linguagem natural / apenas linguagem natural), cópia `_captioned` ou gravação no local, ONNX primeiro em imagens sem tags; modelo de prompt e configurações de marcação incorporados à janela; a "marcação visual por IA" foi renomeada para "Marcação LLM", com uma configuração global de concorrência LLM
-- **Remoção de fundo movida para dentro do processo** — RMBG-1.4 ONNX embutido, sem serviço externo; fundo transparente / cor sólida, sobrescrever ou salvar uma cópia `_nobg.png`
-- **Robustez e segurança dos dados** — proteção global contra falhas (`crash.log`); salvamento atômico de tags sem perda de dados; as ferramentas em lote nunca destroem os originais; fechar no meio de uma tarefa cancela com segurança; downloads de modelos resistentes a interrupções + verificação de integridade antes do uso
-- **Segurança** — chaves de API criptografadas com DPAPI; autenticação e controle de acesso do servidor de IA; `BinaryFormatter` removido
-- **Usabilidade** — verificação de atualizações com um clique nas Configurações; revisão de tags com seleção múltipla (Shift+T) com lista de tags no lado esquerdo; tradução priorizando CSV (ativada por padrão)
-- Removidos a aba "Prévia do AutoTagger" e o menu TAG2NL independente; 264 testes unitários aprovados
-
-Detalhes completos (Adicionado / Melhorado / Removido / Corrigido): **[notas da versão v1.1.2](../RELEASE_NOTES_v1.1.2.md)**.
-
-## Novidades da versão 1.1.1
-
-Salvamento mais rápido da auditoria de tags de personagem; diálogo unificado de **Recortar imagem** (várias regiões, exportação `_r1/_r2` na mesma pasta, importação automática para o dataset).
-
-Detalhes completos: **[notas da versão v1.1.1](../RELEASE_NOTES_v1.1.1.md)**; versões anteriores: [v1.1](../RELEASE_NOTES_v1.1.md) (catálogo WD14, correção do PixAI) · [v1.0.5](../RELEASE_NOTES_v1.0.5.md) (Tagger ONNX unificado, ferramentas de vídeo)
-
-## Em relação ao upstream
-
-- Marcação automática por LLM com quatro modelos de prompt integrados, além de importação/exportação de modelos personalizados
-- Modo "Linguagem natural" da Marcação LLM (antigo TAG2NL) para legendas em lote (concorrência LLM de 1–100)
-- Assistente de auditoria de personagem (estilo enxuto vs. completo, canonicalizador local)
-- Dados de origem somente leitura; gravações atômicas, suporte a cancelamento, isolamento de erros por arquivo
-
-## Fluxo de trabalho
-
-1. **Arquivo → Carregar Pasta**
-2. Edite as tags; abra a **Wiki do Danbooru** quando necessário
-3. Configure os modelos em **Configurações LLM**
-4. Execute **Ferramentas → Marcação LLM...** (modos Tags / Tags → Linguagem natural) ou **Teste → Abrir auditoria de tags...**
-
-## Configurações LLM
-
-![Configurações LLM](../images/llm-settings.png)
-
-Conexão, modelo de texto, modelos de visão (auto-tag + auditoria de personagem), concorrência LLM (compartilhada pela marcação de tags e pela geração de legendas; padrão 5, de 1 a 100) e o prompt fixo de Linguagem natural (somente leitura, independente dos modelos de auto-tag).
-
-## Modelos de prompt de marcação automática
-
-![Modelos de prompt de marcação automática](../images/auto-tag-prompt-templates.png)
-
-Integrados: Danbooru Tag, Natural Language, Mixed Mode e Natural Language 2. Os modelos personalizados são exportados como JSON, sem credenciais.
-
-## Marcação LLM
-
-**Ferramentas → Marcação LLM...**, clique com o botão direito em uma imagem do dataset → **Marcação LLM**, ou o botão "Gerar tags automaticamente" na barra de ferramentas de tags.
-
-![Marcação LLM](../images/llm-tagger.png)
-
-- Comum: fonte de entrada (selecionadas / todas), modelo de visão, uma lista suspensa de **modelo de prompt**, concorrência LLM; **Config. de marcação...** abre o editor completo de prompt/parâmetros e **Configurações LLM...** configura o endpoint e os modelos.
-- **Modo Tags** — imagem → tags, gravadas de volta no dataset conforme o modo de gravação (substituir / acrescentar / ignorar existentes), com ordenação, prefixo/sufixo e pós-processamento de sublinhados.
-- **Modo Tags → Linguagem natural (antigo TAG2NL)** — tags + imagem → um parágrafo em linguagem natural.
-  - **Formato de saída** — **Tags + linguagem natural** (padrão, o formato original do TAG2NL) ou **apenas linguagem natural**.
-  - **Saída da legenda** — **Salvar cópia** (padrão) em `dataset_captioned/` (o `.txt` de origem permanece somente leitura; saídas existentes podem ser ignoradas) ou **Gravar no .txt no local**, no próprio `.txt` da imagem (por meio do gerenciador do dataset, de modo que memória e disco permaneçam consistentes).
-  - **Marcar com ONNX primeiro se sem tags** — quando habilitado, as imagens sem tags são primeiro marcadas pelo tagger ONNX WD14 local (que oferece baixar o modelo, se necessário) e depois entregues ao LLM — um pipeline automático de tags → linguagem natural.
-
-## Auditoria de tags de personagem LoRA
-
-**Teste → Abrir auditoria de tags...**
-
-1. **Configuração** — palavra de ativação, estilo enxuto/completo, imagem de referência  
-   ![Configuração da auditoria](../images/character-tag-audit-setup.png)
-2. **Revisão por IA** — triagem textual e, em seguida, revisão visual (não há como voltar etapas; cancele para recomeçar)
-3. **Revisar e aplicar** — edite as decisões, pré-visualize o prompt, salvamento transacional  
-   ![Revisão da auditoria](../images/character-tag-audit-review.png)
-
-O modo enxuto remove localmente as tags de aparência não essenciais após a revisão visual; o modo completo mantém os detalhes confirmados.
-
-## Tagger ONNX
-
-**Ferramentas → Tagger ONNX...** ou clique com o botão direito em **Retaguear com ONNX** nas imagens selecionadas.
-
-![Menu Ferramentas](../images/tools-menu.png)
-
-![Tagger ONNX](../images/onnx-tagger.png)
-
-![Menu de contexto Retaguear com ONNX](../images/context-menu-onnx-retag.png)
-
-- Seletor de modelo: catálogo WD14 completo (12 modelos) e PixAI 0.9; memorização dos limites por modelo
-- Download do HuggingFace oficial ou do espelho HF; as configurações são salvas automaticamente por modelo
-- Modo de gravação (substituir / acrescentar / ignorar existentes) e ordenação opcional das tags
-- Pós-processamento: substituir sublinhados por espaços (somente na inferência ONNX), tags de prefixo/sufixo
-- Barra de progresso para a marcação em lote; retaguear pelo botão direito abre o diálogo e inicia automaticamente
-
-## Ferramentas de vídeo
-
-**Ferramentas → Conversão de vídeo...** / **Extração de frames...**
-
-![Conversão de formato de vídeo](../images/video-format-conversion.png)
-
-![Extração de frames de vídeo](../images/video-frame-extraction.png)
-
-- Converta entre mp4, mkv, avi, webm, mov e flv; opção de substituir o arquivo original
-- Extraia todos os frames, por FPS, no FPS nativo ou por números de frame específicos, com pré-visualização e fluxo de bloqueio de frames
-- Os frames extraídos são importados para o dataset; o FFmpeg vem incluído nos builds de Release
-
-## Remoção de fundo
-
-**Ferramentas → Remover fundo**, ou clique com o botão direito em uma imagem do dataset → **Remover fundo**.
-
-![Remoção de fundo](../images/background-removal.png)
-
-- O RMBG-1.4 ONNX embutido executa localmente no cliente — **sem serviço externo**; um clique em "Baixar e carregar modelo" faz o download no primeiro uso (~176 MB, ou ~44 MB quantizado; fonte oficial / espelho), e um modelo já em cache carrega automaticamente ao abrir a janela
-- Escopo: todas as imagens ou apenas as selecionadas; fundo: **Transparente** ou **Cor sólida** (branco por padrão, com seletor de cores)
-- Saída: **Substituir original** ou **Salvar cópia (`_nobg.png`)** (ambas as escolhas são lembradas); o botão "Removing test" pré-visualiza primeiro uma única imagem
-- Em seguida, as miniaturas da grade e a pré-visualização são atualizadas (modo substituir) ou as cópias são importadas para o dataset (modo salvar cópia)
-
-## Revisão de tags com seleção múltipla
-
-Selecione várias imagens e pressione **Shift+T**.
-
-![Editor de tags com seleção múltipla](../images/multi-select-tag-editor.png)
-
-- Lista de tags à esquerda com contagem de ocorrências (ordenada por frequência); clique para trocar a tag em revisão
-- **Borda verde = tem a tag, vermelha = não tem**; clique em Y/N em uma miniatura para alternar
-- As edições em várias tags são aplicadas em um único salvamento; clique com o botão direito em uma miniatura para abrir a pré-visualização
-
-## Agradecimentos
-
-- **[starik222](https://github.com/starik222)** — autor do [BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)
-- **[FFmpeg](https://ffmpeg.org/)** — processamento de vídeo (componente GPL incluído nos Releases)
-
-## Instalação
-
-**Recomendado:** baixe `BooruDatasetTagManagerPlus-*-win-x64.zip` em [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases), extraia e execute `BooruDatasetTagManagerPlus.exe` (autocontido; não requer instalação separada do .NET).
-
-Compilar a partir do código-fonte:
+### Compilar a partir do código-fonte
 
 ```powershell
 dotnet build BooruDatasetTagManager.sln -c Debug -f net8.0-windows
@@ -168,6 +34,88 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 - `test_start.bat` — inicia a versão Release (ou Debug)
 - `quick_build.bat` — build local rápido para `dist/` (baixa o FFmpeg no primeiro build)
 
-A execução local cria **Models/** (pesos ONNX baixados), **Cache/** (por exemplo, miniaturas de vídeo) e **settings.json** (chaves de API e preferências) ao lado do executável. São dados locais gerados automaticamente e podem ser excluídos com segurança — as configurações voltam ao padrão e os modelos podem ser baixados novamente de dentro do aplicativo.
+A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settings.json** (chaves de API e preferências) ao lado do executável. Todos são dados locais gerados automaticamente e podem ser excluídos com segurança — as configurações voltam ao padrão e os modelos podem ser baixados novamente de dentro do aplicativo.
 
-As imagens enviadas para a Marcação LLM (incluindo Tags → Linguagem natural) ou para a auditoria de personagem vão para o endpoint que você configurou; a remoção de fundo e as ferramentas de vídeo executam totalmente no local. As configurações de API ficam no arquivo local `settings.json`.
+## Funcionalidades
+
+| Módulo | Descrição |
+| --- | --- |
+| **Marcação LLM** | Modos Tags / Tags→Linguagem natural; endpoint compatível com OpenAI; modelos de prompt; concorrência LLM 1–100 |
+| **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas; salvamento transacional |
+| **Tagger ONNX** | Catálogo WD14 local + PixAI + família CL; limites memorizados por modelo; download do HuggingFace |
+| **Remoção de fundo** | RMBG-1.4 ONNX embutido, totalmente local — sem serviço externo; fundo transparente ou de cor sólida |
+| **Editor de imagem** | Pincel / borracha / conta-gotas / recorte / rotação e espelhamento com atalhos no estilo Photoshop; diálogo separado de recorte de várias regiões |
+| **Ferramentas de vídeo** | Conversão de formato; extração de todos os frames / por FPS / frames específicos; FFmpeg incluído |
+| **Edição de tags** | Busca com dicionário chinês, ação rápida por clique duplo em Todas as tags, revisão com seleção múltipla (Shift+T), Wiki do Danbooru |
+
+## Guia de funcionalidades
+
+### Marcação LLM
+
+Entrada: **Ferramentas → Marcação LLM…**, o menu de contexto do dataset, ou o botão "Gerar tags automaticamente" na barra de ferramentas de tags. Primeiro configure o endpoint compatível com OpenAI, os modelos de texto/visão e a concorrência LLM global (padrão 5, de 1 a 100) em **Configurações LLM**.
+
+![Configurações LLM](../images/llm-settings.png)
+
+![Marcação LLM](../images/llm-tagger.png)
+
+- **Modo Tags** — imagem → tags, gravadas de volta no dataset conforme o modo de gravação (substituir / acrescentar / ignorar existentes), com ordenação, prefixo/sufixo e pós-processamento de sublinhados; quatro modelos de prompt integrados (Danbooru Tag / Natural Language / Mixed Mode / Natural Language 2), e os modelos personalizados são exportados como JSON sem credenciais
+- **Modo Tags → Linguagem natural** (antigo TAG2NL) — tags + imagem → uma legenda em linguagem natural; formato de saída **Tags+LN / apenas LN**; salva uma cópia em `dataset_captioned/` por padrão (o `.txt` de origem permanece somente leitura; saídas existentes podem ser ignoradas) ou grava no próprio `.txt` da imagem
+- **ONNX primeiro se sem tags** — imagens sem tags são primeiro marcadas pelo tagger ONNX local e depois entregues ao LLM — um pipeline automático de tags → linguagem natural
+
+### Auditoria de tags de personagem
+
+Entrada: **Teste → Abrir auditoria de tags…**. Defina a palavra de ativação bloqueada (sempre mantida), o estilo de marcação (**enxuto** mantém as características centrais / **completo** mantém todos os detalhes corretos), um limite mínimo de ocorrências e uma imagem de referência; a IA executa uma triagem textual seguida de uma revisão visual (não há como voltar etapas — cancele e reabra para mudar os parâmetros); por fim, revise cada decisão (manter / excluir / substituir / incerto), pré-visualize o prompt final do personagem e **Aplicar e salvar** grava de forma transacional, com reversão em caso de falha.
+
+![Revisão da auditoria](../images/character-tag-audit-review.png)
+
+### Tagger ONNX
+
+Entrada: **Ferramentas → Tagger ONNX…**, ou clique com o botão direito em **Retaguear com ONNX** nas imagens selecionadas (inicia automaticamente).
+
+![Tagger ONNX](../images/onnx-tagger.png)
+
+- Modelos: catálogo WD14 completo (12 modelos) + PixAI 0.9 + família CL (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); limites e configurações memorizados por modelo; download do HuggingFace oficial ou do espelho
+- O cl_tagger_v2 é um **repositório restrito (gated)** cuja licença do autor proíbe redistribuição e distribuição em pacotes — o aplicativo não o inclui; um aviso de licença aparece antes do download, e é preciso solicitar acesso no HuggingFace e informar o seu próprio Access Token (armazenado com criptografia DPAPI), ou colocar manualmente os arquivos baixados na pasta `Models`
+- Modo de gravação (substituir / acrescentar / ignorar existentes), ordenação opcional, sublinhado→espaço, tags de prefixo/sufixo; barra de progresso para execuções em lote
+
+### Remoção de fundo
+
+Entrada: **Ferramentas → Remover fundo**, ou o menu de contexto do dataset. O RMBG-1.4 ONNX embutido executa totalmente no local — **sem serviço externo**; download do modelo com um clique no primeiro uso (~176 MB, ou ~44 MB quantizado; fonte oficial / espelho).
+
+![Remoção de fundo](../images/background-removal.png)
+
+- Escopo: todas as imagens ou apenas as selecionadas; fundo: **transparente** ou **cor sólida** (branco por padrão, com seletor de cores); "Removing test" pré-visualiza primeiro uma única imagem
+- Saída: **substituir o original** ou **salvar uma cópia `_nobg.png`** (escolhas lembradas); em seguida as miniaturas são atualizadas ou as cópias são importadas automaticamente
+
+### Editor de imagem
+
+Entrada: menu de contexto do dataset → **Editar imagem**. Layout no estilo Photoshop: caixa de ferramentas compacta à esquerda, barra de opções no topo, barra de status embaixo.
+
+![Editor de imagem](../images/image-editor.png)
+
+- Atalhos consistentes com o Photoshop: **B** pincel, **E** borracha, **I** conta-gotas, **C** recorte, **H** mão (ou segure **Espaço**), `[`/`]` tamanho do pincel, **Alt+clique** amostra uma cor, zoom com a roda do mouse ancorado no cursor, **Ctrl+0** ajustar, **Ctrl+1** 100%, **Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y** desfazer/refazer (um traço = um passo, até 15), **Enter** aplicar recorte, **Ctrl+S** salvar
+- Salvar **sobrescreve o original** (gravação atômica — uma falha não corrompe o arquivo) ou grava uma **cópia `_edit`** (arquivo de tags clonado e importado para o dataset); a ação padrão é configurável em Configurações → UI
+- Há também o diálogo **Recortar imagem** no menu de contexto do dataset: desenhe várias regiões de uma vez, exporte `_r1/_r2…` para a pasta de origem, com importação automática para o dataset
+
+### Ferramentas de vídeo
+
+**Ferramentas → Conversão de vídeo… / Extração de frames…**. Converta entre mp4 / mkv / avi / webm / mov / flv (com opção de substituir o original); extraia todos os frames, por FPS, no FPS nativo ou por números de frame específicos, com pré-visualização e fluxo de bloqueio de frames; os resultados são importados para o dataset. O FFmpeg vem incluído nos builds de Release.
+
+![Extração de frames de vídeo](../images/video-frame-extraction.png)
+
+### Revisão de tags com seleção múltipla
+
+Selecione várias imagens e pressione **Shift+T**: a lista de tags à esquerda (com contagem de ocorrências, ordenada por frequência) troca a tag em revisão; **borda verde = tem a tag, vermelha = não tem** — clique em Y/N em uma miniatura para alternar; as edições em várias tags são aplicadas em um único salvamento.
+
+![Editor de tags com seleção múltipla](../images/multi-select-tag-editor.png)
+
+### Dados e privacidade
+
+- **A Marcação LLM e a auditoria de tags de personagem enviam imagens ao endpoint que você configurou**; a marcação ONNX, a remoção de fundo e as ferramentas de vídeo executam totalmente na sua máquina
+- As configurações (incluindo as chaves de API criptografadas com DPAPI) ficam no arquivo local `settings.json`; o salvamento de tags é atômico, as ferramentas em lote nunca destroem os originais e a exclusão de imagens é transacional, com reversão
+
+## Agradecimentos e licença
+
+- **[starik222](https://github.com/starik222)** — autor do [BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager), sobre o qual este projeto foi construído
+- **[FFmpeg](https://ffmpeg.org/)** — processamento de vídeo (componente GPL incluído nos Releases)
+- Licenciado sob a [Licença MIT](../../LICENSE); mantenha os avisos de copyright do upstream ao redistribuir builds modificados

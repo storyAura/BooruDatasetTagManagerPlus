@@ -28,6 +28,9 @@
     <Compile Include="..\BooruDatasetTagManager\ImageLruCache.cs" Link="Source\ImageLruCache.cs" />
     <Compile Include="..\BooruDatasetTagManager\SecretProtector.cs" Link="Source\SecretProtector.cs" />
     <Compile Include="..\BooruDatasetTagManager\SafeFile.cs" Link="Source\SafeFile.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TolerantFileEnumerator.cs" Link="Source\TolerantFileEnumerator.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageFileDeleter.cs" Link="Source\ImageFileDeleter.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageSorter.cs" Link="Source\ImageSorter.cs" />
     <Compile Include="..\BooruDatasetTagManager\ModelCorruptedException.cs" Link="Source\ModelCorruptedException.cs" />
     <Compile Include="..\BooruDatasetTagManager\PromptParser.cs" Link="Source\PromptParser.cs" />
     <Compile Include="..\BooruDatasetTagManager\AllTagsItem.cs" Link="Source\AllTagsItem.cs" />
@@ -57,6 +60,9 @@
     <Compile Include="..\BooruDatasetTagManager\CropRegion.cs" Link="Source\CropRegion.cs" />
     <Compile Include="..\BooruDatasetTagManager\CropCanvasHelper.cs" Link="Source\CropCanvasHelper.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageCropExporter.cs" Link="Source\ImageCropExporter.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageEditorCanvasMath.cs" Link="Source\ImageEditorCanvasMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageEditorDocument.cs" Link="Source\ImageEditorDocument.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ImageEditorSaveService.cs" Link="Source\ImageEditorSaveService.cs" />
     <Compile Include="..\BooruDatasetTagManager\AutoTagProvider.cs" Link="Source\AutoTagProvider.cs" />
     <Compile Include="..\BooruDatasetTagManager\TranslationManager.cs" Link="Source\TranslationManager.cs" />
     <Compile Include="..\BooruDatasetTagManager\VideoProcessingService.cs" Link="Source\VideoProcessingService.cs" />
@@ -65,6 +71,7 @@
     <Compile Include="..\BooruDatasetTagManager\OnnxTaggerProgressTracker.cs" Link="Source\OnnxTaggerProgressTracker.cs" />
     <Compile Include="..\BooruDatasetTagManager\Wd14OnnxTaggerService.cs" Link="Source\Wd14OnnxTaggerService.cs" />
     <Compile Include="..\BooruDatasetTagManager\PixAiOnnxTaggerService.cs" Link="Source\PixAiOnnxTaggerService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ClTaggerOnnxService.cs" Link="Source\ClTaggerOnnxService.cs" />
     <Compile Include="..\BooruDatasetTagManager\FfmpegLocator.cs" Link="Source\FfmpegLocator.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagPostProcessor.cs" Link="Source\TagPostProcessor.cs" />
     <Compile Include="..\BooruDatasetTagManager\AppSettings.cs" Link="Source\AppSettings.cs" />

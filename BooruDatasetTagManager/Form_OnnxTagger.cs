@@ -15,6 +15,7 @@ namespace BooruDatasetTagManager
         private readonly MainForm owner;
         private readonly Wd14OnnxTaggerService wd14Service = new Wd14OnnxTaggerService();
         private readonly PixAiOnnxTaggerService pixAiService = new PixAiOnnxTaggerService();
+        private readonly ClTaggerOnnxService clService = new ClTaggerOnnxService();
         private readonly ToolTip toolTip = new ToolTip();
 
         private readonly RadioButton radioSourceSelected = new RadioButton();
@@ -125,8 +126,8 @@ namespace BooruDatasetTagManager
                     return;
 
                 OnnxTaggerModelEntry entry = GetSelectedModel();
-                if (entry.Kind == OnnxTaggerModelKind.Wd14
-                    && !Program.Settings.Wd14Tagger.HasThresholdsForRepo(entry.Repo))
+                if (entry.Kind != OnnxTaggerModelKind.PixAi
+                    && !Program.Settings.Wd14Tagger.HasThresholdsForRepo(ThresholdKey(entry)))
                 {
                     ApplyModelDefaults();
                 }
@@ -181,6 +182,7 @@ namespace BooruDatasetTagManager
                 toolTip.Dispose();
                 wd14Service.Dispose();
                 pixAiService.Dispose();
+                clService.Dispose();
             };
         }
 
@@ -518,10 +520,25 @@ namespace BooruDatasetTagManager
             else
             {
                 Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
-                (double threshold, double characterThreshold) = settings.GetThresholdsForRepo(entry.Repo);
+                string key = ThresholdKey(entry);
+                (double threshold, double characterThreshold) = settings.GetThresholdsForRepo(key);
+                if (entry.Kind == OnnxTaggerModelKind.ClTagger && !settings.HasThresholdsForRepo(key))
+                {
+                    // First use of a CL model: the WD fallback defaults do not
+                    // apply, take the catalog defaults instead.
+                    threshold = entry.DefaultThreshold;
+                    characterThreshold = entry.DefaultCharacterThreshold ?? threshold;
+                }
                 numericThreshold.Value = (decimal)Math.Clamp(threshold, (double)numericThreshold.Minimum, (double)numericThreshold.Maximum);
                 numericCharacterThreshold.Value = (decimal)Math.Clamp(characterThreshold, (double)numericCharacterThreshold.Minimum, (double)numericCharacterThreshold.Maximum);
             }
+        }
+
+        // CL entries store per-model thresholds under their catalog id (several
+        // models can live in one repo); WD keeps the historical repo key.
+        private static string ThresholdKey(OnnxTaggerModelEntry entry)
+        {
+            return entry.Kind == OnnxTaggerModelKind.ClTagger ? entry.Id : entry.Repo;
         }
 
         private HuggingFaceDownloadSource GetDownloadSourceForSelectedModel()
@@ -601,7 +618,7 @@ namespace BooruDatasetTagManager
             {
                 Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
                 settings.SetThresholdsForRepo(
-                    entry.Repo,
+                    ThresholdKey(entry),
                     (double)numericThreshold.Value,
                     (double)numericCharacterThreshold.Value);
                 settings.ReplaceUnderscoresWithSpaces = checkReplaceUnderscores.Checked;
@@ -631,9 +648,7 @@ namespace BooruDatasetTagManager
         private void UpdateModelStatus()
         {
             OnnxTaggerModelEntry entry = GetSelectedModel();
-            bool ready = entry.Kind == OnnxTaggerModelKind.PixAi
-                ? pixAiService.IsModelReady()
-                : wd14Service.IsModelReady(entry.Repo);
+            bool ready = IsModelReady(entry);
             string text = ready ? I18n.GetText("TaggerModelReady") : I18n.GetText("TaggerModelMissing");
             labelModelStatus.Text = text;
             toolTip.SetToolTip(labelModelStatus, text);
@@ -711,9 +726,12 @@ namespace BooruDatasetTagManager
 
         private bool IsModelReady(OnnxTaggerModelEntry entry)
         {
-            return entry.Kind == OnnxTaggerModelKind.PixAi
-                ? pixAiService.IsModelReady()
-                : wd14Service.IsModelReady(entry.Repo);
+            return entry.Kind switch
+            {
+                OnnxTaggerModelKind.PixAi => pixAiService.IsModelReady(),
+                OnnxTaggerModelKind.ClTagger => clService.IsModelReady(entry.ClModel),
+                _ => wd14Service.IsModelReady(entry.Repo)
+            };
         }
 
         private HuggingFaceDownloadSource GetSelectedDownloadSource()
@@ -738,6 +756,15 @@ namespace BooruDatasetTagManager
                 return;
 
             OnnxTaggerModelEntry entry = GetSelectedModel();
+            string clAuthToken = null;
+            if (entry.Kind == OnnxTaggerModelKind.ClTagger && entry.ClModel.IsGated)
+            {
+                // The author's license forbids redistribution/bundling and the
+                // repo is gated: confirm the terms and collect the user's own
+                // HuggingFace token before touching the network.
+                if (!Form_GatedModelNotice.ConfirmDownload(this, entry.ClModel, out clAuthToken))
+                    return;
+            }
             SaveSettingsFromControls();
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
@@ -759,6 +786,8 @@ namespace BooruDatasetTagManager
 
                 if (entry.Kind == OnnxTaggerModelKind.PixAi)
                     await pixAiService.DownloadModelAsync(GetSelectedDownloadSource(), progress, jobCancellation.Token).ConfigureAwait(true);
+                else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
+                    await clService.DownloadModelAsync(entry.ClModel, GetSelectedDownloadSource(), clAuthToken, progress, jobCancellation.Token).ConfigureAwait(true);
                 else
                     await wd14Service.DownloadModelAsync(entry.Repo, GetSelectedDownloadSource(), progress, jobCancellation.Token).ConfigureAwait(true);
 
@@ -771,6 +800,22 @@ namespace BooruDatasetTagManager
                 progressBar.Value = 0;
                 UpdateStatus(I18n.GetText("TaggerCancelled"));
                 UpdateModelStatus();
+            }
+            catch (System.Net.Http.HttpRequestException ex) when (entry.Kind == OnnxTaggerModelKind.ClTagger
+                && (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized || ex.StatusCode == System.Net.HttpStatusCode.Forbidden))
+            {
+                // Gated repo refused the request: access not granted yet or a
+                // bad/expired token. Point at the manual-placement folder too.
+                progressBar.Value = 0;
+                UpdateModelStatus();
+                UpdateIdleStatus();
+                MessageBox.Show(
+                    this,
+                    string.Format(I18n.GetText("TaggerGatedDownloadDenied"),
+                        HuggingFaceModelDownloader.GetLocalDirectory(entry.Repo)),
+                    I18n.GetText("UIError"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
@@ -805,6 +850,11 @@ namespace BooruDatasetTagManager
                         pixAiService.Unload();
                         pixAiService.LoadModel();
                     }
+                    else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
+                    {
+                        clService.Unload();
+                        clService.LoadModel(entry.ClModel);
+                    }
                     else
                     {
                         wd14Service.Unload();
@@ -829,6 +879,8 @@ namespace BooruDatasetTagManager
         {
             if (entry.Kind == OnnxTaggerModelKind.PixAi)
                 pixAiService.ClearModelCache();
+            else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
+                clService.ClearModelCache(entry.ClModel);
             else
                 wd14Service.ClearModelCache(entry.Repo);
         }
@@ -894,6 +946,26 @@ namespace BooruDatasetTagManager
                         return RunBatchInference(
                             inputs,
                             input => pixAiService.TagImageWithTiming(input, settings.GeneralThreshold, settings.CharacterThreshold),
+                            progressTracker,
+                            progressReporter,
+                            value => ReportBatchProgress(value, totalImages),
+                            ref completed,
+                            errors,
+                            jobCancellation.Token);
+                    }, jobCancellation.Token).ConfigureAwait(true);
+
+                    ApplyBatchInferenceResults(inferenceResults, () => settings, errors);
+                }
+                else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
+                {
+                    Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
+                    (double generalThreshold, double characterThreshold) = settings.GetThresholdsForRepo(ThresholdKey(entry));
+                    inferenceResults = await Task.Run(() =>
+                    {
+                        clService.LoadModel(entry.ClModel);
+                        return RunBatchInference(
+                            inputs,
+                            input => clService.TagImageWithTiming(input, generalThreshold, characterThreshold),
                             progressTracker,
                             progressReporter,
                             value => ReportBatchProgress(value, totalImages),

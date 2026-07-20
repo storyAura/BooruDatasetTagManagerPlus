@@ -22,6 +22,10 @@ namespace BooruDatasetTagManager
         private readonly Dictionary<long, TransItem> translationCache;
         private readonly object cacheSync = new object();
         private readonly SemaphoreSlim translationLocker = new SemaphoreSlim(1, 1);
+        // Serializes every append/rewrite of the cache file. translationLocker
+        // only guards TranslateAsync, so a public AddTranslationAsync could
+        // otherwise append while a rewrite truncates the same file.
+        private readonly SemaphoreSlim persistenceLocker = new SemaphoreSlim(1, 1);
 
         public TranslationManager(
             string toLang,
@@ -191,14 +195,24 @@ namespace BooruDatasetTagManager
                 }
             }
 
-            if (rewriteFile)
-                await RewriteTranslationsFileAsync();
-            else
-                await File.AppendAllTextAsync(translationFilePath, $"{(isManual ? "*" : "")}{orig}={trans}\r\n", Encoding.UTF8);
+            await persistenceLocker.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (rewriteFile)
+                    await RewriteTranslationsFileAsync().ConfigureAwait(false);
+                else
+                    await File.AppendAllTextAsync(translationFilePath, $"{(isManual ? "*" : "")}{orig}={trans}\r\n", Encoding.UTF8).ConfigureAwait(false);
+            }
+            finally
+            {
+                persistenceLocker.Release();
+            }
         }
 
-        private async Task RewriteTranslationsFileAsync()
+        private Task RewriteTranslationsFileAsync()
         {
+            // The snapshot is taken inside the persistence lock, so a rewrite
+            // always persists at least every entry that was appended before it.
             List<TransItem> snapshot;
             lock (cacheSync)
             {
@@ -210,7 +224,9 @@ namespace BooruDatasetTagManager
             foreach (var item in snapshot)
                 builder.AppendLine($"{(item.IsManual ? "*" : "")}{item.Orig}={item.Trans}");
 
-            await File.WriteAllTextAsync(translationFilePath, builder.ToString(), Encoding.UTF8);
+            // Atomic replace: a crash/disk-full mid-rewrite must not leave the
+            // cache file truncated.
+            return Task.Run(() => SafeFile.WriteAllText(translationFilePath, builder.ToString(), Encoding.UTF8));
         }
 
         private void AddToCache(TransItem item)
@@ -233,6 +249,7 @@ namespace BooruDatasetTagManager
         {
             translator?.Dispose();
             translationLocker.Dispose();
+            persistenceLocker.Dispose();
         }
 
         public class TransItem

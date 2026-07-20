@@ -6,11 +6,12 @@ namespace BooruDatasetTagManager.Tests;
 public sealed class OnnxTaggerCatalogTests
 {
     [Fact]
-    public void AllModels_contains_twelve_wd14_and_one_pixai_entry()
+    public void AllModels_contains_twelve_wd14_one_pixai_and_three_cl_entries()
     {
-        Assert.Equal(13, OnnxTaggerCatalog.AllModels.Count);
+        Assert.Equal(16, OnnxTaggerCatalog.AllModels.Count);
         Assert.Equal(12, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.Wd14));
         Assert.Single(OnnxTaggerCatalog.AllModels, model => model.Kind == OnnxTaggerModelKind.PixAi);
+        Assert.Equal(3, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.ClTagger));
     }
 
     [Fact]

@@ -217,7 +217,11 @@ namespace BooruDatasetTagManager
             initialHeader.Controls.Add(labelInitialSummary);
             initialHeader.Controls.Add(comboInitialFilter);
             ConfigureReadOnlyAuditGrid(initialGrid, includeInitial: false);
-            initialGrid.DataBindingComplete += (_, _) => ApplyReasonTooltips(initialGrid);
+            initialGrid.DataBindingComplete += (_, _) =>
+            {
+                ApplyDecisionRowColors(initialGrid);
+                ApplyReasonTooltips(initialGrid);
+            };
             AttachWikiContextMenu(initialGrid);
             layout.Controls.Add(labelProgress, 0, 0);
             layout.Controls.Add(progressBar, 0, 1);
@@ -297,6 +301,7 @@ namespace BooruDatasetTagManager
             resultGrid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = nameof(ReviewRow.ReasonDisplay), Name = "Reason", FillWeight = 180, ReadOnly = true });
             resultGrid.DataBindingComplete += (_, _) =>
             {
+                ApplyDecisionRowColors(resultGrid);
                 ApplyCellProtection();
                 ApplyReasonTooltips(resultGrid);
             };
@@ -501,7 +506,9 @@ namespace BooruDatasetTagManager
                 ReasonDisplay = reasonLocalizer != null && reasonLocalizer.RequiresTranslation
                     ? I18n.GetText("CharacterTagAuditReasonTranslating")
                     : originalReason,
-                CanModify = item.CanDelete && !string.Equals(item.Tag, trigger, StringComparison.Ordinal),
+                // Every row except the locked trigger word is user-editable; the
+                // category policy only constrains the AI, not manual review.
+                CanModify = !string.Equals(item.Tag, trigger, StringComparison.Ordinal),
                 Decision = string.Equals(item.Tag, trigger, StringComparison.Ordinal)
                     ? CharacterTagDecision.Keep
                     : item.FinalDecision,
@@ -644,14 +651,48 @@ namespace BooruDatasetTagManager
                 DataGridViewCell decision = row.Cells["Decision"];
                 DataGridViewCell replacement = row.Cells["Replacement"];
                 DataGridViewCell prompt = row.Cells["IncludePrompt"];
-                decision.ReadOnly = !reviewMode || !item.CanModify;
-                replacement.ReadOnly = !reviewMode || !item.CanModify || item.Decision != CharacterTagDecision.Replace;
-                prompt.ReadOnly = !reviewMode || !item.CanModify || item.Decision == CharacterTagDecision.Delete;
+                bool editable = reviewMode && item.CanModify;
+                decision.ReadOnly = !editable;
+                replacement.ReadOnly = !editable || item.Decision != CharacterTagDecision.Replace;
+                prompt.ReadOnly = !editable || item.Decision == CharacterTagDecision.Delete;
+                // A locked cell must not look like an active dropdown: hide the
+                // arrow so "not clickable" is visible before the user clicks.
+                if (decision is DataGridViewComboBoxCell comboCell)
+                {
+                    comboCell.DisplayStyle = editable
+                        ? DataGridViewComboBoxDisplayStyle.DropDownButton
+                        : DataGridViewComboBoxDisplayStyle.Nothing;
+                }
                 if (!item.CanModify)
                 {
                     decision.Style.BackColor = SystemColors.Control;
                     replacement.Style.BackColor = SystemColors.Control;
                 }
+                else
+                {
+                    decision.Style.BackColor = Color.Empty;
+                    replacement.Style.BackColor = Color.Empty;
+                }
+            }
+        }
+
+        private static Color DecisionRowColor(CharacterTagDecision decision)
+        {
+            return decision switch
+            {
+                CharacterTagDecision.Delete => Color.FromArgb(255, 226, 222),
+                CharacterTagDecision.Replace => Color.FromArgb(255, 240, 212),
+                CharacterTagDecision.Uncertain => Color.FromArgb(255, 250, 205),
+                _ => Color.Empty
+            };
+        }
+
+        private static void ApplyDecisionRowColors(DataGridView grid)
+        {
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                if (row.DataBoundItem is ReviewRow item)
+                    row.DefaultCellStyle.BackColor = DecisionRowColor(item.Decision);
             }
         }
 
@@ -664,6 +705,7 @@ namespace BooruDatasetTagManager
                 if (item.Decision != CharacterTagDecision.Replace)
                     item.ReplacementTag = string.Empty;
             }
+            ApplyDecisionRowColors(resultGrid);
             ApplyCellProtection();
             RebuildSummaryAndPrompt();
         }
@@ -697,8 +739,9 @@ namespace BooruDatasetTagManager
             if (cell.ReadOnly || resultGrid.ReadOnly)
                 return;
             resultGrid.CurrentCell = cell;
-            if (!resultGrid.BeginEdit(true))
-                return;
+            resultGrid.BeginEdit(true);
+            // Open the list even when the cell was already in edit mode, so a
+            // single click always drops the list down.
             if (resultGrid.EditingControl is ComboBox combo)
                 combo.DroppedDown = true;
         }
@@ -736,8 +779,9 @@ namespace BooruDatasetTagManager
             comboMode.Items.Add(new LocalizedChoice<CharacterTagAuditExecutionMode>(CharacterTagAuditExecutionMode.Review, I18n.GetText("CharacterTagAuditModeReview")));
             comboMode.Items.Add(new LocalizedChoice<CharacterTagAuditExecutionMode>(CharacterTagAuditExecutionMode.SummaryApply, I18n.GetText("CharacterTagAuditModeSummary")));
             comboInitialFilter.Items.Clear();
+            comboInitialFilter.Items.Add(new LocalizedChoice<InitialFilter>(InitialFilter.All, I18n.GetText("CharacterTagAuditInitialAll")));
             comboInitialFilter.Items.Add(new LocalizedChoice<InitialFilter>(InitialFilter.Keep, I18n.GetText("CharacterTagAuditInitialKeep")));
-            comboInitialFilter.Items.Add(new LocalizedChoice<InitialFilter>(InitialFilter.Delete, I18n.GetText("CharacterTagAuditInitialDelete")));
+            comboInitialFilter.Items.Add(new LocalizedChoice<InitialFilter>(InitialFilter.Changes, I18n.GetText("CharacterTagAuditInitialDelete")));
             comboInitialFilter.SelectedIndex = 0;
             UpdateChoiceDropDownWidth(comboStyle);
             UpdateChoiceDropDownWidth(comboMode);
@@ -1210,10 +1254,33 @@ namespace BooruDatasetTagManager
         {
             if (comboInitialFilter.SelectedItem is not LocalizedChoice<InitialFilter> selection)
                 return;
-            IEnumerable<ReviewRow> rows = selection.Value == InitialFilter.Delete
-                ? initialRows.Where(row => row.Decision == CharacterTagDecision.Delete || row.Decision == CharacterTagDecision.Replace)
-                : initialRows.Where(row => row.Decision != CharacterTagDecision.Delete && row.Decision != CharacterTagDecision.Replace);
+            // Default view: every audited tag, change candidates sorted to the
+            // top so mixed decisions are visible without touching the filter.
+            IEnumerable<ReviewRow> rows = selection.Value switch
+            {
+                InitialFilter.Keep => initialRows.Where(row => !IsChangeCandidate(row)),
+                InitialFilter.Changes => initialRows.Where(IsChangeCandidate),
+                _ => initialRows.OrderBy(DecisionSortRank)
+            };
             initialGrid.DataSource = new BindingList<ReviewRow>(rows.ToList());
+        }
+
+        private static bool IsChangeCandidate(ReviewRow row)
+        {
+            return row.Decision == CharacterTagDecision.Delete
+                || row.Decision == CharacterTagDecision.Replace
+                || row.Decision == CharacterTagDecision.Uncertain;
+        }
+
+        private static int DecisionSortRank(ReviewRow row)
+        {
+            return row.Decision switch
+            {
+                CharacterTagDecision.Delete => 0,
+                CharacterTagDecision.Replace => 1,
+                CharacterTagDecision.Uncertain => 2,
+                _ => 3
+            };
         }
 
         private void FillResultGrid()
@@ -1406,9 +1473,6 @@ namespace BooruDatasetTagManager
         {
             foreach (CharacterTagAuditItem item in decisions)
             {
-                if ((item.FinalDecision == CharacterTagDecision.Delete || item.FinalDecision == CharacterTagDecision.Replace)
-                    && !item.CanDelete)
-                    return I18n.GetText("CharacterTagAuditProtectedChange");
                 if (item.FinalDecision == CharacterTagDecision.Replace
                     && !CharacterTagAuditPolicy.IsValidReplacement(item.Tag, item.ReplacementTag))
                     return string.Format(I18n.GetText("CharacterTagAuditInvalidReplacement"), item.Tag);
@@ -1563,8 +1627,10 @@ namespace BooruDatasetTagManager
 
         private enum InitialFilter
         {
+            All,
             Keep,
-            Delete
+            // Delete, Replace, and Uncertain rows — everything needing attention.
+            Changes
         }
 
         private sealed class LocalizedChoice<T> where T : struct, Enum

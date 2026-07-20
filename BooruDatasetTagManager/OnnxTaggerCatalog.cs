@@ -7,7 +7,8 @@ namespace BooruDatasetTagManager
     public enum OnnxTaggerModelKind
     {
         Wd14,
-        PixAi
+        PixAi,
+        ClTagger
     }
 
     public sealed class OnnxTaggerModelEntry
@@ -18,6 +19,8 @@ namespace BooruDatasetTagManager
         public string Repo { get; init; }
         public double DefaultThreshold { get; init; }
         public double? DefaultCharacterThreshold { get; init; }
+        /// <summary>Non-null for Kind == ClTagger.</summary>
+        public ClTaggerModelDefinition ClModel { get; init; }
 
         public override string ToString()
         {
@@ -56,6 +59,21 @@ namespace BooruDatasetTagManager
                 DefaultThreshold = 0.3,
                 DefaultCharacterThreshold = 0.85
             });
+
+            foreach (ClTaggerModelDefinition model in ClTaggerOnnxService.Models)
+            {
+                models.Add(new OnnxTaggerModelEntry
+                {
+                    Id = model.Id,
+                    Kind = OnnxTaggerModelKind.ClTagger,
+                    // Mark the gated repo so the restriction is visible up front.
+                    DisplayName = "[CL] " + model.ShortName + (model.IsGated ? " 🔒" : string.Empty),
+                    Repo = model.Repo,
+                    DefaultThreshold = model.DefaultThreshold,
+                    DefaultCharacterThreshold = model.DefaultCharacterThreshold,
+                    ClModel = model
+                });
+            }
 
             AllModels = models;
         }

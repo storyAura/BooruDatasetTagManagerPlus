@@ -14,28 +14,37 @@ namespace BooruDatasetTagManager
         public Dictionary<string, Dictionary<string, string>> Langs { get; set; }
         public LanguageManager()
         {
-            // Startup path: a missing folder, duplicate key or read error here
-            // used to be an unrecoverable crash before any window appeared.
+            // Startup path: this runs before the message loop, so nothing here
+            // may throw. A missing folder, unreadable directory (ACL, network
+            // share), duplicate key or read error must all degrade to raw keys
+            // instead of an unrecoverable crash before any window appears.
             Langs = new Dictionary<string, Dictionary<string, string>>();
-            string langDir = Path.Combine(Program.AppPath, "Languages");
-            if (!Directory.Exists(langDir))
+            try
             {
-                Trace.WriteLine($"LanguageManager: directory not found: {langDir}");
-                return;
+                string langDir = Path.Combine(Program.AppPath, "Languages");
+                if (!Directory.Exists(langDir))
+                {
+                    Trace.WriteLine($"LanguageManager: directory not found: {langDir}");
+                    return;
+                }
+                string[] files = Directory.GetFiles(langDir, "*.txt", SearchOption.TopDirectoryOnly);
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        LoadLanguageFromFile(file);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine($"LanguageManager: failed to load '{file}': {ex}");
+                    }
+                }
+                FixOldLangFilesFromDefault();
             }
-            string[] files = Directory.GetFiles(langDir, "*.txt", SearchOption.TopDirectoryOnly);
-            foreach (string file in files)
+            catch (Exception ex)
             {
-                try
-                {
-                    LoadLanguageFromFile(file);
-                }
-                catch (Exception ex)
-                {
-                    Trace.WriteLine($"LanguageManager: failed to load '{file}': {ex}");
-                }
+                Trace.WriteLine($"LanguageManager: failed to enumerate language files: {ex}");
             }
-            FixOldLangFilesFromDefault();
         }
 
         private void LoadLanguageFromFile(string filename)

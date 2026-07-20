@@ -160,7 +160,7 @@ namespace BooruDatasetTagManager
             // BtnSave
             // 
             BtnSave.Anchor = System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left;
-            BtnSave.Location = new System.Drawing.Point(7, 445);
+            BtnSave.Location = new System.Drawing.Point(7, 490);
             BtnSave.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             BtnSave.Name = "BtnSave";
             BtnSave.Size = new System.Drawing.Size(88, 27);
@@ -173,7 +173,7 @@ namespace BooruDatasetTagManager
             // 
             BtnCancel.Anchor = System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left;
             BtnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            BtnCancel.Location = new System.Drawing.Point(101, 445);
+            BtnCancel.Location = new System.Drawing.Point(101, 490);
             BtnCancel.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             BtnCancel.Name = "BtnCancel";
             BtnCancel.Size = new System.Drawing.Size(88, 27);
@@ -185,7 +185,7 @@ namespace BooruDatasetTagManager
             // BtnCheckUpdate
             //
             BtnCheckUpdate.Anchor = System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right;
-            BtnCheckUpdate.Location = new System.Drawing.Point(496, 445);
+            BtnCheckUpdate.Location = new System.Drawing.Point(496, 490);
             BtnCheckUpdate.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             BtnCheckUpdate.Name = "BtnCheckUpdate";
             BtnCheckUpdate.Size = new System.Drawing.Size(132, 27);
@@ -548,7 +548,7 @@ namespace BooruDatasetTagManager
             SettingFrame.Location = new System.Drawing.Point(2, 1);
             SettingFrame.Name = "SettingFrame";
             SettingFrame.SelectedIndex = 0;
-            SettingFrame.Size = new System.Drawing.Size(630, 427);
+            SettingFrame.Size = new System.Drawing.Size(630, 472);
             SettingFrame.TabIndex = 6;
             SettingFrame.Tabs.Add(tabGeneral);
             SettingFrame.Tabs.Add(tabUI);
@@ -844,7 +844,7 @@ namespace BooruDatasetTagManager
             AutoScaleDimensions = new System.Drawing.SizeF(96F, 96F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             CancelButton = BtnCancel;
-            ClientSize = new System.Drawing.Size(635, 479);
+            ClientSize = new System.Drawing.Size(635, 524);
             Controls.Add(SettingFrame);
             Controls.Add(BtnCheckUpdate);
             Controls.Add(BtnCancel);

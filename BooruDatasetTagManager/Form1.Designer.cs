@@ -549,7 +549,7 @@ namespace BooruDatasetTagManager
             // 
             loadFolderWithAdditionalSettingsToolStripMenuItem.Name = "loadFolderWithAdditionalSettingsToolStripMenuItem";
             loadFolderWithAdditionalSettingsToolStripMenuItem.Size = new System.Drawing.Size(333, 26);
-            loadFolderWithAdditionalSettingsToolStripMenuItem.Text = "Load folder with additional settings...";
+            loadFolderWithAdditionalSettingsToolStripMenuItem.Text = "Load Folder (Custom Options)...";
             loadFolderWithAdditionalSettingsToolStripMenuItem.Click += loadFolderWithAdditionalSettingsToolStripMenuItem_Click;
             // 
             // saveAllChangesToolStripMenuItem

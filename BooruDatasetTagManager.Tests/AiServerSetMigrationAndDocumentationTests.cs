@@ -74,27 +74,27 @@ public class AiServerSetMigrationAndDocumentationTests
     }
 
     [Theory]
-    [InlineData("README_en.md", "## Project lineage", "## LLM Settings", "## LLM tagging", "## Acknowledgments")]
-    [InlineData("README.md", "## 项目渊源", "## LLM 设置", "## LLM 打标", "## 致谢")]
+    [InlineData("README_en.md", "## Getting started", "### LLM tagging", "### Character tag audit", "## Acknowledgments & license")]
+    [InlineData("README.md", "## 快速开始", "### LLM 打标", "### 角色标签审查", "## 致谢与许可")]
     public void BilingualReadmesContainFeatureSectionsAndImages(
         string fileName,
-        string lineageHeading,
-        string settingsHeading,
+        string quickStartHeading,
         string llmHeading,
+        string auditHeading,
         string creditsHeading)
     {
         string root = FindRepoRoot();
         string readme = File.ReadAllText(Path.Combine(root, fileName));
 
-        Assert.Contains(lineageHeading, readme);
-        Assert.Contains(settingsHeading, readme);
+        Assert.Contains(quickStartHeading, readme);
         Assert.Contains(llmHeading, readme);
+        Assert.Contains(auditHeading, readme);
         Assert.Contains(creditsHeading, readme);
         Assert.Contains("github.com/starik222/BooruDatasetTagManager", readme);
         Assert.Contains("docs/images/main-window-wiki.png", readme);
         Assert.Contains("docs/images/llm-settings.png", readme);
-        Assert.Contains("docs/images/auto-tag-prompt-templates.png", readme);
-        Assert.Contains("docs/images/character-tag-audit-setup.png", readme);
+        Assert.Contains("docs/images/llm-tagger.png", readme);
+        Assert.Contains("docs/images/onnx-tagger.png", readme);
         Assert.Contains("docs/images/character-tag-audit-review.png", readme);
     }
 

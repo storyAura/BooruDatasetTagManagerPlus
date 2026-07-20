@@ -93,6 +93,36 @@ namespace BooruDatasetTagManager
             return string.Empty;
         }
 
+        /// <summary>
+        /// English tags whose Chinese dictionary names contain <paramref name="input"/>.
+        /// Used by the grid search boxes so typing Chinese locates the rows of the
+        /// corresponding English tags (synonyms included).
+        /// </summary>
+        public HashSet<string> FindEnglishTagsByChineseName(string input, string language)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!IsSimplifiedChineseLanguage(language) || string.IsNullOrWhiteSpace(input) || entries.Count == 0)
+                return result;
+
+            string normalized = NormalizeChineseName(input);
+            if (normalized.Length == 0)
+                return result;
+
+            foreach (var entry in entries)
+            {
+                foreach (string chineseName in entry.ChineseNames)
+                {
+                    if (chineseName.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.Add(entry.EnglishTag);
+                        break;
+                    }
+                }
+            }
+
+            return result;
+        }
+
         public TagsDB.TagItem[] SearchAutocompleteValues(
             string input,
             IEnumerable<TagsDB.TagItem> baseValues,

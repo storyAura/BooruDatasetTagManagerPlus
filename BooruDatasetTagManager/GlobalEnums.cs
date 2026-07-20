@@ -92,6 +92,29 @@ namespace BooruDatasetTagManager
         NaturalLanguageOnly       // just the natural-language caption
     }
 
+    // How the image editor stores an edited image (Form_ImageEditor).
+    public enum ImageEditorSaveMode
+    {
+        Ask,        // prompt "overwrite or new file" on every save
+        Overwrite,  // always overwrite the original image file
+        NewFile     // always save as a new "<name>_edit" file next to the original
+    }
+
+    // Double-click action on the All Tags grid (single click selects). Member
+    // names double as i18n keys via Extensions.GetFriendlyEnumValues, and each
+    // maps onto one of the All Tags toolbar buttons.
+    public enum AllTagsQuickAction
+    {
+        QuickActionReplaceTag,          // open "Replace all" with the tag as source
+        QuickActionAddTagToAll,
+        QuickActionDeleteTagFromAll,
+        QuickActionAddTagToSelected,
+        QuickActionDeleteTagFromSelected,
+        QuickActionAddTagToFiltered,
+        QuickActionDeleteTagFromFiltered,
+        QuickActionFilterByTag
+    }
+
     public enum TagFilteringMode
     {
         None,

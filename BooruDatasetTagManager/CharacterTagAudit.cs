@@ -153,17 +153,21 @@ namespace BooruDatasetTagManager
         public bool IncludeInPrompt { get; set; }
         public int PromptOrder { get; set; }
 
+        // Category policy for AI decisions only: the parser uses it to sanitize
+        // model output. It no longer gates ShouldDelete/ShouldReplace, which
+        // honor deliberate user overrides made in the review grid.
         [JsonIgnore]
         public bool CanDelete => CharacterTagAuditPolicy.CanDelete(Category);
 
+        // The parser forces AI decisions on protected categories back to Keep,
+        // so a Delete/Replace on such a category can only be a deliberate user
+        // override made in the review grid. It must be applied, not ignored.
         [JsonIgnore]
-        public bool CanReplace => CharacterTagAuditPolicy.CanDelete(Category);
+        public bool ShouldDelete => FinalDecision == CharacterTagDecision.Delete;
 
         [JsonIgnore]
-        public bool ShouldDelete => CanDelete && FinalDecision == CharacterTagDecision.Delete;
-
-        [JsonIgnore]
-        public bool ShouldReplace => CanReplace && FinalDecision == CharacterTagDecision.Replace;
+        public bool ShouldReplace => FinalDecision == CharacterTagDecision.Replace
+            && !string.IsNullOrWhiteSpace(ReplacementTag);
 
         [JsonIgnore]
         public string EffectiveTag => ShouldReplace ? ReplacementTag : Tag;

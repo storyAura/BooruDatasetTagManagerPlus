@@ -118,23 +118,38 @@ namespace BooruDatasetTagManager
 
         private void AddFilesInQueue(string element, string[] fileList)
         {
+            // Dropped items can vanish or be unreadable between the drop and
+            // this call; one bad entry must not abort the whole drop.
+            var errors = new List<string>();
             foreach (string file in fileList)
             {
-                FileAttributes attr = File.GetAttributes(file);
-
-                if (attr.HasFlag(FileAttributes.Directory))
-                    imgSorter.AddFileRangeQueue(element, GetImgFilesFromDirectory(file));
-                else
+                try
                 {
-                    if (imagesExt.Contains(Path.GetExtension(file).ToLower()))
-                        imgSorter.AddFileQueue(element, file);
+                    FileAttributes attr = File.GetAttributes(file);
+
+                    if (attr.HasFlag(FileAttributes.Directory))
+                        imgSorter.AddFileRangeQueue(element, GetImgFilesFromDirectory(file, errors));
+                    else
+                    {
+                        if (imagesExt.Contains(Path.GetExtension(file).ToLower()))
+                            imgSorter.AddFileQueue(element, file);
+                    }
                 }
+                catch (Exception ex)
+                {
+                    errors.Add($"{file}: {ex.Message}");
+                }
+            }
+            if (errors.Count > 0)
+            {
+                MessageBox.Show(this, string.Join("\n", errors.Take(10)),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
-        private string[] GetImgFilesFromDirectory(string dir)
+        private string[] GetImgFilesFromDirectory(string dir, List<string> errors)
         {
-            string[] imgs = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories);
+            var imgs = TolerantFileEnumerator.GetFiles(dir, errors);
             return imgs.Where(a => imagesExt.Contains(Path.GetExtension(a).ToLower())).OrderBy(a => a, new FileNamesComparer()).ToArray();
         }
 

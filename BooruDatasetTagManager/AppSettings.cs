@@ -88,6 +88,22 @@ namespace BooruDatasetTagManager
         public bool BackgroundRemoverFillBackground { get; set; } = true;   // true = solid color, false = transparent
         public int BackgroundRemoverColorArgb { get; set; } = unchecked((int)0xFFFFFFFF); // default white
         public bool BackgroundRemoverReplaceOriginal { get; set; } = true;  // true = overwrite, false = save a copy
+        // Default save behavior of the image editor (Form_ImageEditor).
+        public ImageEditorSaveMode ImageEditorSaveMode { get; set; } = ImageEditorSaveMode.Ask;
+        // Double-click action on the All Tags grid (Form1).
+        public AllTagsQuickAction AllTagsDoubleClickAction { get; set; } = AllTagsQuickAction.QuickActionReplaceTag;
+
+        // HuggingFace access token used for gated model repos (e.g. cl_tagger_v2).
+        [JsonIgnore]
+        public string HuggingFaceToken { get; set; } = string.Empty;
+
+        // Persisted (DPAPI-encrypted) form, same pattern as the API keys.
+        [JsonProperty("HuggingFaceToken")]
+        public string HuggingFaceTokenProtected
+        {
+            get => SecretProtector.Protect(HuggingFaceToken);
+            set => HuggingFaceToken = SecretProtector.Unprotect(value);
+        }
         public string AiServerSetPromptTemplate { get; set; } = AiPromptTemplateCatalog.DanbooruTag;
         public string AiServerSetPromptTemplateId { get; set; } = AiPromptTemplateCatalog.DanbooruTagId;
         public List<AiPromptTemplateSettings> AiServerSetPromptTemplates { get; set; } =
@@ -216,6 +232,7 @@ namespace BooruDatasetTagManager
                 CharacterTagAuditStyle = tempSettings.CharacterTagAuditStyle;
                 CharacterTagAuditExecutionMode = tempSettings.CharacterTagAuditExecutionMode;
                 CharacterTagAuditMinimumCount = tempSettings.CharacterTagAuditMinimumCount <= 0 ? 10 : tempSettings.CharacterTagAuditMinimumCount;
+                ImageEditorSaveMode = tempSettings.ImageEditorSaveMode;
                 AutoTagProviderId = string.IsNullOrWhiteSpace(tempSettings.AutoTagProviderId)
                     ? "openai-compatible"
                     : tempSettings.AutoTagProviderId;
@@ -228,6 +245,8 @@ namespace BooruDatasetTagManager
                 BackgroundRemoverFillBackground = tempSettings.BackgroundRemoverFillBackground;
                 BackgroundRemoverColorArgb = tempSettings.BackgroundRemoverColorArgb;
                 BackgroundRemoverReplaceOriginal = tempSettings.BackgroundRemoverReplaceOriginal;
+                AllTagsDoubleClickAction = tempSettings.AllTagsDoubleClickAction;
+                HuggingFaceToken = tempSettings.HuggingFaceToken ?? string.Empty;
                 if (!string.IsNullOrEmpty(tempSettings.ColorScheme))
                     ColorScheme = tempSettings.ColorScheme;
                 AutoTagger = tempSettings.AutoTagger;

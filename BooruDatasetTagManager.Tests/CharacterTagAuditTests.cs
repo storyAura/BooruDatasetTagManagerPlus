@@ -126,6 +126,57 @@ public sealed class CharacterTagAuditTests
     }
 
     [Fact]
+    public void ManualDeleteOnProtectedCategoryIsApplied()
+    {
+        // The review grid lets the user override any non-trigger tag, so a
+        // manual Delete on a protected category must reach the caption files.
+        var item = new CharacterTagAuditItem
+        {
+            Tag = "smile",
+            FinalDecision = CharacterTagDecision.Delete,
+            Category = CharacterTagCategory.Expression
+        };
+
+        Assert.False(item.CanDelete);
+        Assert.True(item.ShouldDelete);
+        Assert.Equal(
+            new[] { "1girl" },
+            CharacterTagTransformation.Apply(new[] { "1girl", "smile" }, new[] { item }));
+    }
+
+    [Fact]
+    public void ManualReplaceOnProtectedCategoryIsApplied()
+    {
+        var item = new CharacterTagAuditItem
+        {
+            Tag = "standing",
+            FinalDecision = CharacterTagDecision.Replace,
+            ReplacementTag = "sitting",
+            Category = CharacterTagCategory.Pose
+        };
+
+        Assert.True(item.ShouldReplace);
+        Assert.Equal(
+            new[] { "sitting" },
+            CharacterTagTransformation.Apply(new[] { "standing" }, new[] { item }));
+    }
+
+    [Fact]
+    public void ReplaceWithoutTargetIsNotApplied()
+    {
+        var item = new CharacterTagAuditItem
+        {
+            Tag = "jacket",
+            FinalDecision = CharacterTagDecision.Replace,
+            ReplacementTag = "  ",
+            Category = CharacterTagCategory.Clothing
+        };
+
+        Assert.False(item.ShouldReplace);
+        Assert.Equal("jacket", item.EffectiveTag);
+    }
+
+    [Fact]
     public void ParserTreatsReplacementWithIdenticalTargetAsKeep()
     {
         CharacterTagInventory inventory = CharacterTagInventory.Create(new[] { new[] { "black thighhighs" } });

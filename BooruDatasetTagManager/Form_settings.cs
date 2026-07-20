@@ -18,6 +18,8 @@ namespace BooruDatasetTagManager
         {
             InitializeComponent();
             AddCsvTranslationCheckbox();
+            AddImageEditorSaveModeOption();
+            AddAllTagsDoubleClickOption();
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             Program.ColorManager.SchemeChanded += ColorManager_SchemeChanded;
@@ -28,6 +30,72 @@ namespace BooruDatasetTagManager
         private FontSettings gridFontSettings = null;
         private FontSettings autocompleteFontSettings = null;
         private System.Windows.Forms.CheckBox checkBoxUseDanbooruCsv;
+        private System.Windows.Forms.Label labelImageEditorSaveMode;
+        private System.Windows.Forms.ComboBox comboBoxImageEditorSaveMode;
+        private System.Windows.Forms.Label labelAllTagsDoubleClick;
+        private System.Windows.Forms.ComboBox comboBoxAllTagsDoubleClick;
+
+        // Double-click quick action of the All Tags grid; lives on the General
+        // tab below the auto-sort checkbox. Positions derive from the already
+        // scaled designer controls (runtime controls skip WinForms auto-scaling).
+        private void AddAllTagsDoubleClickOption()
+        {
+            int rowTop = AutoSortCheckBox.Bottom + comboAutocompMode.Height / 2;
+            labelAllTagsDoubleClick = new System.Windows.Forms.Label
+            {
+                AutoSize = true,
+                Location = new System.Drawing.Point(LabelAutocompMode.Left, rowTop + 4),
+                Name = "labelAllTagsDoubleClick"
+            };
+            comboBoxAllTagsDoubleClick = new System.Windows.Forms.ComboBox
+            {
+                DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList,
+                Location = new System.Drawing.Point(comboAutocompMode.Left, rowTop),
+                Width = comboAutocompMode.Width,
+                Name = "comboBoxAllTagsDoubleClick"
+            };
+            tabGeneral.Controls.Add(labelAllTagsDoubleClick);
+            tabGeneral.Controls.Add(comboBoxAllTagsDoubleClick);
+        }
+
+        // Default save behavior of the image editor; lives on the UI tab below
+        // the image-cache toggle (same label/control columns as the other rows).
+        // Positions are derived from the already-scaled designer controls:
+        // controls added after InitializeComponent are excluded from WinForms
+        // auto-scaling, so hard-coded pixels would overlap rows on high-DPI.
+        private void AddImageEditorSaveModeOption()
+        {
+            int rowTop = checkBoxCacheImages.Bottom + comboBoxPreviewType.Height / 2;
+            labelImageEditorSaveMode = new System.Windows.Forms.Label
+            {
+                AutoSize = true,
+                Location = new System.Drawing.Point(labelPreviewLocation.Left, rowTop + 4),
+                Name = "labelImageEditorSaveMode"
+            };
+            comboBoxImageEditorSaveMode = new System.Windows.Forms.ComboBox
+            {
+                DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList,
+                Location = new System.Drawing.Point(comboBoxPreviewType.Left, rowTop),
+                Width = comboBoxPreviewType.Width,
+                Name = "comboBoxImageEditorSaveMode"
+            };
+            FillImageEditorSaveModeItems();
+            tabUI.Controls.Add(labelImageEditorSaveMode);
+            tabUI.Controls.Add(comboBoxImageEditorSaveMode);
+        }
+
+        private void FillImageEditorSaveModeItems()
+        {
+            int selected = comboBoxImageEditorSaveMode.SelectedIndex;
+            comboBoxImageEditorSaveMode.Items.Clear();
+            // Item order mirrors the ImageEditorSaveMode enum values.
+            comboBoxImageEditorSaveMode.Items.Add(I18n.GetText("ImageEditorSaveModeAsk"));
+            comboBoxImageEditorSaveMode.Items.Add(I18n.GetText("ImageEditorSaveModeOverwrite"));
+            comboBoxImageEditorSaveMode.Items.Add(I18n.GetText("ImageEditorSaveModeNewFile"));
+            comboBoxImageEditorSaveMode.SelectedIndex = selected >= 0 && selected < comboBoxImageEditorSaveMode.Items.Count
+                ? selected
+                : 0;
+        }
 
         // The CSV-before-online-translation toggle used to live in the Test module;
         // it now belongs to the Translations settings tab (and defaults on).
@@ -74,8 +142,12 @@ namespace BooruDatasetTagManager
             CheckAskChange.Checked = Program.Settings.AskSaveChanges;
             checkBoxFixOnLoad.Checked = Program.Settings.FixTagsOnSaveLoad;
             AutoSortCheckBox.Checked = Program.Settings.AutoSort;
+            comboBoxAllTagsDoubleClick.Items.AddRange(Extensions.GetFriendlyEnumValues<AllTagsQuickAction>());
+            comboBoxAllTagsDoubleClick.SelectedIndex = Extensions.GetEnumIndexFromValue<AllTagsQuickAction>(Program.Settings.AllTagsDoubleClickAction.ToString());
             //UI
             checkBoxCacheImages.Checked = Program.Settings.CacheOpenImages;
+            comboBoxImageEditorSaveMode.SelectedIndex = Math.Clamp(
+                (int)Program.Settings.ImageEditorSaveMode, 0, comboBoxImageEditorSaveMode.Items.Count - 1);
             numericUpDown3.Value = Math.Clamp((decimal)Program.Settings.GridViewRowHeight, numericUpDown3.Minimum, numericUpDown3.Maximum);
             label11.Text = Program.Settings.GridViewFont.ToString();
             gridFontSettings = Program.Settings.GridViewFont;
@@ -127,8 +199,11 @@ namespace BooruDatasetTagManager
             Program.Settings.CaptionFileExtensions = textBox4.Text;
             Program.Settings.AskSaveChanges = CheckAskChange.Checked;
             Program.Settings.AutoSort = AutoSortCheckBox.Checked;
+            if (comboBoxAllTagsDoubleClick.SelectedItem is string quickActionText)
+                Program.Settings.AllTagsDoubleClickAction = Extensions.GetEnumItemFromFriendlyText<AllTagsQuickAction>(quickActionText);
             //UI
             Program.Settings.CacheOpenImages = checkBoxCacheImages.Checked;
+            Program.Settings.ImageEditorSaveMode = (ImageEditorSaveMode)Math.Max(0, comboBoxImageEditorSaveMode.SelectedIndex);
             Program.Settings.GridViewRowHeight = (int)numericUpDown3.Value;
             Program.Settings.GridViewFont = gridFontSettings;
             Program.Settings.AutocompleteFont = autocompleteFontSettings;
@@ -320,11 +395,18 @@ namespace BooruDatasetTagManager
             checkBoxLoadOnlyManual.Text = I18n.GetText("SettingLoadOnlyManualAutocomplete");
             checkBoxUseDanbooruCsv.Text = I18n.GetText("SettingUseDanbooruCsvBeforeTranslation");
             checkBoxCacheImages.Text = I18n.GetText("SettingsCheckBoxCacheImages");
+            labelImageEditorSaveMode.Text = I18n.GetText("SettingsImageEditorSaveMode");
+            FillImageEditorSaveModeItems();
             LabelApApiEndpoint.Text = I18n.GetText("SettingsInterrogatorAddress");
             labelOpenAiEndpoint.Text = I18n.GetText("SettingsInterrogatorAddress");
             checkBoxCustomPrompt.Text = I18n.GetText("SettingsCheckBoxCustomPrompt");
             labelOpenAiApiKey.Text = I18n.GetText("SettingsOpenAiApiKey");
             labelOpenAiTimeout.Text = I18n.GetText("SettingsOpenAiRequestTimeout");
+
+            labelAllTagsDoubleClick.Text = I18n.GetText("SettingAllTagsDoubleClick");
+            comboBoxAllTagsDoubleClick.Items.Clear();
+            comboBoxAllTagsDoubleClick.Items.AddRange(Extensions.GetFriendlyEnumValues<AllTagsQuickAction>());
+            comboBoxAllTagsDoubleClick.SelectedIndex = Extensions.GetEnumIndexFromValue<AllTagsQuickAction>(Program.Settings.AllTagsDoubleClickAction.ToString());
 
             comboAutocompMode.Items.Clear();
             comboAutocompSort.Items.Clear();

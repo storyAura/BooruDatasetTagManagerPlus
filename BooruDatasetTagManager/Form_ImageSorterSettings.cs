@@ -26,6 +26,15 @@ namespace BooruDatasetTagManager
 
         private void button2_Click(object sender, EventArgs e)
         {
+            // The name becomes a directory segment under the root folder;
+            // separators, "..", rooted paths and invalid characters could
+            // otherwise send copies outside the selected root.
+            if (!ImageSorter.IsValidCategoryName(textBoxNodeName.Text))
+            {
+                MessageBox.Show(this, I18n.GetText("TipSorterInvalidCategoryName"),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             var selectedNode = treeView1.SelectedNode;
             if (selectedNode == null)
                 selectedNode = treeView1.Nodes["Root"];
@@ -75,9 +84,15 @@ namespace BooruDatasetTagManager
                 MessageBox.Show("Root folder not selected");
                 return;
             }
+            if (!long.TryParse(textBoxIndex.Text, out long fileIndex) || fileIndex < 0)
+            {
+                MessageBox.Show(this, I18n.GetText("TipSorterInvalidIndex"),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             ImageSorter sorter = new ImageSorter(textBoxRootPath.Text);
             sorter.CreateFromTreeNode(treeView1.Nodes["Root"]);
-            sorter.FileIndex = Convert.ToInt32(textBoxIndex.Text);
+            sorter.FileIndex = fileIndex;
             Form_ImageSorter sorterForm = new Form_ImageSorter(sorter);
             sorterForm.Show();
             //DialogResult = DialogResult.OK;
@@ -91,17 +106,28 @@ namespace BooruDatasetTagManager
 
         private void button6_Click(object sender, EventArgs e)
         {
-            var files = Directory.GetFiles(textBoxRootPath.Text, "*.*", SearchOption.AllDirectories);
+            if (!Directory.Exists(textBoxRootPath.Text))
+            {
+                MessageBox.Show("Root folder not selected");
+                return;
+            }
+            var scanErrors = new List<string>();
+            var files = TolerantFileEnumerator.GetFiles(textBoxRootPath.Text, scanErrors);
             List<long> indexes = new List<long>();
-            long index = 0;
             foreach (var item in files)
             {
-                if (long.TryParse(Path.GetFileNameWithoutExtension(item), out index))
+                if (long.TryParse(Path.GetFileNameWithoutExtension(item), out long index))
                 {
                     indexes.Add(index);
                 }
             }
-            textBoxIndex.Text = (indexes.Max()+1).ToString();
+            // A root with no numeric file names must not crash on Max().
+            textBoxIndex.Text = (indexes.DefaultIfEmpty(0).Max() + 1).ToString();
+            if (scanErrors.Count > 0)
+            {
+                MessageBox.Show(this, string.Join("\n", scanErrors.Take(10)),
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
     }
 }

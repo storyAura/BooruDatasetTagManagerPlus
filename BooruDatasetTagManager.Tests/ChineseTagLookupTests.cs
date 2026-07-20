@@ -157,6 +157,41 @@ public class ChineseTagLookupTests
         Assert.Empty(lookup.SearchAutocompleteValues("\u62ff\u7740", Array.Empty<TagsDB.TagItem>(), "en-US"));
     }
 
+    [Fact]
+    public void FindEnglishTagsByChineseNameMatchesSynonymSubstrings()
+    {
+        using var temp = new TemporaryDirectory();
+        string csvPath = Path.Combine(temp.Path, "danbooru-0-zh.csv");
+        File.WriteAllLines(csvPath, new[]
+        {
+            "long_hair,长发|长头发",
+            "black_hair,黑发|黑色头发",
+            "smile,微笑"
+        });
+
+        var lookup = ChineseTagLookupService.LoadFromFile(csvPath, fixTags: true);
+
+        // "头发" only appears in synonym names, never as the primary name.
+        var matches = lookup.FindEnglishTagsByChineseName("头发", "zh-CN");
+
+        Assert.Contains("long hair", matches);
+        Assert.Contains("black hair", matches);
+        Assert.DoesNotContain("smile", matches);
+    }
+
+    [Fact]
+    public void FindEnglishTagsByChineseNameIsEmptyOutsideSimplifiedChinese()
+    {
+        using var temp = new TemporaryDirectory();
+        string csvPath = Path.Combine(temp.Path, "danbooru-0-zh.csv");
+        File.WriteAllText(csvPath, "long_hair,长发");
+
+        var lookup = ChineseTagLookupService.LoadFromFile(csvPath, fixTags: true);
+
+        Assert.Empty(lookup.FindEnglishTagsByChineseName("长发", "en-US"));
+        Assert.Empty(lookup.FindEnglishTagsByChineseName("  ", "zh-CN"));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
