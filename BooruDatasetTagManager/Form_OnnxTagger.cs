@@ -20,6 +20,9 @@ namespace BooruDatasetTagManager
 
         private readonly RadioButton radioSourceSelected = new RadioButton();
         private readonly RadioButton radioSourceAllImages = new RadioButton();
+        private readonly RadioButton radioSourceFolder = new RadioButton();
+        private readonly bool folderSourceAvailable =
+            !string.IsNullOrEmpty(Program.DataManager?.ActiveFolder);
         private readonly ComboBox comboModel = new ComboBox();
         private readonly NumericUpDown numericThreshold = new NumericUpDown();
         private readonly NumericUpDown numericCharacterThreshold = new NumericUpDown();
@@ -54,12 +57,10 @@ namespace BooruDatasetTagManager
         // under an in-flight Run() is an uncatchable AccessViolation.
         private bool closeAfterJob;
         private bool loadingSettings;
-        private readonly bool autoRunOnShown;
 
-        public Form_OnnxTagger(MainForm owner, bool autoRunOnShown = false)
+        public Form_OnnxTagger(MainForm owner)
         {
             this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
-            this.autoRunOnShown = autoRunOnShown;
             InitializeComponent();
             ApplyLanguage();
             ApplyButtonStyles();
@@ -156,12 +157,10 @@ namespace BooruDatasetTagManager
             buttonCancelJob.Click += (_, _) => jobCancellation?.Cancel();
             buttonClose.Click += (_, _) => Close();
 
-            Shown += async (_, _) =>
+            Shown += (_, _) =>
             {
                 UpdateModelStatus();
                 UpdateIdleStatus();
-                if (autoRunOnShown)
-                    await RunJobAsync().ConfigureAwait(true);
             };
 
             FormClosing += (_, e) =>
@@ -207,9 +206,13 @@ namespace BooruDatasetTagManager
             radioSourceSelected.AutoSize = true;
             radioSourceSelected.Margin = new Padding(0, 0, 16, 0);
             radioSourceAllImages.AutoSize = true;
+            radioSourceAllImages.Margin = new Padding(0, 0, 16, 0);
+            radioSourceFolder.AutoSize = true;
+            radioSourceFolder.Enabled = folderSourceAvailable;
 
             panelRadios.Controls.Add(radioSourceSelected);
             panelRadios.Controls.Add(radioSourceAllImages);
+            panelRadios.Controls.Add(radioSourceFolder);
             groupSource.Controls.Add(panelRadios);
             return groupSource;
         }
@@ -393,6 +396,7 @@ namespace BooruDatasetTagManager
 
             radioSourceSelected.Text = I18n.GetText("TaggerSourceSelected");
             radioSourceAllImages.Text = I18n.GetText("TaggerSourceAllImages");
+            radioSourceFolder.Text = I18n.GetText("TaggerSourceFolder");
             labelCharacterThreshold.Text = I18n.GetText("TaggerCharacterThreshold");
             labelDownloadSource.Text = I18n.GetText("TaggerDownloadSource");
             labelSetMode.Text = I18n.GetText("TaggerSetMode");
@@ -679,6 +683,19 @@ namespace BooruDatasetTagManager
                 : I18n.GetText("TaggerModelMissing"));
         }
 
+        /// <summary>Preselects the "current folder" source (folder quick actions).</summary>
+        public void SelectFolderSource()
+        {
+            if (radioSourceFolder.Enabled)
+                radioSourceFolder.Checked = true;
+        }
+
+        /// <summary>Preselects the "all dataset images" source (the browser's All row).</summary>
+        public void SelectAllImagesSource()
+        {
+            radioSourceAllImages.Checked = true;
+        }
+
         private List<string> ResolveInputImages()
         {
             if (Program.DataManager == null)
@@ -687,7 +704,10 @@ namespace BooruDatasetTagManager
             if (radioSourceSelected.Checked)
                 return owner.GetSelectedDatasetImagePaths();
 
-            return Program.DataManager.DataSet.Values
+            IEnumerable<DatasetManager.DataItem> pool = radioSourceFolder.Checked
+                ? Program.DataManager.GetScopedItems()
+                : Program.DataManager.DataSet.Values;
+            return pool
                 .Select(item => item.ImageFilePath)
                 .Where(path => IsImageFile(path) && !VideoProcessingService.IsVideoFile(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -1152,6 +1172,7 @@ namespace BooruDatasetTagManager
             buttonDownloadModel.Enabled = !running;
             radioSourceSelected.Enabled = !running;
             radioSourceAllImages.Enabled = !running;
+            radioSourceFolder.Enabled = !running && folderSourceAvailable;
             comboModel.Enabled = !running;
             numericThreshold.Enabled = !running;
             numericCharacterThreshold.Enabled = !running;

@@ -415,6 +415,17 @@ namespace BooruDatasetTagManager
                     progressBar.Value = 0;
 
                     string finalOutput = videoService.GetConvertOutputPath(input, format, replaceOriginal);
+                    if (replaceOriginal
+                        && !string.Equals(Path.GetFullPath(finalOutput), Path.GetFullPath(input), StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(finalOutput))
+                    {
+                        // clip.mkv → mp4 while an unrelated clip.mp4 already exists:
+                        // refuse this item up front instead of overwriting a sibling.
+                        errors.Add(input + ": " + string.Format(I18n.GetText("VideoConvertTargetExists"), Path.GetFileName(finalOutput)));
+                        completed++;
+                        progressBar.Value = Math.Min(100, (int)Math.Round(completed * 100.0 / inputs.Count));
+                        continue;
+                    }
                     // When replacing the original, ffmpeg writes to a temp file; the
                     // source is only swapped out after a fully successful conversion.
                     string ffmpegOutput = replaceOriginal

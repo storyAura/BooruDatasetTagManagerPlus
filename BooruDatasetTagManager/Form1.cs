@@ -28,16 +28,20 @@ namespace BooruDatasetTagManager
             CreateLangMenuItems();
             InitHotkeyCommands();
             InitializeAiServerSetAndTestMenu();
+            InitializeDatasetFolderList();
             //test color scheme
             //Program.ColorManager.SelectScheme("Dark");
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             Program.ColorManager.SchemeChanded += ColorManager_SchemeChanded;
             contextMenuImageGridHeader.ItemClicked += ContextMenuImageGridHeader_ItemClicked;
+            gridViewDS.CellToolTipTextNeeded += GridViewDS_CellToolTipTextNeeded;
+            gridViewDS.CellPainting += GridViewDS_CellPainting;
             gridViewTags.CellFormatting += GridViewTags_CellFormatting;
             InitializeTagContextMenu();
             InitializeAllTagsSearch();
             InitializeImageTagsSearch();
+            InitializeTagCategoryUi();
             switchLanguage();
         }
 
@@ -50,6 +54,7 @@ namespace BooruDatasetTagManager
         {
             if (e.RowIndex < 0 || e.ColumnIndex < 0)
                 return;
+            ApplyTagCategoryTint(e, GetTagsRowTag(e.RowIndex));
             if (gridViewTags.Columns[e.ColumnIndex].Name != "ImageTags")
                 return;
             if (gridViewTags.DataSource is not MultiSelectDataTable dt)
@@ -79,6 +84,591 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuContextDSRetagOnnx;
         private ToolStripMenuItem menuContextDSRetagLlm;
         private ToolStripMenuItem menuContextDSEditImage;
+        private DatasetBrowserView datasetBrowserView;
+        private Splitter sidebarPreviewSplitter;
+        private DatasetPreviewPanel datasetPreviewPanel;
+        private List<string> lastEmbeddedPreviewPaths = new List<string>();
+        private int lastExpandedPreviewHeight;
+        private ContextMenuStrip folderContextMenu;
+        private ToolStripMenuItem menuRenameFolder;
+        private ToolStripMenuItem menuBatchRenameImages;
+        private ToolStripMenuItem menuFolderTagOnnx;
+        private ToolStripMenuItem menuFolderTagLlm;
+        // Folder(s) the browser context menu was opened on: null = the pinned
+        // "All" row (whole dataset), otherwise 1..n folder keys in display order.
+        private List<string> folderContextKeys;
+
+        private string SingleFolderContextKey =>
+            folderContextKeys is { Count: 1 } ? folderContextKeys[0] : null;
+
+        /// <summary>
+        /// Folder right-click quick tagging. One folder: scopes to it (same as
+        /// clicking its header) and preselects the "current folder" source.
+        /// Several folders (Shift/Ctrl multi-select): widens scope to All,
+        /// selects those folders' images and uses the default "selected
+        /// images" source. The pinned All row: preselects "all dataset
+        /// images". No path auto-runs — the user confirms settings and starts.
+        /// </summary>
+        private void TagContextFolder(bool useOnnx)
+        {
+            if (Program.DataManager == null)
+                return;
+            List<string> keys = folderContextKeys;
+            Program.DataManager.SetActiveFolder(keys is { Count: 1 } ? keys[0] : null);
+            RefreshDatasetGrid();
+            if (keys is { Count: > 1 })
+                SelectDatasetImagesInFolders(keys);
+            int available = keys is { Count: > 1 }
+                ? GetSelectedDatasetImagePaths().Count
+                : Program.DataManager.GetActiveScopeCount();
+            if (available == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (useOnnx)
+            {
+                using Form_OnnxTagger form = new Form_OnnxTagger(this);
+                PreselectContextSource(form.SelectFolderSource, form.SelectAllImagesSource, keys);
+                form.ShowDialog(this);
+            }
+            else
+            {
+                using Form_LlmTagger form = new Form_LlmTagger(this);
+                PreselectContextSource(form.SelectFolderSource, form.SelectAllImagesSource, keys);
+                form.ShowDialog(this);
+            }
+        }
+
+        private static void PreselectContextSource(Action selectFolder, Action selectAllImages, List<string> keys)
+        {
+            if (keys == null)
+                selectAllImages();
+            else if (keys.Count == 1)
+                selectFolder();
+            // Multi-folder: keep the default "selected images" source — the
+            // folders' images were just selected in the grid.
+        }
+
+        /// <summary>
+        /// Selects every dataset-grid row living in one of the given folders
+        /// and mirrors the result into the browser once (the same suppression
+        /// pattern BrowserSelection_Changed uses in the other direction).
+        /// </summary>
+        private void SelectDatasetImagesInFolders(IReadOnlyList<string> folderKeys)
+        {
+            var wanted = new HashSet<string>(
+                folderKeys.Select(DatasetFolderIndex.NormalizeRelative),
+                StringComparer.OrdinalIgnoreCase);
+            selectionMode = true;
+            try
+            {
+                foreach (DataGridViewRow row in gridViewDS.Rows)
+                {
+                    bool select = row.Cells["ImageFilePath"].Value is string path
+                        && wanted.Contains(DatasetFolderIndex.GetRelativeFolder(path, Program.DataManager.DatasetRoot));
+                    if (row.Selected != select)
+                        row.Selected = select;
+                }
+            }
+            finally
+            {
+                selectionMode = false;
+            }
+            datasetBrowserView?.SetSelectedImagePaths(GetGridSelectedPaths());
+            LoadSelectedImageToGrid();
+        }
+
+        /// <summary>
+        /// Builds the unified dataset module: one browser (search box +
+        /// collapsible folder groups + image rows) filling the pane, the
+        /// embedded preview (the former right-pane "Preview" tab) docked
+        /// below it. The legacy dataset grid stays parented but hidden — it
+        /// remains the data/selection authority every existing operation
+        /// reads; the browser mirrors its selection into it.
+        /// </summary>
+        private void InitializeDatasetFolderList()
+        {
+            datasetBrowserView = new DatasetBrowserView { Dock = DockStyle.Fill };
+            datasetBrowserView.FolderScopeSelected += FolderList_FolderSelected;
+            datasetBrowserView.SelectionChangedByUser += BrowserSelection_Changed;
+            datasetBrowserView.ImageActivated += path => ShowPreview(path, true);
+            datasetBrowserView.ImageContextRequested += screenPoint => contextMenuStrip1.Show(screenPoint);
+            datasetBrowserView.BrowserKeyDown += Browser_KeyDown;
+            folderContextMenu = new ContextMenuStrip();
+            menuRenameFolder = new ToolStripMenuItem { Name = "menuRenameFolder" };
+            menuRenameFolder.Click += (_, _) => RenameDatasetFolder();
+            folderContextMenu.Items.Add(menuRenameFolder);
+            menuBatchRenameImages = new ToolStripMenuItem { Name = "menuBatchRenameImages" };
+            menuBatchRenameImages.Click += (_, _) => BatchRenameFolderImages();
+            folderContextMenu.Items.Add(menuBatchRenameImages);
+            folderContextMenu.Items.Add(new ToolStripSeparator());
+            menuFolderTagOnnx = new ToolStripMenuItem { Name = "menuFolderTagOnnx" };
+            menuFolderTagOnnx.Click += (_, _) => TagContextFolder(useOnnx: true);
+            folderContextMenu.Items.Add(menuFolderTagOnnx);
+            menuFolderTagLlm = new ToolStripMenuItem { Name = "menuFolderTagLlm" };
+            menuFolderTagLlm.Click += (_, _) => TagContextFolder(useOnnx: false);
+            folderContextMenu.Items.Add(menuFolderTagLlm);
+            datasetBrowserView.FolderContextRequested += (folderKeys, screenPoint) =>
+            {
+                folderContextKeys = folderKeys?.ToList();
+                // Rename actions only make sense for exactly one real folder;
+                // the tagging items handle one, many and All.
+                bool single = SingleFolderContextKey != null;
+                menuRenameFolder.Enabled = single && SingleFolderContextKey.Length > 0;
+                menuBatchRenameImages.Enabled = single;
+                folderContextMenu.Show(screenPoint);
+            };
+
+            datasetPreviewPanel = new DatasetPreviewPanel { Dock = DockStyle.Bottom, Visible = false };
+            datasetPreviewPanel.SetExpanded(Program.Settings.DatasetPreviewExpanded);
+            datasetPreviewPanel.ToggleRequested += ToggleEmbeddedPreview;
+            datasetPreviewPanel.OpenInWindowRequested += cellIndex =>
+            {
+                if (cellIndex >= 0 && cellIndex < lastEmbeddedPreviewPaths.Count)
+                    ShowPreview(lastEmbeddedPreviewPaths[cellIndex], true);
+            };
+            sidebarPreviewSplitter = new Splitter
+            {
+                Dock = DockStyle.Bottom,
+                Height = LogicalToDeviceUnits(5),
+                MinSize = LogicalToDeviceUnits(120),
+                Visible = false
+            };
+            sidebarPreviewSplitter.SplitterMoved += (_, _) =>
+            {
+                if (datasetPreviewPanel.Expanded)
+                    lastExpandedPreviewHeight = datasetPreviewPanel.Height;
+            };
+            gridViewDS.Visible = false;
+            // Dock order: the control added last docks first, so the preview
+            // claims the pane bottom, the splitter sits above it and the
+            // browser fills the rest (over the hidden grid).
+            toolStripContainer3.ContentPanel.Controls.Add(datasetBrowserView);
+            toolStripContainer3.ContentPanel.Controls.Add(sidebarPreviewSplitter);
+            toolStripContainer3.ContentPanel.Controls.Add(datasetPreviewPanel);
+            MenuShowPreview.Checked = Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow
+                && Program.Settings.DatasetPreviewExpanded;
+        }
+
+        /// <summary>
+        /// Mirrors the browser's selection into the hidden dataset grid (the
+        /// authority all existing operations read), then reloads the tag pane
+        /// once — the same suppression pattern the grid refresh uses.
+        /// </summary>
+        private void BrowserSelection_Changed()
+        {
+            var selected = new HashSet<string>(
+                datasetBrowserView.GetSelectedImagePaths(), StringComparer.OrdinalIgnoreCase);
+            selectionMode = true;
+            try
+            {
+                for (int i = 0; i < gridViewDS.RowCount; i++)
+                {
+                    bool select = gridViewDS.Rows[i].Cells["ImageFilePath"].Value is string path
+                        && selected.Contains(path);
+                    if (gridViewDS.Rows[i].Selected != select)
+                        gridViewDS.Rows[i].Selected = select;
+                }
+            }
+            finally
+            {
+                selectionMode = false;
+            }
+            LoadSelectedImageToGrid();
+        }
+
+        private async void Browser_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Delete)
+            {
+                DeleteImage();
+            }
+            if (e.Control && e.KeyCode == Keys.V)
+            {
+                await PasteTagsFromClipboard();
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        private List<string> GetGridSelectedPaths()
+        {
+            var paths = new List<string>();
+            for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
+            {
+                if (gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value is string path)
+                    paths.Add(path);
+            }
+            return paths;
+        }
+
+        /// <summary>
+        /// Right-click → rename on a browser folder group: renames the leaf
+        /// directory on disk and remaps the loaded dataset in place (unsaved
+        /// tag edits survive), then rebuilds the grid and browser.
+        /// </summary>
+        private void RenameDatasetFolder()
+        {
+            string key = SingleFolderContextKey;
+            if (Program.DataManager == null || string.IsNullOrEmpty(key))
+                return;
+            int slash = key.LastIndexOf('/');
+            string leaf = slash < 0 ? key : key.Substring(slash + 1);
+            string input = PromptForFolderName(leaf);
+            if (input == null || string.Equals(input.Trim(), leaf, StringComparison.Ordinal))
+                return;
+            try
+            {
+                string newRelative = Program.DataManager.RenameFolder(key, input);
+                RefreshDatasetGrid();
+                SetStatus(string.Format(I18n.GetText("FolderRenameDone"), newRelative));
+            }
+            catch (ArgumentException)
+            {
+                MessageBox.Show(this, I18n.GetText("FolderRenameInvalid"),
+                    I18n.GetText("FolderRenameTitle"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(I18n.GetText("FolderRenameFailed"), ex.Message),
+                    I18n.GetText("FolderRenameTitle"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private string PromptForFolderName(string currentName)
+        {
+            using var dialog = new Form
+            {
+                Text = I18n.GetText("FolderRenameTitle"),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(LogicalToDeviceUnits(380), LogicalToDeviceUnits(128))
+            };
+            var label = new Label
+            {
+                Text = I18n.GetText("FolderRenamePrompt"),
+                AutoSize = true,
+                Location = new Point(LogicalToDeviceUnits(12), LogicalToDeviceUnits(12))
+            };
+            var textBox = new TextBox
+            {
+                Text = currentName,
+                Location = new Point(LogicalToDeviceUnits(12), LogicalToDeviceUnits(36)),
+                Width = dialog.ClientSize.Width - LogicalToDeviceUnits(24)
+            };
+            var okButton = new Button
+            {
+                Text = "OK",
+                DialogResult = DialogResult.OK,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            var cancelButton = new Button
+            {
+                Text = I18n.GetText("BtnCancel"),
+                DialogResult = DialogResult.Cancel,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            okButton.Location = new Point(
+                dialog.ClientSize.Width - LogicalToDeviceUnits(12) - okButton.Width * 2 - LogicalToDeviceUnits(8),
+                dialog.ClientSize.Height - LogicalToDeviceUnits(40));
+            cancelButton.Location = new Point(
+                dialog.ClientSize.Width - LogicalToDeviceUnits(12) - cancelButton.Width,
+                dialog.ClientSize.Height - LogicalToDeviceUnits(40));
+            dialog.Controls.Add(label);
+            dialog.Controls.Add(textBox);
+            dialog.Controls.Add(okButton);
+            dialog.Controls.Add(cancelButton);
+            dialog.AcceptButton = okButton;
+            dialog.CancelButton = cancelButton;
+            Program.ColorManager.ChangeColorScheme(dialog, Program.ColorManager.SelectedScheme);
+            Program.ColorManager.ChangeColorSchemeInConteiner(dialog.Controls, Program.ColorManager.SelectedScheme);
+            textBox.SelectAll();
+            return dialog.ShowDialog(this) == DialogResult.OK ? textBox.Text : null;
+        }
+
+        /// <summary>
+        /// Folder right-click → batch rename: renames every image of the
+        /// folder (captions follow) to prefix + counter (numeric/letters/
+        /// original name) + suffix, in the natural display order.
+        /// </summary>
+        private void BatchRenameFolderImages()
+        {
+            string contextKey = SingleFolderContextKey;
+            if (Program.DataManager == null || contextKey == null)
+                return;
+            // Exact directory match (IsInFolder treats "" as "all folders",
+            // which would batch-rename the entire dataset from the root group).
+            string folderKey = DatasetFolderIndex.NormalizeRelative(contextKey);
+            List<string> paths = Program.DataManager.DataSet.Keys
+                .Where(path => string.Equals(
+                    DatasetFolderIndex.GetRelativeFolder(path, Program.DataManager.DatasetRoot),
+                    folderKey, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, new FileNamesComparer())
+                .ToList();
+            if (paths.Count == 0)
+                return;
+
+            using var dialog = new Form
+            {
+                Text = I18n.GetText("BatchRenameTitle"),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(LogicalToDeviceUnits(420), LogicalToDeviceUnits(238))
+            };
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 4,
+                RowCount = 5,
+                Padding = new Padding(LogicalToDeviceUnits(12))
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+
+            Label MakeLabel(string key) => new Label
+            {
+                Text = I18n.GetText(key),
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), 0)
+            };
+            var prefixBox = new TextBox { Dock = DockStyle.Fill };
+            var suffixBox = new TextBox { Dock = DockStyle.Fill };
+            var numberingCombo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+            numberingCombo.Items.Add(I18n.GetText("BatchRenameNumberingNumeric"));
+            numberingCombo.Items.Add(I18n.GetText("BatchRenameNumberingLetters"));
+            numberingCombo.Items.Add(I18n.GetText("BatchRenameNumberingNone"));
+            numberingCombo.SelectedIndex = 0;
+            var startBox = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 0, Maximum = 1000000, Value = 1 };
+            var digitsBox = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 1, Maximum = 10, Value = 3 };
+            var previewLabel = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            layout.Controls.Add(MakeLabel("BatchRenamePrefix"), 0, 0);
+            layout.Controls.Add(prefixBox, 1, 0);
+            layout.Controls.Add(MakeLabel("BatchRenameSuffix"), 2, 0);
+            layout.Controls.Add(suffixBox, 3, 0);
+            layout.Controls.Add(MakeLabel("BatchRenameNumbering"), 0, 1);
+            layout.Controls.Add(numberingCombo, 1, 1);
+            layout.Controls.Add(MakeLabel("BatchRenameStart"), 2, 1);
+            layout.Controls.Add(startBox, 3, 1);
+            layout.Controls.Add(MakeLabel("BatchRenameDigits"), 0, 2);
+            layout.Controls.Add(digitsBox, 1, 2);
+            layout.Controls.Add(MakeLabel("BatchRenamePreview"), 0, 3);
+            layout.Controls.Add(previewLabel, 1, 3);
+            layout.SetColumnSpan(previewLabel, 3);
+
+            var buttons = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.RightToLeft,
+                Dock = DockStyle.Fill
+            };
+            var okButton = new Button
+            {
+                Text = "OK",
+                DialogResult = DialogResult.OK,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            var cancelButton = new Button
+            {
+                Text = I18n.GetText("BtnCancel"),
+                DialogResult = DialogResult.Cancel,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            buttons.Controls.Add(cancelButton);
+            buttons.Controls.Add(okButton);
+            layout.Controls.Add(buttons, 1, 4);
+            layout.SetColumnSpan(buttons, 3);
+            dialog.Controls.Add(layout);
+            dialog.AcceptButton = okButton;
+            dialog.CancelButton = cancelButton;
+
+            BatchRenameNumbering Numbering() => (BatchRenameNumbering)numberingCombo.SelectedIndex;
+            List<string> originals = paths
+                .Select(Path.GetFileNameWithoutExtension)
+                .ToList();
+            void UpdatePreview()
+            {
+                startBox.Enabled = Numbering() == BatchRenameNumbering.Numeric;
+                digitsBox.Enabled = Numbering() == BatchRenameNumbering.Numeric;
+                try
+                {
+                    IReadOnlyList<string> sample = BatchRenamePlanner.BuildNames(
+                        Math.Min(2, paths.Count), prefixBox.Text, suffixBox.Text,
+                        Numbering(), (int)startBox.Value, (int)digitsBox.Value, originals);
+                    previewLabel.Text = string.Join(",  ", sample)
+                        + (paths.Count > sample.Count ? ",  …" : string.Empty);
+                    okButton.Enabled = true;
+                }
+                catch (ArgumentException)
+                {
+                    previewLabel.Text = I18n.GetText("BatchRenameConflict");
+                    okButton.Enabled = false;
+                }
+            }
+            prefixBox.TextChanged += (_, _) => UpdatePreview();
+            suffixBox.TextChanged += (_, _) => UpdatePreview();
+            numberingCombo.SelectedIndexChanged += (_, _) => UpdatePreview();
+            startBox.ValueChanged += (_, _) => UpdatePreview();
+            digitsBox.ValueChanged += (_, _) => UpdatePreview();
+            UpdatePreview();
+            Program.ColorManager.ChangeColorScheme(dialog, Program.ColorManager.SelectedScheme);
+            Program.ColorManager.ChangeColorSchemeInConteiner(dialog.Controls, Program.ColorManager.SelectedScheme);
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+                return;
+            try
+            {
+                IReadOnlyList<string> names = BatchRenamePlanner.BuildNames(
+                    paths.Count, prefixBox.Text, suffixBox.Text,
+                    Numbering(), (int)startBox.Value, (int)digitsBox.Value, originals);
+                var renames = new List<KeyValuePair<string, string>>(paths.Count);
+                for (int i = 0; i < paths.Count; i++)
+                    renames.Add(new KeyValuePair<string, string>(paths[i], names[i]));
+                int renamed = Program.DataManager.RenameImages(renames);
+                RefreshDatasetGrid();
+                SetStatus(string.Format(I18n.GetText("BatchRenameDone"), renamed));
+            }
+            catch (ArgumentException)
+            {
+                MessageBox.Show(this, I18n.GetText("BatchRenameConflict"),
+                    I18n.GetText("BatchRenameTitle"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, string.Format(I18n.GetText("FolderRenameFailed"), ex.Message),
+                    I18n.GetText("BatchRenameTitle"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                RefreshDatasetGrid();
+            }
+        }
+
+        private void FolderList_FolderSelected(string relativeFolder)
+        {
+            if (Program.DataManager == null)
+                return;
+            Program.DataManager.SetActiveFolder(relativeFolder);
+            RefreshDatasetGrid();
+        }
+
+        /// <summary>
+        /// Rebuilds the dataset browser from the loaded dataset (folder
+        /// headers from the full dataset, image rows from the hidden grid's
+        /// current scope) and re-applies the preview layout.
+        /// </summary>
+        private void RefreshDatasetFolderList()
+        {
+            if (datasetBrowserView == null)
+                return;
+            if (Program.DataManager == null)
+            {
+                datasetBrowserView.Clear();
+                ApplyDatasetSidebarLayout();
+                return;
+            }
+            IReadOnlyList<DatasetFolderEntry> entries = Program.DataManager.GetFolderEntries();
+            if (entries.Count <= 1 && !string.IsNullOrEmpty(Program.DataManager.ActiveFolder))
+            {
+                // The dataset collapsed to a single folder while a scope was
+                // active (e.g. images deleted): fall back to "all".
+                Program.DataManager.SetActiveFolder(null);
+            }
+            datasetBrowserView.SetRows(
+                entries,
+                gridViewDS.DataSource as List<DataItem>,
+                Program.DataManager.DatasetRoot,
+                Program.DataManager.ActiveFolder,
+                Program.DataManager.DataSet.Count,
+                GetGridSelectedPaths());
+            ApplyDatasetSidebarLayout();
+        }
+
+        /// <summary>
+        /// Applies the preview strip layout at the bottom of the dataset
+        /// module. The panel is only a surface in PreviewInMainWindow mode;
+        /// collapsed it keeps just its clickable header strip.
+        /// </summary>
+        private void ApplyDatasetSidebarLayout()
+        {
+            if (datasetPreviewPanel == null)
+                return;
+            bool embeddedMode = Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow;
+            bool expanded = Program.Settings.DatasetPreviewExpanded;
+            bool showPreview = embeddedMode && Program.DataManager != null;
+            datasetPreviewPanel.SetExpanded(expanded);
+            datasetPreviewPanel.Visible = showPreview;
+            if (showPreview)
+            {
+                datasetPreviewPanel.Height = expanded
+                    ? GetExpandedPreviewHeight()
+                    : datasetPreviewPanel.HeaderHeight;
+            }
+            sidebarPreviewSplitter.Visible = showPreview && expanded;
+            MenuShowPreview.Checked = embeddedMode ? expanded : isShowPreview;
+        }
+
+        private int GetExpandedPreviewHeight()
+        {
+            if (lastExpandedPreviewHeight > datasetPreviewPanel.HeaderHeight)
+                return lastExpandedPreviewHeight;
+            // First expansion: a bit under half the pane, bounded so the
+            // browser keeps a usable share.
+            int available = Math.Max(0, toolStripContainer3.ContentPanel.Height);
+            return Math.Max(datasetPreviewPanel.HeaderHeight + LogicalToDeviceUnits(40),
+                Math.Min(LogicalToDeviceUnits(340), available * 2 / 5));
+        }
+
+        /// <summary>
+        /// Collapses/expands the embedded preview and persists the state. In
+        /// SeparateWindow mode the 视图→显示预览 toggle keeps its legacy
+        /// floating-window behavior instead (see the menu handler).
+        /// </summary>
+        private void ToggleEmbeddedPreview()
+        {
+            if (datasetPreviewPanel.Expanded)
+                lastExpandedPreviewHeight = datasetPreviewPanel.Height;
+            Program.Settings.DatasetPreviewExpanded = !Program.Settings.DatasetPreviewExpanded;
+            Program.Settings.SaveSettings();
+            ApplyDatasetSidebarLayout();
+            RefreshEmbeddedPreviewFromSelection();
+        }
+
+        /// <summary>True when selection changes should update a preview surface.</summary>
+        private bool IsPreviewFollowActive =>
+            Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow
+                ? datasetPreviewPanel != null && datasetPreviewPanel.Visible && datasetPreviewPanel.Expanded
+                : isShowPreview;
+
+        private void RefreshEmbeddedPreviewFromSelection()
+        {
+            if (!IsPreviewFollowActive)
+                return;
+            List<string> paths = GetGridSelectedPaths();
+            if (paths.Count == 1 && !string.IsNullOrEmpty(paths[0]))
+            {
+                ShowPreview(paths[0]);
+                return;
+            }
+            // Multi-selection: the embedded panel tiles the first images; the
+            // floating-window mode keeps its legacy hide-on-multi behavior.
+            if (paths.Count > 1 && Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow)
+                ShowEmbeddedPreviewMulti(paths);
+            else
+                HidePreview();
+        }
 
         internal List<string> GetSelectedDatasetVideoPaths()
         {
@@ -114,8 +704,10 @@ namespace BooruDatasetTagManager
 
             SaveSelectedInViewDs();
             gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter();
+            ApplyDataSetGridStyle();
             LoadSelectedInViewDs();
-            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+            RefreshDatasetFolderList();
+            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
             if (addedPaths != null && addedPaths.Count > 0)
                 SetStatus(string.Format(I18n.GetText("VideoExtractImportedCount"), addedPaths.Count));
         }
@@ -232,7 +824,7 @@ namespace BooruDatasetTagManager
             };
 
             menuOnnxTagger = new ToolStripMenuItem { Name = "menuOnnxTagger", Text = "ONNX tagger" };
-            menuOnnxTagger.Click += (_, _) => ShowOnnxTaggerForSelectedImages(autoRun: false);
+            menuOnnxTagger.Click += (_, _) => ShowOnnxTaggerForSelectedImages();
 
             menuContextDSVideoTools = new ToolStripMenuItem { Name = "menuContextDSVideoTools", Text = "Video tools..." };
             menuContextDSVideoTools.Click += (_, _) =>
@@ -249,7 +841,7 @@ namespace BooruDatasetTagManager
             };
 
             menuContextDSRetagOnnx = new ToolStripMenuItem { Name = "menuContextDSRetagOnnx", Text = "Retag ONNX" };
-            menuContextDSRetagOnnx.Click += (_, _) => ShowOnnxTaggerForSelectedImages(autoRun: true);
+            menuContextDSRetagOnnx.Click += (_, _) => ShowOnnxTaggerForSelectedImages();
 
             menuContextDSRetagLlm = new ToolStripMenuItem { Name = "menuContextDSRetagLlm", Text = "LLM tagging" };
             menuContextDSRetagLlm.Click += (_, _) => ShowLlmTagger();
@@ -411,7 +1003,7 @@ namespace BooruDatasetTagManager
             form.ShowDialog(this);
         }
 
-        private void ShowOnnxTaggerForSelectedImages(bool autoRun)
+        private void ShowOnnxTaggerForSelectedImages()
         {
             if (Program.DataManager == null)
             {
@@ -419,13 +1011,7 @@ namespace BooruDatasetTagManager
                 return;
             }
 
-            if (autoRun && GetSelectedImageDataItems().Count == 0)
-            {
-                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            using Form_OnnxTagger form = new Form_OnnxTagger(this, autoRun);
+            using Form_OnnxTagger form = new Form_OnnxTagger(this);
             form.ShowDialog(this);
         }
 
@@ -696,6 +1282,92 @@ namespace BooruDatasetTagManager
 #endif
         }
 
+        /// <summary>
+        /// The Name column paints the image name with the full file path
+        /// stacked underneath (dim, character-wrapped so pathological
+        /// no-space paths still wrap), keeping the grid at two visible
+        /// columns — thumbnail + details — with no horizontal scrolling
+        /// while everything stays readable.
+        /// </summary>
+        private void GridViewDS_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.ColumnIndex < 0)
+                return;
+            if (gridViewDS.Columns[e.ColumnIndex].Name != "Name"
+                || !gridViewDS.Columns.Contains("ImageFilePath"))
+            {
+                return;
+            }
+            bool selected = (e.State & DataGridViewElementStates.Selected) == DataGridViewElementStates.Selected;
+            e.PaintBackground(e.CellBounds, selected);
+            string name = e.Value as string ?? string.Empty;
+            string path = gridViewDS.Rows[e.RowIndex].Cells["ImageFilePath"].Value as string ?? string.Empty;
+            Color foreColor = selected ? e.CellStyle.SelectionForeColor : e.CellStyle.ForeColor;
+            Color backColor = selected ? e.CellStyle.SelectionBackColor : e.CellStyle.BackColor;
+            Font font = e.CellStyle.Font ?? gridViewDS.Font;
+            int pad = LogicalToDeviceUnits(6);
+            Rectangle area = Rectangle.Inflate(e.CellBounds, -pad, -pad);
+            if (area.Width <= 0 || area.Height <= 0)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            const TextFormatFlags nameFlags = TextFormatFlags.Left | TextFormatFlags.NoPrefix
+                | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+            int nameHeight = TextRenderer.MeasureText(e.Graphics, name.Length > 0 ? name : " ",
+                font, new Size(area.Width, area.Height), nameFlags).Height;
+            int gap = LogicalToDeviceUnits(3);
+            int pathAvailable = area.Height - nameHeight - gap;
+
+            // GDI+ wraps at character level when a segment has no spaces,
+            // which TextRenderer (GDI) cannot do — file paths need that.
+            using var pathFormat = new StringFormat(StringFormatFlags.LineLimit)
+            {
+                Trimming = StringTrimming.EllipsisCharacter
+            };
+            int pathHeight = 0;
+            if (path.Length > 0 && pathAvailable > font.Height)
+            {
+                pathHeight = Math.Min(pathAvailable,
+                    (int)Math.Ceiling(e.Graphics.MeasureString(path, font, area.Width).Height));
+            }
+
+            int total = nameHeight + (pathHeight > 0 ? gap + pathHeight : 0);
+            int y = area.Y + Math.Max(0, (area.Height - total) / 2);
+            TextRenderer.DrawText(e.Graphics, name, font,
+                new Rectangle(area.X, y, area.Width, nameHeight), foreColor, nameFlags);
+            if (pathHeight > 0)
+            {
+                Color pathColor = BlendColor(foreColor, backColor, 0.6f);
+                using var pathBrush = new SolidBrush(pathColor);
+                e.Graphics.DrawString(path, font, pathBrush,
+                    new RectangleF(area.X, y + nameHeight + gap, area.Width, pathHeight), pathFormat);
+            }
+            e.Handled = true;
+        }
+
+        private static Color BlendColor(Color over, Color under, float amount)
+        {
+            float rest = 1f - amount;
+            return Color.FromArgb(
+                (int)(over.R * amount + under.R * rest),
+                (int)(over.G * amount + under.G * rest),
+                (int)(over.B * amount + under.B * rest));
+        }
+
+        /// <summary>
+        /// With the file-path column hidden by default, hovering any dataset
+        /// row shows the full path as a tooltip instead.
+        /// </summary>
+        private void GridViewDS_CellToolTipTextNeeded(object sender, DataGridViewCellToolTipTextNeededEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= gridViewDS.RowCount)
+                return;
+            if (gridViewDS.Columns.Contains("ImageFilePath"))
+                e.ToolTipText = gridViewDS.Rows[e.RowIndex].Cells["ImageFilePath"].Value as string ?? string.Empty;
+        }
+
         private void ContextMenuImageGridHeader_ItemClicked(object sender, ToolStripItemClickedEventArgs e)
         {
             ToolStripMenuItem tsi = (ToolStripMenuItem)e.ClickedItem;
@@ -711,6 +1383,14 @@ namespace BooruDatasetTagManager
                 {
                     tsi.Checked = !tsi.Checked;
                     gridViewDS.Columns[tsi.Name].Visible = tsi.Checked;
+                    // Persist the choice so it survives rebinds and restarts.
+                    List<string> hidden = Program.Settings.DatasetHiddenColumns
+                        ?? AppSettings.GetDefaultDatasetHiddenColumns();
+                    hidden.RemoveAll(name => string.Equals(name, tsi.Name, StringComparison.OrdinalIgnoreCase));
+                    if (!tsi.Checked)
+                        hidden.Add(tsi.Name);
+                    Program.Settings.DatasetHiddenColumns = hidden;
+                    Program.Settings.SaveSettings();
                 }
                 else
                 {
@@ -815,20 +1495,27 @@ namespace BooruDatasetTagManager
                 Program.DataManager = candidateManager;
                 if (oldDataManager != null)
                 {
-                    // Unbind before disposing so the grid cannot paint disposed bitmaps.
+                    // Unbind before disposing so neither the grid nor the
+                    // browser can paint disposed bitmaps.
                     gridViewDS.DataSource = null;
+                    datasetBrowserView.Clear();
                     oldDataManager.Dispose();
                 }
                 gridViewDS.DataSource = Program.DataManager.GetDataSource();
+                RefreshDatasetFolderList();
+                // The rebind above raised SelectionChanged while the sidebar
+                // preview was still hidden; now that the layout ran, fill it.
+                RefreshEmbeddedPreviewFromSelection();
                 isAllTags = true;
                 toolStripLabelAllTags.Text = I18n.GetText("UILabelAllTags");
                 gridViewAllTags.DataSource = Program.DataManager.AllTagsBindingSource;
                 HookAllTagsSelectionAnchor();
+                ApplyAllTagsCategorySort();
                 ApplyDataSetGridStyle();
                 await ApplyTranslation(isTranslate);
                 gridViewDS.AutoResizeColumns();
                 SetStatus(I18n.GetText("TipLoadingComplete"));
-                SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+                SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
                 var loadErrors = Program.DataManager.LastLoadErrors;
                 if (loadErrors.Count > 0)
                 {
@@ -899,6 +1586,7 @@ namespace BooruDatasetTagManager
                 gridViewDS.Rows[i].Height = TrackBarRowHeight.Value;
             }
             gridViewDS.ResumeLayout();
+            datasetBrowserView?.SetThumbnailHeight(TrackBarRowHeight.Value);
         }
 
         private async Task FillTranslation(DataGridView grid)
@@ -953,6 +1641,8 @@ namespace BooruDatasetTagManager
                 gridViewTags.AllowDrop = !locked;
             gridViewAllTags.Enabled = !locked;
             gridViewDS.Enabled = !locked;
+            if (datasetBrowserView != null)
+                datasetBrowserView.Enabled = !locked;
             gridViewAutoTags.Enabled = !locked;
             toolStripAutoTags.Enabled = !locked;
         }
@@ -973,7 +1663,7 @@ namespace BooruDatasetTagManager
                     Image videoPreview = Extensions.MakeVideoThumb(imgPath, previewSize, drawBadge: false);
                     if (videoPreview == null)
                         return;
-                    SetPreviewImage(videoPreview);
+                    ShowEmbeddedPreview(imgPath, videoPreview);
                 }
                 return;
             }
@@ -984,36 +1674,63 @@ namespace BooruDatasetTagManager
             {
                 if (fPreview == null || fPreview.IsDisposed)
                     fPreview = new Form_preview();
-                fPreview.Show(img);
+                fPreview.Show(img, Path.GetFileName(imgPath));
             }
             else if (Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow)
             {
-                SetPreviewImage(img);
+                ShowEmbeddedPreview(imgPath, img);
             }
         }
 
         /// <summary>
-        /// Swaps the main preview image, always detaching the previous image from the
-        /// PictureBox before disposing it. Assigning a new image (or null) while the
-        /// old one is still attached and then disposing it can leave the control
-        /// animating a disposed image on the next WM_SHOWWINDOW, which throws
-        /// "Parameter is not valid" from ImageAnimator.CanAnimate.
+        /// Hands the loaded image to the sidebar preview panel (which owns the
+        /// detach-before-dispose swap; GetImageFromFileWithCache always returns
+        /// a caller-owned instance, so the previous image must be disposed
+        /// regardless of the CacheOpenImages setting).
         /// </summary>
-        private void SetPreviewImage(Image img)
+        private void ShowEmbeddedPreview(string imgPath, Image img)
         {
-            // GetImageFromFileWithCache always hands out a caller-owned instance
-            // (the cache keeps its own clone), so the old image must be disposed
-            // regardless of the CacheOpenImages setting.
-            Image old = pictureBoxPreview.Image;
-            pictureBoxPreview.Image = img;
-            if (old != null && !ReferenceEquals(old, img))
-                old.Dispose();
+            lastEmbeddedPreviewPaths = new List<string> { imgPath };
+            datasetPreviewPanel.SetImage(img, Path.GetFileName(imgPath));
+        }
+
+        /// <summary>
+        /// Multi-selection preview: the first <see cref="DatasetPreviewPanel.MaxImages"/>
+        /// selected images side by side; the header shows the total count.
+        /// </summary>
+        private void ShowEmbeddedPreviewMulti(IReadOnlyList<string> paths)
+        {
+            var loaded = new List<Image>();
+            var used = new List<string>();
+            foreach (string path in paths)
+            {
+                if (loaded.Count >= DatasetPreviewPanel.MaxImages)
+                    break;
+                if (string.IsNullOrEmpty(path))
+                    continue;
+                Image img = VideoProcessingService.IsVideoFile(path)
+                    ? Extensions.MakeVideoThumb(path, 320, drawBadge: true)
+                    : Program.DataManager.GetImageFromFileWithCache(path);
+                if (img == null)
+                    continue;
+                loaded.Add(img);
+                used.Add(path);
+            }
+            if (loaded.Count == 0)
+            {
+                HidePreview();
+                return;
+            }
+            lastEmbeddedPreviewPaths = used;
+            datasetPreviewPanel.SetImages(loaded,
+                string.Format(I18n.GetText("FolderListImageCount"), paths.Count));
         }
 
         private void HidePreview()
         {
             fPreview?.Hide();
-            SetPreviewImage(null);
+            lastEmbeddedPreviewPaths = new List<string>();
+            datasetPreviewPanel.SetImage(null, null);
         }
 
         private async void LoadSelectedImageToGrid()
@@ -1044,7 +1761,7 @@ namespace BooruDatasetTagManager
                     gridViewTags.Tag = selectedPath;
                     ChageImageColumn(false);
                     gridViewTags.DataSource = selectedItem.Tags;
-                    if (isShowPreview)
+                    if (IsPreviewFollowActive)
                     {
                         ShowPreview(selectedPath);
                     }
@@ -1053,9 +1770,9 @@ namespace BooruDatasetTagManager
                 else
                 {
                     BtnTagImageChecker.Enabled = true;
-                    if (isShowPreview)
+                    if (IsPreviewFollowActive)
                     {
-                        HidePreview();
+                        RefreshEmbeddedPreviewFromSelection();
                     }
                     gridViewTags.DataSource = null;
                     gridViewTags.AllowDrop = false;
@@ -1116,7 +1833,18 @@ namespace BooruDatasetTagManager
         /// <param name="add"> true to add, false to remove</param>
         private void ChageImageColumn(bool add)
         {
-            gridViewTags.Columns["ImageName"].Visible = add;
+            DataGridViewColumn column = gridViewTags.Columns["ImageName"];
+            column.Visible = add;
+            if (add)
+            {
+                // The grid-level auto column sizing would grow this to the
+                // widest kohya file name and squeeze the tag column out of
+                // view: cap it to a fixed width, single line (tooltip shows
+                // the full name).
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                column.Width = LogicalToDeviceUnits(150);
+                column.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
+            }
         }
 
         private Rectangle dragBoxFromMouseDown;
@@ -1221,18 +1949,133 @@ namespace BooruDatasetTagManager
             }
             else
             {
-                if (gridViewTags.SelectedCells.Count == 0 || gridViewTags.RowCount == 0)
-                {
-                    ((EditableTagList)gridViewTags.DataSource).AddNew();
-                    SetDGVSelection(gridViewTags, gridViewTags.RowCount - 1, "ImageTags");
-                }
-                else
-                {
-                    int index = GetFirstDGVSelectionIndex(gridViewTags);
-                    ((EditableTagList)gridViewTags.DataSource).InsertNew(gridViewTags.SelectedCells[0].RowIndex + 1);
-                    SetDGVSelection(gridViewTags, index + 1, "ImageTags");
-                }
+                // Autocomplete input dialog instead of appending empty rows;
+                // the tag lands right after the currently selected row.
+                string tag = PromptForNewTag();
+                if (string.IsNullOrWhiteSpace(tag))
+                    return;
+                tag = tag.Trim();
+                var tagList = (EditableTagList)gridViewTags.DataSource;
+                int selectedIndex = GetFirstDGVSelectionIndex(gridViewTags);
+                (int _, int newIndex) = selectedIndex >= 0
+                    ? tagList.AddTag(tag, skipExist: true, AddingType.Custom, selectedIndex + 1)
+                    : tagList.AddTag(tag, skipExist: true, AddingType.Down);
+                if (newIndex >= 0 && newIndex < gridViewTags.RowCount)
+                    SetDGVSelection(gridViewTags, newIndex, "ImageTags");
             }
+        }
+
+        /// <summary>
+        /// Autocomplete source: the tag DB when the user installed one, else
+        /// the current dataset's own tags (Tags/ ships empty, and an empty
+        /// value list means the popup silently never appears).
+        /// </summary>
+        private List<TagsDB.TagItem> GetAutocompleteValues()
+        {
+            List<TagsDB.TagItem> values = Program.TagsList?.Tags;
+            if ((values == null || values.Count == 0) && Program.DataManager != null)
+            {
+                values = Program.DataManager.AllTags.GetAllTagsList()
+                    .Select(tag =>
+                    {
+                        var item = new TagsDB.TagItem();
+                        item.SetTag(tag);
+                        return item;
+                    })
+                    .ToList();
+            }
+            return values ?? new List<TagsDB.TagItem>();
+        }
+
+        /// <summary>
+        /// Small modal with the same tag autocomplete the grid editor uses;
+        /// Enter picks the suggestion first, a second Enter confirms.
+        /// </summary>
+        private string PromptForNewTag()
+        {
+            using var dialog = new Form
+            {
+                Text = I18n.GetText("UIAddTagForm"),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(LogicalToDeviceUnits(380), LogicalToDeviceUnits(250))
+            };
+            var label = new Label
+            {
+                Text = I18n.GetText("UIAddTagTag"),
+                AutoSize = true,
+                Location = new Point(LogicalToDeviceUnits(12), LogicalToDeviceUnits(12))
+            };
+            var textBox = new AutoCompleteTextBox
+            {
+                Location = new Point(LogicalToDeviceUnits(12), LogicalToDeviceUnits(36)),
+                Width = dialog.ClientSize.Width - LogicalToDeviceUnits(24)
+            };
+            if (Program.Settings.AutocompleteMode != AutocompleteMode.Disable)
+            {
+                textBox.SetAutocompleteMode(Program.Settings.AutocompleteMode, Program.Settings.AutocompleteSort);
+                textBox.Values = GetAutocompleteValues();
+            }
+            var okButton = new Button
+            {
+                Text = "OK",
+                DialogResult = DialogResult.OK,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            var cancelButton = new Button
+            {
+                Text = I18n.GetText("BtnCancel"),
+                DialogResult = DialogResult.Cancel,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            okButton.Location = new Point(
+                dialog.ClientSize.Width - LogicalToDeviceUnits(12) - okButton.Width * 2 - LogicalToDeviceUnits(8),
+                dialog.ClientSize.Height - LogicalToDeviceUnits(40));
+            cancelButton.Location = new Point(
+                dialog.ClientSize.Width - LogicalToDeviceUnits(12) - cancelButton.Width,
+                dialog.ClientSize.Height - LogicalToDeviceUnits(40));
+            // No AcceptButton/CancelButton bindings: Enter/Escape must first go
+            // to the autocomplete popup (pick suggestion / close list); only a
+            // second press closes the dialog.
+            bool suppressEnterClose = false;
+            bool suppressEscapeClose = false;
+            textBox.ItemSelectionComplete += (_, _) => suppressEnterClose = true;
+            textBox.ListBoxClosedByEscape += () => suppressEscapeClose = true;
+            textBox.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    e.SuppressKeyPress = true;
+                    if (suppressEnterClose)
+                    {
+                        suppressEnterClose = false;
+                        return;
+                    }
+                    dialog.DialogResult = DialogResult.OK;
+                    dialog.Close();
+                }
+                else if (e.KeyCode == Keys.Escape)
+                {
+                    e.SuppressKeyPress = true;
+                    if (suppressEscapeClose)
+                    {
+                        suppressEscapeClose = false;
+                        return;
+                    }
+                    dialog.DialogResult = DialogResult.Cancel;
+                    dialog.Close();
+                }
+            };
+            dialog.Controls.Add(label);
+            dialog.Controls.Add(textBox);
+            dialog.Controls.Add(okButton);
+            dialog.Controls.Add(cancelButton);
+            Program.ColorManager.ChangeColorScheme(dialog, Program.ColorManager.SelectedScheme);
+            Program.ColorManager.ChangeColorSchemeInConteiner(dialog.Controls, Program.ColorManager.SelectedScheme);
+            return dialog.ShowDialog(this) == DialogResult.OK ? textBox.Text : null;
         }
 
         private void SetDGVSelection(DataGridView dgv, int index, string column)
@@ -1388,19 +2231,16 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
                 return;
             }
+            if (Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow)
+            {
+                ToggleEmbeddedPreview();
+                return;
+            }
             isShowPreview = !isShowPreview;
             MenuShowPreview.Checked = isShowPreview;
-            if (isShowPreview)
+            if (isShowPreview && gridViewDS.SelectedRows.Count == 1)
             {
-                //tabPreview.Show();
-                if (gridViewDS.SelectedRows.Count == 1)
-                {
-                    ShowPreview((string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value);
-                }
-                else
-                {
-                    HidePreview();
-                }
+                ShowPreview((string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value);
             }
             else
             {
@@ -1648,7 +2488,7 @@ namespace BooruDatasetTagManager
                 LoadSelectedInViewDs();
                 BtnImageExitFilter.Enabled = true;
             }
-            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
         }
 
         private void ResetFilter()
@@ -1661,7 +2501,7 @@ namespace BooruDatasetTagManager
                 BtnImageExitFilter.Enabled = false;
                 LoadSelectedInViewDs();
             }
-            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
         }
 
         private void toolStripButton14_Click(object sender, EventArgs e)
@@ -1809,7 +2649,7 @@ namespace BooruDatasetTagManager
                     if (Program.Settings.AutocompleteMode != AutocompleteMode.Disable && autoText.Values == null)
                     {
                         autoText.SetAutocompleteMode(Program.Settings.AutocompleteMode, Program.Settings.AutocompleteSort);
-                        autoText.Values = Program.TagsList.Tags;
+                        autoText.Values = GetAutocompleteValues();
                     }
                     //autoText.Location = new Point(10, 10);
                     //autoText.Size = new Size(25, 75);
@@ -1914,6 +2754,13 @@ namespace BooruDatasetTagManager
 
         }
 
+        /// <summary>
+        /// (Re)applies the dataset grid column layout. Rebinding regenerates
+        /// the auto columns, so this must run after every DataSource
+        /// assignment: thumbnail zoomed, name filling the remaining width (no
+        /// horizontal scrollbar), noisy columns hidden per the persisted
+        /// header-menu choices.
+        /// </summary>
         private void ApplyDataSetGridStyle()
         {
             for (int i = 0; i < gridViewDS.ColumnCount; i++)
@@ -1923,6 +2770,23 @@ namespace BooruDatasetTagManager
                     ((DataGridViewImageColumn)gridViewDS.Columns[i]).ImageLayout = DataGridViewImageCellLayout.Zoom;
                     gridViewDS.Columns[i].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
                 }
+            }
+            if (gridViewDS.Columns.Contains("Name"))
+            {
+                gridViewDS.Columns["Name"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                gridViewDS.Columns["Name"].MinimumWidth = LogicalToDeviceUnits(60);
+                gridViewDS.Columns["Name"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
+            }
+            List<string> hidden = Program.Settings.DatasetHiddenColumns ?? AppSettings.GetDefaultDatasetHiddenColumns();
+            for (int i = 0; i < gridViewDS.ColumnCount; i++)
+            {
+                DataGridViewColumn column = gridViewDS.Columns[i];
+                column.Visible = !hidden.Contains(column.Name, StringComparer.OrdinalIgnoreCase);
+            }
+            if (gridViewDS.ColumnCount > 0
+                && gridViewDS.Columns.GetColumnCount(DataGridViewElementStates.Visible) == 0)
+            {
+                gridViewDS.Columns[0].Visible = true;
             }
             ApplyDataSetColumnHeaders();
         }
@@ -1946,7 +2810,12 @@ namespace BooruDatasetTagManager
         private void dataGridView3_SelectionChanged(object sender, EventArgs e)
         {
             if (!selectionMode)
+            {
+                // Keep the visible browser in sync when code changes the hidden
+                // grid's selection directly.
+                datasetBrowserView?.SetSelectedImagePaths(GetGridSelectedPaths());
                 LoadSelectedImageToGrid();
+            }
         }
 
 
@@ -2212,6 +3081,7 @@ namespace BooruDatasetTagManager
                 if (Enum.IsDefined(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name))
                 {
                     gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter((DatasetManager.OrderType)Enum.Parse(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name));
+                    ApplyDataSetGridStyle();
                 }
             }
         }
@@ -2363,7 +3233,10 @@ namespace BooruDatasetTagManager
                 selectionMode = false;
             }
 
-            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.DataSet.Count));
+            // The browser renders from the (in-place mutated) grid list:
+            // rebuild it so deleted rows disappear immediately.
+            RefreshDatasetFolderList();
+            SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
             if (gridViewDS.SelectedRows.Count > 0)
                 LoadSelectedImageToGrid();
         }
@@ -2894,6 +3767,155 @@ namespace BooruDatasetTagManager
             }
         }
 
+        // ---- semantic tag categories: light row tints + category sort ----
+
+        private ToolStripButton toolStripCategorySortBtn;
+        private readonly Dictionary<string, TagSemanticCategory> tagCategoryCache =
+            new Dictionary<string, TagSemanticCategory>(StringComparer.OrdinalIgnoreCase);
+
+        private void InitializeTagCategoryUi()
+        {
+            toolStripCategorySortBtn = new ToolStripButton
+            {
+                Name = "toolStripCategorySortBtn",
+                Alignment = ToolStripItemAlignment.Right,
+                DisplayStyle = ToolStripItemDisplayStyle.Text
+            };
+            toolStripCategorySortBtn.Click += (_, _) => SortPromptByCategory();
+            int sortIndex = toolStripTagsHeader.Items.IndexOf(toolStripPromptSortBtn);
+            toolStripTagsHeader.Items.Insert(
+                sortIndex >= 0 ? sortIndex + 1 : toolStripTagsHeader.Items.Count,
+                toolStripCategorySortBtn);
+            gridViewAllTags.CellFormatting += GridViewAllTags_CellFormatting;
+
+            // All-tags pane: category-grouped ordering toggle (off by default).
+            toolStripAllTagsCategorySortBtn = new ToolStripButton
+            {
+                Name = "toolStripAllTagsCategorySortBtn",
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                CheckOnClick = true,
+                Checked = Program.Settings.AllTagsCategorySort
+            };
+            toolStripAllTagsCategorySortBtn.CheckedChanged += (_, _) =>
+            {
+                Program.Settings.AllTagsCategorySort = toolStripAllTagsCategorySortBtn.Checked;
+                Program.Settings.SaveSettings();
+                ApplyAllTagsCategorySort();
+            };
+            toolStrip1.Items.Add(toolStripAllTagsCategorySortBtn);
+        }
+
+        private ToolStripButton toolStripAllTagsCategorySortBtn;
+
+        private void ApplyAllTagsCategorySort()
+        {
+            Program.DataManager?.AllTags.SetCategorySort(
+                Program.Settings.AllTagsCategorySort ? tag => (int)ClassifyTagCached(tag) : null);
+        }
+
+        /// <summary>
+        /// Sorts the current image's tags by semantic category (characters →
+        /// subject count → hair/eyes/body → clothing/accessories → ... →
+        /// meta), honoring the "don't sort first N rows" prefix.
+        /// </summary>
+        private void SortPromptByCategory()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+            int fixedLengthIndex = toolStrippromptFixedLengthComboBox.SelectedIndex;
+            if (fixedLengthIndex == -1)
+                return;
+            if (GetTagsDataSourceType() != DataSourceType.Single)
+                return;
+            if (gridViewTags.DataSource is EditableTagList eTagList)
+                eTagList.SortByCategory(fixedLengthIndex, tag => (int)ClassifyTagCached(tag));
+        }
+
+        private TagSemanticCategory ClassifyTagCached(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return TagSemanticCategory.General;
+            if (tagCategoryCache.TryGetValue(tag, out TagSemanticCategory cached))
+                return cached;
+            int danbooruType = Program.TagsList?.GetTagType(tag) ?? -1;
+            TagSemanticCategory category;
+            if (danbooruType < 0 && Program.CharacterTagLookup?.Contains(tag) == true)
+                category = TagSemanticCategory.Character;
+            else
+                category = TagSemanticClassifier.Classify(tag, danbooruType);
+            tagCategoryCache[tag] = category;
+            return category;
+        }
+
+        /// <summary>
+        /// Applies the 设置→匹配角色标签 toggle: loads/unloads the character
+        /// catalog and drops the classification cache so tints re-evaluate.
+        /// </summary>
+        private void ApplyCharacterMatchSetting()
+        {
+            bool enabled = Program.Settings.MatchCharacterTags;
+            if (enabled && Program.CharacterTagLookup == null)
+            {
+                Cursor = Cursors.WaitCursor;
+                try
+                {
+                    Program.CharacterTagLookup =
+                        CharacterTagCatalog.LoadFromFile(Program.GetCharacterTagCatalogPath());
+                }
+                finally
+                {
+                    Cursor = Cursors.Default;
+                }
+            }
+            else if (!enabled && Program.CharacterTagLookup != null)
+            {
+                Program.CharacterTagLookup = null;
+            }
+            tagCategoryCache.Clear();
+            gridViewTags.Invalidate();
+            gridViewAllTags.Invalidate();
+        }
+
+        private void ApplyTagCategoryTint(DataGridViewCellFormattingEventArgs e, string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return;
+            Color? accent = TagSemanticClassifier.GetAccent(ClassifyTagCached(tag));
+            if (accent.HasValue)
+                e.CellStyle.BackColor = TagSemanticClassifier.ApplyTint(accent.Value, e.CellStyle.BackColor);
+        }
+
+        /// <summary>Tag text of a row in the image-tags grid for both bind modes.</summary>
+        private string GetTagsRowTag(int rowIndex)
+        {
+            if (gridViewTags.DataSource is EditableTagList && gridViewTags.Columns.Contains("ImageTags"))
+                return gridViewTags.Rows[rowIndex].Cells["ImageTags"].Value as string;
+            if (gridViewTags.DataSource is MultiSelectDataTable table && rowIndex < table.Rows.Count)
+            {
+                var row = table.Rows[rowIndex] as MultiSelectDataRow;
+                if (row == null
+                    || row.RowState == System.Data.DataRowState.Deleted
+                    || row.RowState == System.Data.DataRowState.Detached)
+                {
+                    return null;
+                }
+                return row.GetTagText();
+            }
+            return null;
+        }
+
+        private void GridViewAllTags_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        {
+            // The all-tags grid uses designer columns; the tag lives in
+            // "TagsColumn" (index 0), not an auto-generated "Tag" column.
+            if (e.RowIndex < 0 || e.ColumnIndex < 0 || !gridViewAllTags.Columns.Contains("TagsColumn"))
+                return;
+            ApplyTagCategoryTint(e, gridViewAllTags.Rows[e.RowIndex].Cells["TagsColumn"].Value as string);
+        }
+
         public void switchLanguage()
         {
             I18n.Initialize(Program.Settings.Language);
@@ -2920,6 +3942,33 @@ namespace BooruDatasetTagManager
             MenuHideAllTags.Text = I18n.GetText("MenuHideAllTags");
             MenuHideTags.Text = I18n.GetText("MenuHideTags");
             MenuHideDataset.Text = I18n.GetText("MenuHideDataset");
+            datasetBrowserView?.SetTexts(
+                I18n.GetText("FolderListAll"),
+                I18n.GetText("FolderListRoot"),
+                I18n.GetText("FolderListImageCount"),
+                I18n.GetText("FolderListSearchPlaceholder"));
+            datasetBrowserView?.SetFolderButtonTexts(
+                I18n.GetText("FolderExpandAll"),
+                I18n.GetText("FolderCollapseAll"));
+            if (toolStripCategorySortBtn != null)
+            {
+                toolStripCategorySortBtn.Text = I18n.GetText("TagsSortByCategory");
+                toolStripCategorySortBtn.ToolTipText = I18n.GetText("TagsSortByCategory");
+            }
+            if (toolStripAllTagsCategorySortBtn != null)
+            {
+                toolStripAllTagsCategorySortBtn.Text = I18n.GetText("TagsSortByCategory");
+                toolStripAllTagsCategorySortBtn.ToolTipText = I18n.GetText("TagsSortByCategory");
+            }
+            if (menuRenameFolder != null)
+                menuRenameFolder.Text = I18n.GetText("FolderRenameMenu");
+            if (menuBatchRenameImages != null)
+                menuBatchRenameImages.Text = I18n.GetText("FolderBatchRenameMenu");
+            if (menuFolderTagOnnx != null)
+                menuFolderTagOnnx.Text = I18n.GetText("FolderTagOnnxMenu");
+            if (menuFolderTagLlm != null)
+                menuFolderTagLlm.Text = I18n.GetText("FolderTagLlmMenu");
+            datasetPreviewPanel?.SetTitle(I18n.GetText("DatasetPreviewTitle"));
             MenuLanguage.Text = I18n.GetText("MenuMenuLanguage");
             MenuSetting.Text = I18n.GetText("MenuLabelOptions");
             settingsToolStripMenuItem.Text = I18n.GetText("MenuSettings");
@@ -3108,7 +4157,9 @@ namespace BooruDatasetTagManager
 
         private void settingsToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            HidePreview();
+            // Only park the floating window; clearing the embedded sidebar
+            // preview here made it go blank behind the settings dialog.
+            fPreview?.Hide();
             Form_settings settings = new Form_settings();
             if (settings.ShowDialog() == DialogResult.OK)
             {
@@ -3116,17 +4167,11 @@ namespace BooruDatasetTagManager
             }
             settings.Close();
             switchLanguage();
-            if (isShowPreview)
-            {
-                if (gridViewDS.SelectedRows.Count == 1)
-                {
-                    ShowPreview((string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value);
-                }
-                else
-                {
-                    HidePreview();
-                }
-            }
+            ApplyCharacterMatchSetting();
+            // The preview mode may have changed in the dialog: re-run the
+            // sidebar layout, then refresh whichever preview surface is active.
+            ApplyDatasetSidebarLayout();
+            RefreshEmbeddedPreviewFromSelection();
         }
 
         private async void replaceTransparentBackgroundToolStripMenuItem_Click(object sender, EventArgs e)
@@ -3309,7 +4354,7 @@ namespace BooruDatasetTagManager
 
         private void DatasetFocus()
         {
-            gridViewDS.Focus();
+            datasetBrowserView.FocusList();
         }
 
         private void TagsFocus()
@@ -3325,10 +4370,15 @@ namespace BooruDatasetTagManager
 
         private void PreviewTabFocus()
         {
-            // Index 1: the tab control holds only All/Common tags + Preview since the
-            // AutoTagger preview tab was removed; index 2 would throw out-of-range.
-            tabControl1.SelectedIndex = 1;
-            gridViewDS.Focus();
+            // Legacy hotkey from the removed right-pane Preview tab: now makes
+            // sure the embedded sidebar preview is expanded, then returns to
+            // the dataset grid.
+            if (Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow
+                && Program.DataManager != null && !Program.Settings.DatasetPreviewExpanded)
+            {
+                ToggleEmbeddedPreview();
+            }
+            datasetBrowserView.FocusList();
         }
 
         private void HideShowAllTagsWindow()
@@ -3752,7 +4802,7 @@ namespace BooruDatasetTagManager
                     RefreshDatasetGrid();
                     // Reload the current preview if the selected image was processed
                     // (its cache entry was cleared above, so this re-reads the new file).
-                    if (isShowPreview && gridViewDS.SelectedRows.Count == 1)
+                    if (IsPreviewFollowActive && gridViewDS.SelectedRows.Count == 1)
                     {
                         string cur = gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value as string;
                         if (!string.IsNullOrEmpty(cur) && replacedPaths.Contains(cur))
@@ -4188,7 +5238,7 @@ namespace BooruDatasetTagManager
                     oldThumb?.Dispose();
                 }
                 RefreshDatasetGrid();
-                if (isShowPreview && gridViewDS.SelectedRows.Count == 1
+                if (IsPreviewFollowActive && gridViewDS.SelectedRows.Count == 1
                     && string.Equals((string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value, imagePath, StringComparison.OrdinalIgnoreCase))
                 {
                     ShowPreview(imagePath);

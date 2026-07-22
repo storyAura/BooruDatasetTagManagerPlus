@@ -27,6 +27,13 @@ namespace BooruDatasetTagManager
 
         public string DatasetRoot { get; private set; } = string.Empty;
 
+        /// <summary>
+        /// Active sub-folder scope ('/'-normalized path relative to
+        /// <see cref="DatasetRoot"/>). Null or empty means "all folders".
+        /// Every filtered enumeration and the AllTags counts honor this scope.
+        /// </summary>
+        public string ActiveFolder { get; private set; }
+
         // Order-independent signature of the key set at the last save/accept point.
         private long originalStructureSignature;
 
@@ -129,11 +136,17 @@ namespace BooruDatasetTagManager
                         continue;
 
                     item.Tags.TagsListChanged -= Tags_TagsListChanged;
+                    bool inScope = IsInActiveScope(item.ImageFilePath);
                     List<string> tagSnapshot = item.Tags.TextTags.ToList();
                     item.Tags.ClearWithoutTagNotifications();
 
-                    foreach (string tag in tagSnapshot)
-                        AllTags.RemoveTag(tag);
+                    // Out-of-scope items were never counted into the scoped
+                    // AllTags view, so removing them must not decrement it.
+                    if (inScope)
+                    {
+                        foreach (string tag in tagSnapshot)
+                            AllTags.RemoveTag(tag);
+                    }
 
                     RemoveFromCache(path);
                     item.Img?.Dispose();
@@ -227,8 +240,318 @@ namespace BooruDatasetTagManager
                 lst = FilterLogic(lastAndOperation, lastTagsFilter);
             }
             else
-                lst = DataSet.Select(a => a.Value);
+                lst = ScopedItems();
             return lst;
+        }
+
+        /// <summary>
+        /// True when the image belongs to the active folder scope (always true
+        /// while no folder is selected).
+        /// </summary>
+        public bool IsInActiveScope(string imagePath)
+        {
+            return string.IsNullOrEmpty(ActiveFolder)
+                || DatasetFolderIndex.IsInFolder(imagePath, DatasetRoot, ActiveFolder);
+        }
+
+        private IEnumerable<DataItem> ScopedItems()
+        {
+            return DataSet.Values.Where(item => IsInActiveScope(item.ImageFilePath));
+        }
+
+        /// <summary>
+        /// Folder gallery entries for the loaded dataset, grouped by directory
+        /// relative to <see cref="DatasetRoot"/>.
+        /// </summary>
+        public IReadOnlyList<DatasetFolderEntry> GetFolderEntries()
+        {
+            return DatasetFolderIndex.Create(DataSet.Keys, DatasetRoot);
+        }
+
+        /// <summary>Number of images inside the active folder scope.</summary>
+        public int GetActiveScopeCount()
+        {
+            return string.IsNullOrEmpty(ActiveFolder) ? DataSet.Count : ScopedItems().Count();
+        }
+
+        /// <summary>Items inside the active folder scope (audit tools use this
+        /// so a selected folder bounds their inventory and gallery).</summary>
+        public List<DataItem> GetScopedItems()
+        {
+            return ScopedItems().ToList();
+        }
+
+        /// <summary>
+        /// Switches the active folder scope (null/empty selects every folder)
+        /// and rebuilds the AllTags counts so the tag pane reflects only the
+        /// scoped images.
+        /// </summary>
+        public void SetActiveFolder(string relativeFolder)
+        {
+            string normalized = DatasetFolderIndex.NormalizeRelative(relativeFolder);
+            ActiveFolder = normalized.Length == 0 ? null : normalized;
+            RebuildAllTagsForScope();
+        }
+
+        /// <summary>
+        /// Renames the leaf directory of <paramref name="relativeFolder"/> on
+        /// disk (captions move with it) and remaps every affected in-memory
+        /// path — dataset keys, item image/caption paths, tag-sync owner
+        /// paths, the image cache and the active scope — so unsaved tag edits
+        /// survive without a reload. Returns the new relative folder. Throws
+        /// ArgumentException for an invalid/conflicting name and IO exceptions
+        /// for filesystem failures; nothing is remapped unless the disk move
+        /// succeeded.
+        /// </summary>
+        public string RenameFolder(string relativeFolder, string newLeafName)
+        {
+            string normalized = DatasetFolderIndex.NormalizeRelative(relativeFolder);
+            if (normalized.Length == 0 || string.IsNullOrEmpty(DatasetRoot))
+                throw new ArgumentException("No folder selected.", nameof(relativeFolder));
+            newLeafName = (newLeafName ?? string.Empty).Trim();
+            if (newLeafName.Length == 0
+                || newLeafName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                || newLeafName == "." || newLeafName == "..")
+            {
+                throw new ArgumentException("Invalid folder name.", nameof(newLeafName));
+            }
+            int slash = normalized.LastIndexOf('/');
+            string parent = slash < 0 ? string.Empty : normalized.Substring(0, slash);
+            string newRelative = parent.Length == 0 ? newLeafName : parent + "/" + newLeafName;
+            if (string.Equals(newRelative, normalized, StringComparison.Ordinal))
+                return normalized;
+
+            string oldAbsolute = Path.GetFullPath(Path.Combine(
+                DatasetRoot, normalized.Replace('/', Path.DirectorySeparatorChar)));
+            string newAbsolute = Path.GetFullPath(Path.Combine(
+                DatasetRoot, newRelative.Replace('/', Path.DirectorySeparatorChar)));
+            if (!Directory.Exists(oldAbsolute))
+                throw new DirectoryNotFoundException(oldAbsolute);
+            bool caseOnlyRename = string.Equals(oldAbsolute, newAbsolute, StringComparison.OrdinalIgnoreCase);
+            if (!caseOnlyRename && (Directory.Exists(newAbsolute) || File.Exists(newAbsolute)))
+                throw new ArgumentException("A folder with this name already exists.", nameof(newLeafName));
+
+            bool structureWasClean = ComputeStructureSignature() == originalStructureSignature;
+            Directory.Move(oldAbsolute, newAbsolute);
+
+            string oldPrefix = oldAbsolute + Path.DirectorySeparatorChar;
+            string newPrefix = newAbsolute + Path.DirectorySeparatorChar;
+            foreach (KeyValuePair<string, DataItem> pair in DataSet.ToList())
+            {
+                if (!pair.Key.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                DataItem item = pair.Value;
+                string newPath = newPrefix + pair.Key.Substring(oldPrefix.Length);
+                DataSet.TryRemove(pair.Key, out _);
+                imagesCache.Remove(pair.Key);
+                item.ImageFilePath = newPath;
+                item.ImageFilePathHash = newPath.GetHashCode();
+                if (!string.IsNullOrEmpty(item.TextFilePath)
+                    && item.TextFilePath.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    item.TextFilePath = newPrefix + item.TextFilePath.Substring(oldPrefix.Length);
+                }
+                item.Tags.OwnerImagePath = newPath;
+                DataSet[newPath] = item;
+            }
+
+            if (!string.IsNullOrEmpty(ActiveFolder))
+            {
+                string active = DatasetFolderIndex.NormalizeRelative(ActiveFolder);
+                if (string.Equals(active, normalized, StringComparison.OrdinalIgnoreCase))
+                    ActiveFolder = newRelative;
+                else if (active.StartsWith(normalized + "/", StringComparison.OrdinalIgnoreCase))
+                    ActiveFolder = newRelative + active.Substring(normalized.Length);
+            }
+
+            // The rename changed every key, but nothing needs saving because
+            // captions moved with their images: keep a clean dataset clean.
+            if (structureWasClean)
+                originalStructureSignature = ComputeStructureSignature();
+            return newRelative;
+        }
+
+        /// <summary>
+        /// Batch-renames dataset images inside their directories (captions
+        /// follow) and remaps all in-memory state. Two-phase via temp names,
+        /// so swapping name sets (1→2 while 2→1) cannot collide. Every target
+        /// is validated before anything moves: invalid names, duplicate
+        /// targets, or collisions with files outside the rename set throw
+        /// ArgumentException up front. Returns the number of renamed images.
+        /// </summary>
+        public int RenameImages(IReadOnlyList<KeyValuePair<string, string>> renames)
+        {
+            if (renames == null)
+                throw new ArgumentNullException(nameof(renames));
+
+            var plan = new List<(DataItem Item, string OldImage, string NewImage, string OldText, string NewText)>();
+            var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> rename in renames)
+            {
+                if (!DataSet.TryGetValue(rename.Key, out DataItem item))
+                    continue;
+                string newBase = (rename.Value ?? string.Empty).Trim();
+                if (newBase.Length == 0 || !BatchRenamePlanner.IsValidNamePart(newBase))
+                    throw new ArgumentException("Invalid file name: " + rename.Value);
+                string directory = Path.GetDirectoryName(item.ImageFilePath) ?? string.Empty;
+                string newImage = Path.Combine(directory, newBase + Path.GetExtension(item.ImageFilePath));
+                string oldText = !string.IsNullOrEmpty(item.TextFilePath) && File.Exists(item.TextFilePath)
+                    ? item.TextFilePath
+                    : null;
+                string newText = oldText == null
+                    ? null
+                    : Path.Combine(directory, newBase + Path.GetExtension(oldText));
+                if (string.Equals(newImage, item.ImageFilePath, StringComparison.Ordinal))
+                    continue;
+                if (!targets.Add(newImage))
+                    throw new ArgumentException("Duplicate target name: " + newBase);
+                sources.Add(item.ImageFilePath);
+                if (oldText != null)
+                    sources.Add(oldText);
+                plan.Add((item, item.ImageFilePath, newImage, oldText, newText));
+            }
+            if (plan.Count == 0)
+                return 0;
+
+            foreach ((DataItem _, string oldImage, string newImage, string oldText, string newText) in plan)
+            {
+                bool caseOnly = string.Equals(oldImage, newImage, StringComparison.OrdinalIgnoreCase);
+                if (!caseOnly && File.Exists(newImage) && !sources.Contains(newImage))
+                    throw new ArgumentException("Target already exists: " + Path.GetFileName(newImage));
+                if (newText != null && !string.Equals(oldText, newText, StringComparison.OrdinalIgnoreCase)
+                    && File.Exists(newText) && !sources.Contains(newText))
+                {
+                    throw new ArgumentException("Target already exists: " + Path.GetFileName(newText));
+                }
+                // File.Exists is false for directories, so a folder named like a
+                // target slipped past the checks above and failed mid-move.
+                if (Directory.Exists(newImage))
+                    throw new ArgumentException("Target already exists: " + Path.GetFileName(newImage));
+                if (newText != null && Directory.Exists(newText))
+                    throw new ArgumentException("Target already exists: " + Path.GetFileName(newText));
+            }
+
+            bool structureWasClean = ComputeStructureSignature() == originalStructureSignature;
+
+            // Phase 1: park every source under a unique temp name (same dir);
+            // roll straight back if anything fails here.
+            var parked = new List<(string Temp, string Original)>();
+            try
+            {
+                for (int i = 0; i < plan.Count; i++)
+                {
+                    string tempImage = TempRenamePath(plan[i].OldImage, i);
+                    File.Move(plan[i].OldImage, tempImage);
+                    parked.Add((tempImage, plan[i].OldImage));
+                    if (plan[i].OldText != null)
+                    {
+                        string tempText = TempRenamePath(plan[i].OldText, i);
+                        File.Move(plan[i].OldText, tempText);
+                        parked.Add((tempText, plan[i].OldText));
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                for (int i = parked.Count - 1; i >= 0; i--)
+                {
+                    try { File.Move(parked[i].Temp, parked[i].Original); } catch { }
+                }
+                throw;
+            }
+
+            // Phase 2: temp → final.
+            var failures = new List<string>();
+            var succeeded = new List<(DataItem Item, string OldImage, string NewImage, string NewText)>();
+            for (int i = 0; i < plan.Count; i++)
+            {
+                (DataItem item, string oldImage, string newImage, string oldText, string newText) = plan[i];
+                bool imageMoved = false;
+                try
+                {
+                    File.Move(TempRenamePath(oldImage, i), newImage);
+                    imageMoved = true;
+                    if (oldText != null)
+                        File.Move(TempRenamePath(oldText, i), newText);
+                }
+                catch (Exception ex)
+                {
+                    // After a caption failure the image already sits at the final
+                    // path, not its temp name — roll it back from where it is.
+                    try { File.Move(imageMoved ? newImage : TempRenamePath(oldImage, i), oldImage); } catch { }
+                    if (oldText != null)
+                    {
+                        try { File.Move(TempRenamePath(oldText, i), oldText); } catch { }
+                    }
+                    failures.Add(Path.GetFileName(oldImage) + ": " + ex.Message);
+                    continue;
+                }
+                succeeded.Add((item, oldImage, newImage, newText));
+            }
+
+            // Remap memory in two passes: with swapped name sets one item's
+            // old key IS another's new key, so interleaving remove/insert
+            // per item would delete freshly inserted entries.
+            foreach ((DataItem _, string oldImage, string _, string _) in succeeded)
+            {
+                DataSet.TryRemove(oldImage, out _);
+                imagesCache.Remove(oldImage);
+            }
+            foreach ((DataItem item, string _, string newImage, string newText) in succeeded)
+            {
+                item.ImageFilePath = newImage;
+                item.ImageFilePathHash = newImage.GetHashCode();
+                item.Name = Path.GetFileNameWithoutExtension(newImage);
+                if (newText != null)
+                {
+                    item.TextFilePath = newText;
+                }
+                else if (!string.IsNullOrEmpty(item.TextFilePath))
+                {
+                    // No caption on disk yet: retarget the future save path too,
+                    // or a later SaveAll resurrects the old base name.
+                    item.TextFilePath = Path.Combine(
+                        Path.GetDirectoryName(newImage) ?? string.Empty,
+                        Path.GetFileNameWithoutExtension(newImage) + Path.GetExtension(item.TextFilePath));
+                }
+                item.Tags.OwnerImagePath = newImage;
+                DataSet[newImage] = item;
+            }
+            int renamedCount = succeeded.Count;
+
+            if (structureWasClean)
+                originalStructureSignature = ComputeStructureSignature();
+            if (failures.Count > 0)
+                throw new IOException(string.Join("\n", failures));
+            return renamedCount;
+        }
+
+        /// <summary>
+        /// Phase-1 parking name: prefix the FILE NAME and keep the extension.
+        /// Appending a suffix after the extension (1.png → 1.png.tmp0) looks
+        /// like mass encryption to antivirus behavior monitors — a real AV
+        /// hit killed the test host mid-run over exactly that pattern.
+        /// </summary>
+        private static string TempRenamePath(string path, int index)
+        {
+            string directory = Path.GetDirectoryName(path) ?? string.Empty;
+            return Path.Combine(directory, "~bdtmren" + index + "_" + Path.GetFileName(path));
+        }
+
+        private void RebuildAllTagsForScope()
+        {
+            ExecuteBulkMutation(() =>
+            {
+                AllTags.ResetAllTags();
+                foreach (DataItem item in ScopedItems())
+                {
+                    foreach (string tag in item.Tags.TextTags)
+                        AllTags.AddTag(tag);
+                }
+            });
+            if (isTranslate)
+                _ = AllTags.TranslateAllTags();
         }
 
         public void AddTagToAll(string tag, bool skipExist, AddingType addType, int pos=-1, bool useFilter = false)
@@ -243,37 +566,31 @@ namespace BooruDatasetTagManager
 
         public void SetTagListToAll(List<string> tags, bool onlyEmpty)
         {
-            foreach (var item in DataSet)
+            foreach (var item in ScopedItems())
             {
                 if (onlyEmpty)
                 {
-                    if (item.Value.Tags.Count == 0)
+                    if (item.Tags.Count == 0)
                     {
-                        item.Value.Tags.AddRange(tags, true);
+                        item.Tags.AddRange(tags, true);
                     }
                 }
                 else
                 {
-                    item.Value.Tags.Clear();
-                    item.Value.Tags.AddRange(tags, true);
+                    item.Tags.Clear();
+                    item.Tags.AddRange(tags, true);
                 }
             }
         }
 
         public void SetTagListToAll(EditableTagList tagList, bool onlyEmpty)
         {
-            foreach (var item in DataSet)
+            foreach (var item in ScopedItems())
             {
-                if (onlyEmpty)
+                if (!onlyEmpty || item.Tags.Count == 0)
                 {
-                    if (item.Value.Tags.Count == 0)
-                    {
-                        item.Value.Tags = (EditableTagList)tagList.Clone();
-                    }
-                }
-                else
-                {
-                    item.Value.Tags = (EditableTagList)tagList.Clone();
+                    item.Tags = (EditableTagList)tagList.Clone();
+                    item.Tags.OwnerImagePath = item.ImageFilePath;
                 }
             }
         }
@@ -336,19 +653,19 @@ namespace BooruDatasetTagManager
                 {
                     case FilterType.And:
                         // If the logical operation is AND, filter the data items by requiring all tags to be present.
-                        items = DataSet.Values.Where(a => lastTagsFilter.All(t => a.Tags.Contains(t))).ToList();
+                        items = ScopedItems().Where(a => lastTagsFilter.All(t => a.Tags.Contains(t))).ToList();
                         break;
                     case FilterType.Or:
                         // If the logical operation is OR, filter the data items by requiring at least one tag to be present.
-                        items = DataSet.Values.Where(a => lastTagsFilter.Any(t => a.Tags.Contains(t))).ToList();
+                        items = ScopedItems().Where(a => lastTagsFilter.Any(t => a.Tags.Contains(t))).ToList();
                         break;
                     case FilterType.Not:
                         // If the logical operation is NOT, filter the data items by requiring none of the tags to be present.
-                        items = DataSet.Values.Where(a => lastTagsFilter.All(t => !a.Tags.Contains(t))).ToList();
+                        items = ScopedItems().Where(a => lastTagsFilter.All(t => !a.Tags.Contains(t))).ToList();
                         break;
                     case FilterType.Xor:
                         // If the logical operation is XOR, filter the data items by requiring exactly one tag to be present.
-                        items = DataSet.Values.Where(a => lastTagsFilter.Count(t => a.Tags.Contains(t)) == 1).ToList();
+                        items = ScopedItems().Where(a => lastTagsFilter.Count(t => a.Tags.Contains(t)) == 1).ToList();
                         break;
                     default:
                         throw new ArgumentException($"Invalid filter type: {andOp}");
@@ -356,9 +673,9 @@ namespace BooruDatasetTagManager
                 // Store the last logical operation used for filtering, moved here so it is only updated if we actually perform the operation
                 lastAndOperation = andOp;
             }
-            // If there are no tags to filter by, return all data items.
+            // If there are no tags to filter by, return all data items in scope.
             else
-                items = DataSet.Values.ToList();
+                items = ScopedItems().ToList();
 
             return items;
         }
@@ -469,6 +786,9 @@ namespace BooruDatasetTagManager
         public bool LoadFromFolder(string folder, bool loadPreviewImages, bool readMetadata)
         {
             LastLoadErrors.Clear();
+            // A fresh load always starts unscoped; the previous dataset's folder
+            // selection must not silently filter the new one.
+            ActiveFolder = null;
             CharacterTagFileTransaction.RecoverIncompleteAsync(folder).GetAwaiter().GetResult();
             List<string> allowedExt = new List<string>();
             allowedExt.AddRange(Extensions.ImageExtensions);
@@ -563,7 +883,15 @@ namespace BooruDatasetTagManager
 
         private void Tags_TagsListChanged(object sender, string oldTag, string newTag, ListChangedType changedType)
         {
-            //EditableTagList eTagList = (EditableTagList)sender;
+            // While a folder scope is active, tag edits on out-of-scope items
+            // (e.g. images added in another folder) must not mutate the scoped
+            // AllTags counts; the view is rebuilt on every scope switch.
+            if (sender is EditableTagList ownedList
+                && !string.IsNullOrEmpty(ownedList.OwnerImagePath)
+                && !IsInActiveScope(ownedList.OwnerImagePath))
+            {
+                return;
+            }
             lock (Program.ListChangeLocker)
             {
                 if (changedType == ListChangedType.ItemAdded)
@@ -701,6 +1029,7 @@ namespace BooruDatasetTagManager
             public void LoadData(string imagePath, int imageSize, bool readMetadata)
             {
                 ImageFilePath = imagePath;
+                Tags.OwnerImagePath = imagePath;
                 ImageFilePathHash = ImageFilePath.GetHashCode();
                 Name = Path.GetFileNameWithoutExtension(imagePath);
                 ImageModifyTime = File.GetLastWriteTime(imagePath);

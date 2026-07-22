@@ -60,6 +60,23 @@ namespace BooruDatasetTagManager
 
         public bool CacheOpenImages { get; set; } = true;
 
+        // Embedded dataset preview panel (left sidebar, PreviewInMainWindow mode).
+        public bool DatasetPreviewExpanded { get; set; } = true;
+        // Load Data/danbooru_character_tags.csv for character classification
+        // and 译名 translation (330k rows — the toggle exists for slow machines).
+        public bool MatchCharacterTags { get; set; } = true;
+        // Category-grouped ordering of the all-tags list (off = alphabetical).
+        public bool AllTagsCategorySort { get; set; } = false;
+        // Dataset grid columns hidden by default; the header right-click menu
+        // toggles them and persists here. Replace (not append) on deserialize.
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public List<string> DatasetHiddenColumns { get; set; } = GetDefaultDatasetHiddenColumns();
+
+        public static List<string> GetDefaultDatasetHiddenColumns()
+        {
+            return new List<string> { "ImageFilePath", "ImageModifyTime", "TagsModifyTime" };
+        }
+
         public bool LoadSettingsLoadPreviewImages { get; set; } = true;
         public bool LoadSettingsReadMetadata { get; set; } = false;
         public bool UseDanbooruZhCsvBeforeTranslation { get; set; } = true;
@@ -78,6 +95,11 @@ namespace BooruDatasetTagManager
         public CharacterTagAuditStyle CharacterTagAuditStyle { get; set; } = CharacterTagAuditStyle.Sparse;
         public CharacterTagAuditExecutionMode CharacterTagAuditExecutionMode { get; set; } = CharacterTagAuditExecutionMode.Review;
         public int CharacterTagAuditMinimumCount { get; set; } = 10;
+        // Single- vs dual-character audit and the genders used by the dual
+        // mode's subject-count tags (2girls / multiple girls, ...).
+        public CharacterTagAuditSubjectMode CharacterTagAuditSubjectMode { get; set; } = CharacterTagAuditSubjectMode.Single;
+        public CharacterGender CharacterTagAuditGenderA { get; set; } = CharacterGender.Girl;
+        public CharacterGender CharacterTagAuditGenderB { get; set; } = CharacterGender.Girl;
         public string AutoTagProviderId { get; set; } = "openai-compatible";
         public string FfmpegPath { get; set; } = string.Empty;
         public Wd14TaggerSettings Wd14Tagger { get; set; } = new Wd14TaggerSettings();
@@ -151,35 +173,24 @@ namespace BooruDatasetTagManager
             }
             else
             {
-                AppSettings tempSettings = null;
-                const int maxAttempts = 2;
-                for (int attempt = 0; attempt < maxAttempts && tempSettings == null; attempt++)
+                AppSettings tempSettings = TryLoadSettingsFile(settingsFile);
+                if (tempSettings == null)
                 {
+                    // Preserve the unreadable file before resetting so users
+                    // can recover hand-written endpoints/keys from it.
+                    try { File.Copy(settingsFile, settingsFile + ".corrupt", true); } catch { }
+
+                    // SaveSettings keeps the complete previous file as .bak:
+                    // recover from it before falling back to defaults.
+                    tempSettings = TryLoadSettingsFile(settingsFile + ".bak");
                     try
                     {
-                        string migratedJson = AiServerSetSettingsMigration.MigrateJson(File.ReadAllText(settingsFile));
-                        tempSettings = JsonConvert.DeserializeObject<AppSettings>(migratedJson);
+                        File.WriteAllText(settingsFile, JsonConvert.SerializeObject(tempSettings ?? this));
                     }
-                    catch (Exception ex)
+                    catch (Exception writeEx)
                     {
-                        Trace.WriteLine($"AppSettings.LoadData: failed to parse settings (attempt {attempt + 1}): {ex}");
-                        // On the last attempt, don't try to overwrite again; just fall back to defaults.
-                        if (attempt < maxAttempts - 1)
-                        {
-                            // Preserve the unreadable file before resetting so users
-                            // can recover hand-written endpoints/keys from it.
-                            try { File.Copy(settingsFile, settingsFile + ".corrupt", true); } catch { }
-                            try
-                            {
-                                File.WriteAllText(settingsFile, JsonConvert.SerializeObject(this));
-                            }
-                            catch (Exception writeEx)
-                            {
-                                // Disk read-only / no permission: keep defaults in memory and stop retrying.
-                                Trace.WriteLine($"AppSettings.LoadData: failed to rewrite settings file: {writeEx}");
-                                break;
-                            }
-                        }
+                        // Disk read-only / no permission: keep going with in-memory settings.
+                        Trace.WriteLine($"AppSettings.LoadData: failed to rewrite settings file: {writeEx}");
                     }
                 }
 
@@ -188,7 +199,7 @@ namespace BooruDatasetTagManager
                     return;
 
                 TranslationLanguage = tempSettings.TranslationLanguage;
-                PreviewSize = tempSettings.PreviewSize;
+                PreviewSize = tempSettings.PreviewSize <= 0 ? 130 : tempSettings.PreviewSize;
                 TransService = tempSettings.TransService;
                 if (tempSettings.TranslationProviderOrder == null || tempSettings.TranslationProviderOrder.Count == 0)
                 {
@@ -208,7 +219,7 @@ namespace BooruDatasetTagManager
                 SeparatorOnSave = tempSettings.SeparatorOnSave;
                 ShowAutocompleteAfterCharCount = tempSettings.ShowAutocompleteAfterCharCount;
                 AskSaveChanges = tempSettings.AskSaveChanges;
-                GridViewRowHeight = tempSettings.GridViewRowHeight;
+                GridViewRowHeight = tempSettings.GridViewRowHeight <= 0 ? 29 : tempSettings.GridViewRowHeight;
                 GridViewFont = tempSettings.GridViewFont;
                 AutocompleteFont = tempSettings.AutocompleteFont;
                 AutoSort = tempSettings.AutoSort || false;
@@ -216,8 +227,12 @@ namespace BooruDatasetTagManager
                 PreviewType = tempSettings.PreviewType;
                 DefaultTagsFileExtension = tempSettings.DefaultTagsFileExtension;
                 CaptionFileExtensions = tempSettings.CaptionFileExtensions;
-                TagImagesGridSize = tempSettings.TagImagesGridSize;
+                TagImagesGridSize = tempSettings.TagImagesGridSize <= 0 ? 400 : tempSettings.TagImagesGridSize;
                 CacheOpenImages = tempSettings.CacheOpenImages;
+                DatasetPreviewExpanded = tempSettings.DatasetPreviewExpanded;
+                MatchCharacterTags = tempSettings.MatchCharacterTags;
+                AllTagsCategorySort = tempSettings.AllTagsCategorySort;
+                DatasetHiddenColumns = tempSettings.DatasetHiddenColumns ?? GetDefaultDatasetHiddenColumns();
                 LoadSettingsLoadPreviewImages = tempSettings.LoadSettingsLoadPreviewImages;
                 LoadSettingsReadMetadata = tempSettings.LoadSettingsReadMetadata;
                 UseDanbooruZhCsvBeforeTranslation = tempSettings.UseDanbooruZhCsvBeforeTranslation;
@@ -232,6 +247,9 @@ namespace BooruDatasetTagManager
                 CharacterTagAuditStyle = tempSettings.CharacterTagAuditStyle;
                 CharacterTagAuditExecutionMode = tempSettings.CharacterTagAuditExecutionMode;
                 CharacterTagAuditMinimumCount = tempSettings.CharacterTagAuditMinimumCount <= 0 ? 10 : tempSettings.CharacterTagAuditMinimumCount;
+                CharacterTagAuditSubjectMode = tempSettings.CharacterTagAuditSubjectMode;
+                CharacterTagAuditGenderA = tempSettings.CharacterTagAuditGenderA;
+                CharacterTagAuditGenderB = tempSettings.CharacterTagAuditGenderB;
                 ImageEditorSaveMode = tempSettings.ImageEditorSaveMode;
                 AutoTagProviderId = string.IsNullOrWhiteSpace(tempSettings.AutoTagProviderId)
                     ? "openai-compatible"
@@ -270,10 +288,14 @@ namespace BooruDatasetTagManager
                 AiServerSetPromptTemplate = promptLibrary.SelectedTemplate.Name;
                 OpenAiAutoTagger.SystemPrompt = promptLibrary.SelectedTemplate.SystemPrompt;
 
-                if (tempSettings.Hotkeys != null)
+                // "Hotkeys":{"Items":null} or [null] entries are valid JSON and
+                // used to NRE here before the message loop even started.
+                if (tempSettings.Hotkeys?.Items != null)
                 {
                     foreach (var item in tempSettings.Hotkeys.Items)
                     {
+                        if (item == null)
+                            continue;
                         var hkItem = Hotkeys[item.Id];
                         if (hkItem != null)
                         {
@@ -284,6 +306,22 @@ namespace BooruDatasetTagManager
                         }
                     }
                 }
+            }
+        }
+
+        private static AppSettings TryLoadSettingsFile(string path)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                    return null;
+                string migratedJson = AiServerSetSettingsMigration.MigrateJson(File.ReadAllText(path));
+                return JsonConvert.DeserializeObject<AppSettings>(migratedJson);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"AppSettings.LoadData: failed to parse '{path}': {ex}");
+                return null;
             }
         }
 

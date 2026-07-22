@@ -22,6 +22,17 @@ namespace BooruDatasetTagManager
         private readonly ComboBox comboTrigger = new ComboBox();
         private readonly ComboBox comboStyle = new ComboBox();
         private readonly ComboBox comboMode = new ComboBox();
+        private readonly ComboBox comboSubjectMode = new ComboBox();
+        private readonly ComboBox comboTriggerB = new ComboBox();
+        private readonly ComboBox comboGenderA = new ComboBox();
+        private readonly ComboBox comboGenderB = new ComboBox();
+        private readonly ComboBox comboFolderA = new ComboBox();
+        private readonly ComboBox comboFolderB = new ComboBox();
+        private readonly Button buttonSetReferenceA = new Button();
+        private readonly Button buttonSetReferenceB = new Button();
+        private readonly Label labelReferenceA = new Label();
+        private readonly Label labelReferenceB = new Label();
+        private readonly ComboBox comboResultProfile = new ComboBox();
         private readonly TextBox textModel = new TextBox();
         private readonly NumericUpDown numericMinimumCount = new NumericUpDown();
         private readonly TextBox textImageSearch = new TextBox();
@@ -62,6 +73,15 @@ namespace BooruDatasetTagManager
         private List<ReviewRow> initialRows = new List<ReviewRow>();
         private List<CharacterTagAuditItem> initialAuditItems = new List<CharacterTagAuditItem>();
         private CharacterTagAuditResult auditResult;
+        // Dual-mode state: one result/review-row set per audited character.
+        private List<CharacterTagAuditResult> dualResults;
+        private List<List<ReviewRow>> dualReviewRows;
+        private CharacterTagDualAuditResult dualAuditInfo;
+        private List<CharacterAuditProfile> runProfiles;
+        private int activeResultProfile;
+        private bool dualRunActive;
+        private Control[] dualModeControls = Array.Empty<Control>();
+        private string selectedImagePathB;
         private string selectedImagePath;
         private bool loadingGallery;
         private bool excludedExpanded;
@@ -87,14 +107,20 @@ namespace BooruDatasetTagManager
                 galleryLoadCancellation = null;
             };
             Shown += (_, _) => _ = LoadGalleryAsync();
+            // The wizard is modeless: the user can switch the dataset's folder
+            // scope in the main window while it is open. Refresh the gallery
+            // when focus returns and the scoped image set changed.
+            Activated += (_, _) => _ = ReloadGalleryIfScopeChangedAsync();
         }
 
         private void InitializeComponent()
         {
             Text = "Character tag audit";
             StartPosition = FormStartPosition.CenterParent;
-            MinimumSize = new Size(900, 650);
-            ClientSize = new Size(1100, 760);
+            // Wide enough that the review page's rightmost column (加入 /
+            // 复制提示词) can never be clipped out of reach.
+            MinimumSize = new Size(1200, 680);
+            ClientSize = new Size(1280, 800);
             ShowInTaskbar = false;
 
             FlowLayoutPanel actions = new FlowLayoutPanel
@@ -144,21 +170,37 @@ namespace BooruDatasetTagManager
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            TableLayoutPanel settings = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4, RowCount = 3 };
+            TableLayoutPanel settings = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 4, RowCount = 6 };
             settings.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             settings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             settings.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             settings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
             comboStyle.DropDownStyle = ComboBoxStyle.DropDownList;
             comboMode.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboSubjectMode.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboGenderA.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboGenderB.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboFolderA.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboFolderB.DropDownStyle = ComboBoxStyle.DropDownList;
             comboStyle.Dock = DockStyle.Fill;
             comboMode.Dock = DockStyle.Fill;
+            comboSubjectMode.Dock = DockStyle.Fill;
+            comboFolderA.Dock = DockStyle.Fill;
+            comboFolderB.Dock = DockStyle.Fill;
             comboStyle.DropDown += (_, _) => UpdateChoiceDropDownWidth(comboStyle);
             comboMode.DropDown += (_, _) => UpdateChoiceDropDownWidth(comboMode);
+            comboSubjectMode.DropDown += (_, _) => UpdateChoiceDropDownWidth(comboSubjectMode);
+            comboSubjectMode.SelectedIndexChanged += (_, _) => UpdateSubjectModeVisibility();
+            // Append (inline) completion only: Suggest opens a second native
+            // popup that overlaps the combo's own dropdown list.
             comboTrigger.DropDownStyle = ComboBoxStyle.DropDown;
-            comboTrigger.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+            comboTrigger.AutoCompleteMode = AutoCompleteMode.Append;
             comboTrigger.AutoCompleteSource = AutoCompleteSource.ListItems;
             comboTrigger.Dock = DockStyle.Fill;
+            comboTriggerB.DropDownStyle = ComboBoxStyle.DropDown;
+            comboTriggerB.AutoCompleteMode = AutoCompleteMode.Append;
+            comboTriggerB.AutoCompleteSource = AutoCompleteSource.ListItems;
+            comboTriggerB.Dock = DockStyle.Fill;
             textModel.ReadOnly = true;
             textModel.Dock = DockStyle.Fill;
             numericMinimumCount.Minimum = 1;
@@ -174,6 +216,61 @@ namespace BooruDatasetTagManager
             settings.Controls.Add(comboMode, 3, 1);
             settings.Controls.Add(new Label { Name = "labelMinimumCount", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
             settings.Controls.Add(numericMinimumCount, 1, 2);
+            var labelSubjectMode = new Label { Name = "labelSubjectMode", AutoSize = true, Anchor = AnchorStyles.Left };
+            settings.Controls.Add(labelSubjectMode, 2, 2);
+            settings.Controls.Add(comboSubjectMode, 3, 2);
+
+            // Dual-mode rows: second trigger, per-character genders, optional
+            // repeat-folder scopes and the two reference image pickers.
+            var labelTriggerB = new Label { Name = "labelTriggerB", AutoSize = true, Anchor = AnchorStyles.Left };
+            var labelGenders = new Label { Name = "labelGenders", AutoSize = true, Anchor = AnchorStyles.Left };
+            var labelFolderA = new Label { Name = "labelFolderA", AutoSize = true, Anchor = AnchorStyles.Left };
+            var labelFolderB = new Label { Name = "labelFolderB", AutoSize = true, Anchor = AnchorStyles.Left };
+            var labelReferences = new Label { Name = "labelReferences", AutoSize = true, Anchor = AnchorStyles.Left };
+            FlowLayoutPanel genderFlow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            comboGenderA.Width = 110;
+            comboGenderB.Width = 110;
+            comboGenderB.Margin = new Padding(8, 3, 3, 3);
+            genderFlow.Controls.Add(comboGenderA);
+            genderFlow.Controls.Add(comboGenderB);
+            FlowLayoutPanel referenceFlow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            buttonSetReferenceA.AutoSize = true;
+            buttonSetReferenceB.AutoSize = true;
+            buttonSetReferenceB.Margin = new Padding(16, 3, 3, 3);
+            // Fixed width + ellipsis: kohya file names run hundreds of chars
+            // and an AutoSize label stretched the whole settings row.
+            labelReferenceA.AutoSize = false;
+            labelReferenceB.AutoSize = false;
+            labelReferenceA.AutoEllipsis = true;
+            labelReferenceB.AutoEllipsis = true;
+            labelReferenceA.TextAlign = ContentAlignment.MiddleLeft;
+            labelReferenceB.TextAlign = ContentAlignment.MiddleLeft;
+            labelReferenceA.Size = labelReferenceB.Size =
+                new Size(LogicalToDeviceUnits(230), LogicalToDeviceUnits(26));
+            labelReferenceA.Margin = labelReferenceB.Margin = new Padding(6, 6, 3, 3);
+            buttonSetReferenceA.Click += (_, _) => AssignReferenceFromGallery(isProfileA: true);
+            buttonSetReferenceB.Click += (_, _) => AssignReferenceFromGallery(isProfileA: false);
+            referenceFlow.Controls.Add(buttonSetReferenceA);
+            referenceFlow.Controls.Add(labelReferenceA);
+            referenceFlow.Controls.Add(buttonSetReferenceB);
+            referenceFlow.Controls.Add(labelReferenceB);
+            settings.Controls.Add(labelTriggerB, 0, 3);
+            settings.Controls.Add(comboTriggerB, 1, 3);
+            settings.Controls.Add(labelGenders, 2, 3);
+            settings.Controls.Add(genderFlow, 3, 3);
+            settings.Controls.Add(labelFolderA, 0, 4);
+            settings.Controls.Add(comboFolderA, 1, 4);
+            settings.Controls.Add(labelFolderB, 2, 4);
+            settings.Controls.Add(comboFolderB, 3, 4);
+            settings.Controls.Add(labelReferences, 0, 5);
+            settings.Controls.Add(referenceFlow, 1, 5);
+            settings.SetColumnSpan(referenceFlow, 3);
+            dualModeControls = new Control[]
+            {
+                labelTriggerB, comboTriggerB, labelGenders, genderFlow,
+                labelFolderA, comboFolderA, labelFolderB, comboFolderB,
+                labelReferences, referenceFlow
+            };
             root.Controls.Add(settings, 0, 0);
 
             textImageSearch.Dock = DockStyle.Top;
@@ -260,6 +357,12 @@ namespace BooruDatasetTagManager
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
             FlowLayoutPanel filters = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+            comboResultProfile.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboResultProfile.Width = 240;
+            comboResultProfile.Visible = false;
+            comboResultProfile.Margin = new Padding(3, 0, 12, 0);
+            comboResultProfile.DropDown += (_, _) => UpdateChoiceDropDownWidth(comboResultProfile);
+            comboResultProfile.SelectedIndexChanged += (_, _) => SwitchResultProfile(comboResultProfile.SelectedIndex);
             textTagSearch.Width = 260;
             textTagSearch.TextChanged += (_, _) => FillResultGrid();
             checkDeletesOnly.AutoSize = true;
@@ -267,6 +370,7 @@ namespace BooruDatasetTagManager
             buttonRedoVisual.AutoSize = true;
             buttonRedoVisual.Margin = new Padding(12, 0, 3, 0);
             buttonRedoVisual.Click += async (_, _) => await RedoVisualReviewAsync();
+            filters.Controls.Add(comboResultProfile);
             filters.Controls.Add(textTagSearch);
             filters.Controls.Add(checkDeletesOnly);
             filters.Controls.Add(buttonRedoVisual);
@@ -772,12 +876,30 @@ namespace BooruDatasetTagManager
             FindControl<Label>(pages.TabPages[0], "labelAuditStyle").Text = I18n.GetText("CharacterTagAuditStyle");
             FindControl<Label>(pages.TabPages[0], "labelAuditMode").Text = I18n.GetText("CharacterTagAuditMode");
             FindControl<Label>(pages.TabPages[0], "labelMinimumCount").Text = I18n.GetText("CharacterTagAuditMinimumCount");
+            FindControl<Label>(pages.TabPages[0], "labelSubjectMode").Text = I18n.GetText("CharacterTagAuditSubjectMode");
+            FindControl<Label>(pages.TabPages[0], "labelTriggerB").Text = I18n.GetText("CharacterTagAuditTriggerB");
+            FindControl<Label>(pages.TabPages[0], "labelGenders").Text = I18n.GetText("CharacterTagAuditGenders");
+            FindControl<Label>(pages.TabPages[0], "labelFolderA").Text = I18n.GetText("CharacterTagAuditFolderA");
+            FindControl<Label>(pages.TabPages[0], "labelFolderB").Text = I18n.GetText("CharacterTagAuditFolderB");
+            FindControl<Label>(pages.TabPages[0], "labelReferences").Text = I18n.GetText("CharacterTagAuditReferences");
+            buttonSetReferenceA.Text = I18n.GetText("CharacterTagAuditSetReferenceA");
+            buttonSetReferenceB.Text = I18n.GetText("CharacterTagAuditSetReferenceB");
+            UpdateReferenceLabels();
             comboStyle.Items.Clear();
             comboStyle.Items.Add(new LocalizedChoice<CharacterTagAuditStyle>(CharacterTagAuditStyle.Sparse, I18n.GetText("CharacterTagAuditStyleSparse")));
             comboStyle.Items.Add(new LocalizedChoice<CharacterTagAuditStyle>(CharacterTagAuditStyle.Full, I18n.GetText("CharacterTagAuditStyleFull")));
             comboMode.Items.Clear();
             comboMode.Items.Add(new LocalizedChoice<CharacterTagAuditExecutionMode>(CharacterTagAuditExecutionMode.Review, I18n.GetText("CharacterTagAuditModeReview")));
             comboMode.Items.Add(new LocalizedChoice<CharacterTagAuditExecutionMode>(CharacterTagAuditExecutionMode.SummaryApply, I18n.GetText("CharacterTagAuditModeSummary")));
+            comboSubjectMode.Items.Clear();
+            comboSubjectMode.Items.Add(new LocalizedChoice<CharacterTagAuditSubjectMode>(CharacterTagAuditSubjectMode.Single, I18n.GetText("CharacterTagAuditSubjectSingle")));
+            comboSubjectMode.Items.Add(new LocalizedChoice<CharacterTagAuditSubjectMode>(CharacterTagAuditSubjectMode.Dual, I18n.GetText("CharacterTagAuditSubjectDual")));
+            comboGenderA.Items.Clear();
+            comboGenderA.Items.Add(new LocalizedChoice<CharacterGender>(CharacterGender.Girl, I18n.GetText("CharacterGenderGirl")));
+            comboGenderA.Items.Add(new LocalizedChoice<CharacterGender>(CharacterGender.Boy, I18n.GetText("CharacterGenderBoy")));
+            comboGenderB.Items.Clear();
+            comboGenderB.Items.Add(new LocalizedChoice<CharacterGender>(CharacterGender.Girl, I18n.GetText("CharacterGenderGirl")));
+            comboGenderB.Items.Add(new LocalizedChoice<CharacterGender>(CharacterGender.Boy, I18n.GetText("CharacterGenderBoy")));
             comboInitialFilter.Items.Clear();
             comboInitialFilter.Items.Add(new LocalizedChoice<InitialFilter>(InitialFilter.All, I18n.GetText("CharacterTagAuditInitialAll")));
             comboInitialFilter.Items.Add(new LocalizedChoice<InitialFilter>(InitialFilter.Keep, I18n.GetText("CharacterTagAuditInitialKeep")));
@@ -816,30 +938,153 @@ namespace BooruDatasetTagManager
         {
             SelectChoice(comboStyle, Program.Settings.CharacterTagAuditStyle);
             SelectChoice(comboMode, Program.Settings.CharacterTagAuditExecutionMode);
+            SelectChoice(comboSubjectMode, Program.Settings.CharacterTagAuditSubjectMode);
+            SelectChoice(comboGenderA, Program.Settings.CharacterTagAuditGenderA);
+            SelectChoice(comboGenderB, Program.Settings.CharacterTagAuditGenderB);
             numericMinimumCount.Value = Math.Clamp(Program.Settings.CharacterTagAuditMinimumCount, 1, (int)numericMinimumCount.Maximum);
             textModel.Text = string.IsNullOrWhiteSpace(Program.Settings.CharacterTagAuditModel)
                 ? I18n.GetText("CharacterTagAuditModelRequired")
                 : Program.Settings.CharacterTagAuditModel;
             new ToolTip().SetToolTip(textModel, textModel.Text + Environment.NewLine + I18n.GetText("CharacterTagAuditGeminiRecommendation"));
             LoadTriggerCandidates();
+            LoadFolderChoices();
+            UpdateSubjectModeVisibility();
         }
 
         private void LoadTriggerCandidates()
         {
             if (Program.DataManager == null)
                 return;
-            comboTrigger.BeginUpdate();
-            comboTrigger.Items.Clear();
-            foreach (CharacterTagTriggerCandidate candidate in CharacterTagTriggerCandidates.Create(CreateCurrentInventory()))
-                comboTrigger.Items.Add(candidate);
-            comboTrigger.DisplayMember = nameof(CharacterTagTriggerCandidate.Tag);
-            comboTrigger.EndUpdate();
+            IReadOnlyList<CharacterTagTriggerCandidate> candidates =
+                CharacterTagTriggerCandidates.Create(CreateCurrentInventory());
+            foreach (ComboBox combo in new[] { comboTrigger, comboTriggerB })
+            {
+                combo.BeginUpdate();
+                combo.Items.Clear();
+                foreach (CharacterTagTriggerCandidate candidate in candidates)
+                    combo.Items.Add(candidate);
+                combo.DisplayMember = nameof(CharacterTagTriggerCandidate.Tag);
+                combo.EndUpdate();
+            }
         }
 
+        private void LoadFolderChoices()
+        {
+            if (Program.DataManager == null)
+                return;
+            IReadOnlyList<DatasetFolderEntry> entries = Program.DataManager.GetFolderEntries();
+            foreach (ComboBox combo in new[] { comboFolderA, comboFolderB })
+            {
+                combo.BeginUpdate();
+                combo.Items.Clear();
+                combo.Items.Add(new FolderChoice(string.Empty, I18n.GetText("CharacterTagAuditFolderAny")));
+                foreach (DatasetFolderEntry entry in entries.Where(entry => entry.RelativePath.Length > 0))
+                    combo.Items.Add(new FolderChoice(entry.RelativePath, entry.RelativePath));
+                combo.SelectedIndex = 0;
+                combo.EndUpdate();
+            }
+        }
+
+        // Inventory / gallery use the active folder scope of the main window,
+        // so a selected repeat folder bounds the whole audit.
         private static CharacterTagInventory CreateCurrentInventory()
         {
             return CharacterTagInventory.Create(
-                Program.DataManager.DataSet.Values.Select(item => item.Tags.TextTags.AsEnumerable()));
+                Program.DataManager.GetScopedItems().Select(item => item.Tags.TextTags.AsEnumerable()));
+        }
+
+        private bool IsDualMode => SelectedChoice<CharacterTagAuditSubjectMode>(comboSubjectMode) == CharacterTagAuditSubjectMode.Dual;
+
+        private void UpdateSubjectModeVisibility()
+        {
+            bool dual = IsDualMode;
+            foreach (Control control in dualModeControls)
+                control.Visible = dual;
+        }
+
+        private void AssignReferenceFromGallery(bool isProfileA)
+        {
+            if (imageGallery.SelectedItems.Count != 1)
+            {
+                MessageBox.Show(this, I18n.GetText("CharacterTagAuditImageRequired"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string path = imageGallery.SelectedItems[0].Tag as string;
+            if (isProfileA)
+                selectedImagePath = path;
+            else
+                selectedImagePathB = path;
+            UpdateReferenceLabels();
+        }
+
+        private void UpdateReferenceLabels()
+        {
+            string none = I18n.GetText("CharacterTagAuditReferenceUnset");
+            labelReferenceA.Text = string.IsNullOrEmpty(selectedImagePath)
+                ? none
+                : Path.GetFileNameWithoutExtension(selectedImagePath);
+            labelReferenceB.Text = string.IsNullOrEmpty(selectedImagePathB)
+                ? none
+                : Path.GetFileNameWithoutExtension(selectedImagePathB);
+            // The labels are width-capped with ellipsis; hover shows the rest.
+            referenceToolTip.SetToolTip(labelReferenceA, labelReferenceA.Text);
+            referenceToolTip.SetToolTip(labelReferenceB, labelReferenceB.Text);
+        }
+
+        private readonly ToolTip referenceToolTip = new ToolTip();
+
+        private static string SelectedFolderScope(ComboBox combo)
+        {
+            return combo.SelectedItem is FolderChoice choice ? choice.RelativePath : string.Empty;
+        }
+
+        private List<CharacterAuditProfile> BuildProfiles()
+        {
+            return new List<CharacterAuditProfile>
+            {
+                new CharacterAuditProfile
+                {
+                    TriggerWord = comboTrigger.Text.Trim(),
+                    ReferenceImagePath = selectedImagePath,
+                    Gender = SelectedChoice<CharacterGender>(comboGenderA),
+                    FolderScope = SelectedFolderScope(comboFolderA)
+                },
+                new CharacterAuditProfile
+                {
+                    TriggerWord = comboTriggerB.Text.Trim(),
+                    ReferenceImagePath = selectedImagePathB,
+                    Gender = SelectedChoice<CharacterGender>(comboGenderB),
+                    FolderScope = SelectedFolderScope(comboFolderB)
+                }
+            };
+        }
+
+        private string ActiveTrigger()
+        {
+            return dualRunActive && runProfiles != null && activeResultProfile < runProfiles.Count
+                ? runProfiles[activeResultProfile].TriggerWord
+                : comboTrigger.Text.Trim();
+        }
+
+        private CharacterGender ActiveGender()
+        {
+            return dualRunActive && runProfiles != null && activeResultProfile >= 0
+                && activeResultProfile < runProfiles.Count
+                ? runProfiles[activeResultProfile].Gender
+                : SelectedChoice<CharacterGender>(comboGenderA);
+        }
+
+        private sealed class FolderChoice
+        {
+            public FolderChoice(string relativePath, string text)
+            {
+                RelativePath = relativePath;
+                Text = text;
+            }
+
+            public string RelativePath { get; }
+            public string Text { get; }
+            public override string ToString() => Text;
         }
 
         private static void SelectChoice<T>(ComboBox comboBox, T value) where T : struct, Enum
@@ -865,6 +1110,49 @@ namespace BooruDatasetTagManager
             comboBox.DropDownWidth = CharacterTagChoiceLayout.CalculateDropDownWidth(comboBox.ClientSize.Width, widths);
         }
 
+        // Scope fingerprint of the last gallery load (folder + image set).
+        private string galleryScopeSignature;
+
+        private string ComputeGalleryScopeSignature()
+        {
+            if (Program.DataManager == null)
+                return string.Empty;
+            long hash = 17;
+            int count = 0;
+            foreach (DataItem item in Program.DataManager.GetScopedItems()
+                .OrderBy(item => item.ImageFilePath, StringComparer.OrdinalIgnoreCase))
+            {
+                hash = unchecked(hash * 31 ^ item.ImageFilePath.GetHashCode());
+                count++;
+            }
+            return (Program.DataManager.ActiveFolder ?? string.Empty) + "|" + count + "|" + hash;
+        }
+
+        private async Task ReloadGalleryIfScopeChangedAsync()
+        {
+            if (IsDisposed || Program.DataManager == null || pages.SelectedIndex != 0)
+                return;
+            if (string.Equals(ComputeGalleryScopeSignature(), galleryScopeSignature, StringComparison.Ordinal))
+                return;
+            if (loadingGallery)
+            {
+                // A load of the OLD scope is still appending thumbnails (33
+                // images take a while): cancel it and wait for the loop to
+                // unwind instead of silently keeping the stale gallery.
+                galleryLoadCancellation?.Cancel();
+                for (int i = 0; i < 100 && loadingGallery && !IsDisposed; i++)
+                    await Task.Delay(50);
+                if (loadingGallery || IsDisposed)
+                    return;
+                // Another reload may have finished while waiting.
+                if (string.Equals(ComputeGalleryScopeSignature(), galleryScopeSignature, StringComparison.Ordinal))
+                    return;
+            }
+            imageGallery.Items.Clear();
+            galleryImages.Images.Clear();
+            await LoadGalleryAsync();
+        }
+
         private async Task LoadGalleryAsync()
         {
             if (loadingGallery || Program.DataManager == null || IsDisposed)
@@ -875,11 +1163,12 @@ namespace BooruDatasetTagManager
             galleryLoadCancellation = new CancellationTokenSource();
             CancellationToken token = galleryLoadCancellation.Token;
 
+            galleryScopeSignature = ComputeGalleryScopeSignature();
             loadingGallery = true;
             SafeGalleryBeginUpdate();
             try
             {
-                foreach (DataItem item in Program.DataManager.DataSet.Values
+                foreach (DataItem item in Program.DataManager.GetScopedItems()
                     .Where(item => Extensions.ImageExtensions.Contains(Path.GetExtension(item.ImageFilePath).ToLowerInvariant()))
                     .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
                 {
@@ -921,6 +1210,14 @@ namespace BooruDatasetTagManager
             initialRows.Clear();
             reviewRows.Clear();
             auditResult = null;
+            dualResults = null;
+            dualReviewRows = null;
+            dualAuditInfo = null;
+            runProfiles = null;
+            activeResultProfile = -1;
+            dualRunActive = false;
+            comboResultProfile.Items.Clear();
+            comboResultProfile.Visible = false;
             initialGrid.DataSource = null;
             resultGrid.DataSource = null;
             excludedGrid.DataSource = null;
@@ -938,7 +1235,7 @@ namespace BooruDatasetTagManager
             string search = textImageSearch.Text.Trim();
             imageGallery.BeginUpdate();
             imageGallery.Items.Clear();
-            foreach (DataItem item in Program.DataManager.DataSet.Values
+            foreach (DataItem item in Program.DataManager.GetScopedItems()
                 .Where(item => galleryImages.Images.ContainsKey(item.ImageFilePath))
                 .Where(item => string.IsNullOrEmpty(search) || item.Name.Contains(search, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
@@ -979,21 +1276,42 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(this, I18n.GetText("CharacterTagAuditTriggerRequired"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
-            if (imageGallery.SelectedItems.Count != 1)
+            if (!IsDualMode)
             {
-                MessageBox.Show(this, I18n.GetText("CharacterTagAuditImageRequired"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (imageGallery.SelectedItems.Count != 1)
+                {
+                    MessageBox.Show(this, I18n.GetText("CharacterTagAuditImageRequired"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return false;
+                }
+                selectedImagePath = imageGallery.SelectedItems[0].Tag as string;
+                return true;
+            }
+            if (string.IsNullOrWhiteSpace(comboTriggerB.Text))
+            {
+                MessageBox.Show(this, I18n.GetText("CharacterTagAuditTriggerBRequired"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
-            selectedImagePath = imageGallery.SelectedItems[0].Tag as string;
+            if (string.Equals(comboTrigger.Text.Trim(), comboTriggerB.Text.Trim(), StringComparison.Ordinal))
+            {
+                MessageBox.Show(this, I18n.GetText("CharacterTagAuditTriggersMustDiffer"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+            if (string.IsNullOrEmpty(selectedImagePath) || string.IsNullOrEmpty(selectedImagePathB))
+            {
+                MessageBox.Show(this, I18n.GetText("CharacterTagAuditReferencesRequired"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
             return true;
         }
 
         private async Task RunAuditAsync()
         {
+            bool dual = IsDualMode;
             ResetAuditSession();
+            dualRunActive = dual;
             ShowPage(1);
             buttonNext.Enabled = false;
-            ResetAuditProgress(2);
+            ResetAuditProgress(dual ? 4 : 2);
             cancellation = new CancellationTokenSource();
             try
             {
@@ -1007,14 +1325,30 @@ namespace BooruDatasetTagManager
 
                 CharacterTagAuditService service = CreateAuditService();
                 var progress = new Progress<CharacterTagAuditProgress>(UpdateAuditProgress);
-                CharacterTagAuditOptions auditOptions = BuildAuditOptions();
-                auditResult = await service.ExecuteAsync(auditOptions, progress, cancellation.Token);
+                if (dual)
+                {
+                    runProfiles = BuildProfiles();
+                    var dualService = new CharacterTagDualAuditService(service);
+                    dualAuditInfo = await dualService.ExecuteAsync(BuildDualAuditOptions(), progress, cancellation.Token);
+                    dualResults = dualAuditInfo.ProfileResults.ToList();
+                }
+                else
+                {
+                    CharacterTagAuditOptions auditOptions = BuildAuditOptions();
+                    auditResult = await service.ExecuteAsync(auditOptions, progress, cancellation.Token);
+                }
 
                 Program.Settings.CharacterTagAuditStyle = SelectedChoice<CharacterTagAuditStyle>(comboStyle);
                 Program.Settings.CharacterTagAuditExecutionMode = SelectedChoice<CharacterTagAuditExecutionMode>(comboMode);
+                Program.Settings.CharacterTagAuditSubjectMode = SelectedChoice<CharacterTagAuditSubjectMode>(comboSubjectMode);
+                Program.Settings.CharacterTagAuditGenderA = SelectedChoice<CharacterGender>(comboGenderA);
+                Program.Settings.CharacterTagAuditGenderB = SelectedChoice<CharacterGender>(comboGenderB);
                 Program.Settings.CharacterTagAuditMinimumCount = (int)numericMinimumCount.Value;
                 Program.Settings.SaveSettings();
-                PrepareResults();
+                if (dual)
+                    PrepareDualResults();
+                else
+                    PrepareResults();
                 ShowPage(2);
             }
             catch (OperationCanceledException)
@@ -1090,9 +1424,33 @@ namespace BooruDatasetTagManager
             };
         }
 
+        private CharacterTagDualAuditOptions BuildDualAuditOptions()
+        {
+            CharacterTagSkillBundle skills = CharacterTagSkillLoader.Load(AppContext.BaseDirectory);
+            return new CharacterTagDualAuditOptions
+            {
+                Images = Program.DataManager.GetScopedItems()
+                    .Select(item => new CharacterImageTagRecord
+                    {
+                        ImagePath = item.ImageFilePath,
+                        Tags = item.Tags.TextTags.ToList()
+                    })
+                    .ToList(),
+                DatasetRoot = Program.DataManager.DatasetRoot,
+                Profiles = runProfiles,
+                Style = SelectedChoice<CharacterTagAuditStyle>(comboStyle),
+                MinimumCount = (int)numericMinimumCount.Value,
+                Model = Program.Settings.CharacterTagAuditModel,
+                CharacterAuditorSkill = skills.CharacterAuditor,
+                PromptPyramidSkill = skills.PromptPyramid
+            };
+        }
+
         private async Task RedoVisualReviewAsync()
         {
-            if (initialAuditItems.Count == 0 || cancellation != null)
+            // Dual runs hide this button; the guard keeps a stray invocation
+            // (e.g. hotkey navigation) from mixing profiles.
+            if (dualRunActive || initialAuditItems.Count == 0 || cancellation != null)
                 return;
             string newImagePath = PickReferenceImage();
             if (string.IsNullOrEmpty(newImagePath))
@@ -1172,7 +1530,7 @@ namespace BooruDatasetTagManager
                 HideSelection = false,
                 LargeImageList = galleryImages
             };
-            foreach (DataItem item in Program.DataManager.DataSet.Values
+            foreach (DataItem item in Program.DataManager.GetScopedItems()
                 .Where(item => galleryImages.Images.ContainsKey(item.ImageFilePath))
                 .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -1211,21 +1569,86 @@ namespace BooruDatasetTagManager
             reviewRows = auditResult.Items.Select(item => CreateReviewRow(item, trigger, includeInitial: true)).ToList();
             referencePreview.Image?.Dispose();
             referencePreview.Image = ImageLoader.LoadPreview(selectedImagePath, PreviewMaximumDimension);
+            ApplyReviewModeToResultControls();
+            comboResultProfile.Visible = false;
+            buttonRedoVisual.Visible = true;
+            buttonRedoVisual.Enabled = initialAuditItems.Count > 0;
+            excludedGrid.DataSource = auditResult.ExcludedItems.ToList();
+            CollapseExcludedGrid();
+            FillResultGrid();
+            _ = LocalizeReasonsAsync(reviewRows, resultGrid);
+            UpdateMetrics();
+            splitterAdjustedByUser = false;
+            SchedulePreviewWidthUpdate();
+        }
+
+        private void PrepareDualResults()
+        {
+            dualReviewRows = new List<List<ReviewRow>>();
+            for (int i = 0; i < dualResults.Count; i++)
+            {
+                string trigger = runProfiles[i].TriggerWord;
+                dualReviewRows.Add(dualResults[i].Items
+                    .Select(item => CreateReviewRow(item, trigger, includeInitial: true))
+                    .ToList());
+            }
+            ApplyReviewModeToResultControls();
+            buttonRedoVisual.Visible = false;
+            comboResultProfile.Items.Clear();
+            for (int i = 0; i < runProfiles.Count; i++)
+            {
+                comboResultProfile.Items.Add(string.Format(
+                    I18n.GetText("CharacterTagAuditProfileTab"),
+                    (char)('A' + i),
+                    runProfiles[i].TriggerWord));
+            }
+            comboResultProfile.Visible = true;
+            activeResultProfile = -1;
+            comboResultProfile.SelectedIndex = 0;
+            foreach (List<ReviewRow> rows in dualReviewRows)
+                _ = LocalizeReasonsAsync(rows, resultGrid);
+            splitterAdjustedByUser = false;
+        }
+
+        private void SwitchResultProfile(int index)
+        {
+            if (!dualRunActive || dualReviewRows == null
+                || index < 0 || index >= dualReviewRows.Count || index == activeResultProfile)
+            {
+                return;
+            }
+            activeResultProfile = index;
+            auditResult = dualResults[index];
+            reviewRows = dualReviewRows[index];
+            referencePreview.Image?.Dispose();
+            referencePreview.Image = ImageLoader.LoadPreview(
+                runProfiles[index].ReferenceImagePath, PreviewMaximumDimension);
+            excludedGrid.DataSource = auditResult.ExcludedItems.ToList();
+            CollapseExcludedGrid();
+            FillResultGrid();
+            UpdateMetrics();
+            SchedulePreviewWidthUpdate();
+        }
+
+        private void ApplyReviewModeToResultControls()
+        {
             bool reviewMode = SelectedChoice<CharacterTagAuditExecutionMode>(comboMode) == CharacterTagAuditExecutionMode.Review;
             resultGrid.ReadOnly = !reviewMode;
             textTagSearch.Enabled = reviewMode;
             checkDeletesOnly.Checked = !reviewMode;
             checkDeletesOnly.Enabled = reviewMode;
-            buttonRedoVisual.Enabled = initialAuditItems.Count > 0;
-            excludedGrid.DataSource = auditResult.ExcludedItems.ToList();
+        }
+
+        private void CollapseExcludedGrid()
+        {
             excludedExpanded = false;
             excludedGrid.Visible = false;
             ((TableLayoutPanel)excludedGrid.Parent).RowStyles[6].Height = 0;
             UpdateExcludedButtonText();
-            FillResultGrid();
-            _ = LocalizeReasonsAsync(reviewRows, resultGrid);
-            UpdateMetrics();
-            splitterAdjustedByUser = false;
+        }
+
+        private void SchedulePreviewWidthUpdate()
+        {
             if (!IsDisposed)
             {
                 BeginInvoke(() =>
@@ -1301,9 +1724,11 @@ namespace BooruDatasetTagManager
                 return;
             int deleteCount = reviewRows.Count(row => row.Decision == CharacterTagDecision.Delete && row.CanModify);
             int replaceCount = reviewRows.Count(row => row.Decision == CharacterTagDecision.Replace && row.CanModify);
-            int affected = CountAffectedFiles(reviewRows
-                .Where(row => row.CanModify && (row.Decision == CharacterTagDecision.Delete || row.Decision == CharacterTagDecision.Replace))
-                .Select(row => row.Tag));
+            int affected = dualRunActive
+                ? CountAffectedFilesDual()
+                : CountAffectedFiles(reviewRows
+                    .Where(row => row.CanModify && (row.Decision == CharacterTagDecision.Delete || row.Decision == CharacterTagDecision.Replace))
+                    .Select(row => row.Tag));
             int keepCount = reviewRows.Count - deleteCount - replaceCount;
             labelSummary.Text = string.Format(
                 I18n.GetText("CharacterTagAuditDetailedSummaryV2"),
@@ -1316,9 +1741,62 @@ namespace BooruDatasetTagManager
                 replaceCount,
                 auditResult.ExcludedItems.Count,
                 affected);
-            textFinalPrompt.Text = CharacterTagPromptBuilder.Build(
-                BuildCanonicalizedAuditItems(),
-                comboTrigger.Text.Trim());
+            if (dualRunActive && dualAuditInfo != null)
+            {
+                labelSummary.Text += Environment.NewLine + string.Format(
+                    I18n.GetText("CharacterTagAuditDualSummary"),
+                    dualAuditInfo.MemberImageCounts[0],
+                    dualAuditInfo.MemberImageCounts[1],
+                    dualAuditInfo.SharedImageCount,
+                    dualAuditInfo.UnattributedImageCount);
+            }
+            // A per-character prompt describes that character alone: shared
+            // images may have injected 2girls/multiple girls — swap for the
+            // active character's own subject tag.
+            textFinalPrompt.Text = CharacterPromptSubjectNormalizer.NormalizeToSingle(
+                CharacterTagPromptBuilder.Build(
+                    BuildCanonicalizedAuditItems(),
+                    ActiveTrigger()),
+                ActiveGender());
+        }
+
+        private List<IReadOnlyDictionary<string, CharacterTagAuditItem>> BuildDualDecisionDictionaries()
+        {
+            return dualReviewRows
+                .Select(rows => (IReadOnlyDictionary<string, CharacterTagAuditItem>)rows
+                    .Select(ToAuditItem)
+                    .ToDictionary(item => item.Tag, StringComparer.Ordinal))
+                .ToList();
+        }
+
+        private IReadOnlyList<EditableTag> TransformEditableTagsDualForItem(
+            DataItem item,
+            IReadOnlyList<IReadOnlyDictionary<string, CharacterTagAuditItem>> decisionsByProfile)
+        {
+            IReadOnlyList<int> present = CharacterImageMembership.GetPresentProfiles(
+                item.Tags.TextTags, item.ImageFilePath, Program.DataManager.DatasetRoot, runProfiles);
+            if (present.Count == 0)
+                return item.Tags.Cast<EditableTag>().Select(tag => (EditableTag)tag.Clone()).ToList();
+            IReadOnlyDictionary<string, CharacterTagAuditItem> effective =
+                CharacterTagMultiAuditPlan.BuildEffectiveDecisions(present, decisionsByProfile);
+            IReadOnlyList<EditableTag> transformed = TransformEditableTags(item.Tags, effective.Values);
+            if (present.Count == 2)
+            {
+                transformed = CharacterTagEditableTagInjector.ApplySubjectCount(
+                    transformed, runProfiles[present[0]], runProfiles[present[1]]);
+            }
+            return transformed;
+        }
+
+        private int CountAffectedFilesDual()
+        {
+            if (dualReviewRows == null || runProfiles == null)
+                return 0;
+            List<IReadOnlyDictionary<string, CharacterTagAuditItem>> decisions = BuildDualDecisionDictionaries();
+            return Program.DataManager.GetScopedItems().Count(item =>
+                !item.Tags.TextTags.SequenceEqual(
+                    TransformEditableTagsDualForItem(item, decisions).Select(tag => tag.Tag),
+                    StringComparer.Ordinal));
         }
 
         private List<CharacterTagAuditItem> BuildCanonicalizedAuditItems()
@@ -1353,12 +1831,42 @@ namespace BooruDatasetTagManager
         private async Task ApplyAsync()
         {
             resultGrid.EndEdit();
-            List<CharacterTagAuditItem> decisions = reviewRows.Select(ToAuditItem).ToList();
-            string validationError = ValidateEditedDecisions(decisions);
-            if (!string.IsNullOrEmpty(validationError))
+            // Dual review flows character by character: 应用并保存 on an
+            // earlier profile just advances to the next character's review
+            // (after validating the current one); the real apply-and-write
+            // runs from the last profile.
+            if (dualRunActive && dualReviewRows != null
+                && activeResultProfile >= 0 && activeResultProfile < dualReviewRows.Count - 1)
             {
-                MessageBox.Show(this, validationError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                string currentError = ValidateEditedDecisions(
+                    dualReviewRows[activeResultProfile].Select(ToAuditItem).ToList());
+                if (!string.IsNullOrEmpty(currentError))
+                {
+                    MessageBox.Show(this, currentError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                SwitchResultProfile(activeResultProfile + 1);
                 return;
+            }
+            List<List<CharacterTagAuditItem>> decisionsByProfile;
+            if (dualRunActive)
+            {
+                decisionsByProfile = dualReviewRows
+                    .Select(rows => rows.Select(ToAuditItem).ToList())
+                    .ToList();
+            }
+            else
+            {
+                decisionsByProfile = new List<List<CharacterTagAuditItem>> { reviewRows.Select(ToAuditItem).ToList() };
+            }
+            foreach (List<CharacterTagAuditItem> decisionsOfProfile in decisionsByProfile)
+            {
+                string validationError = ValidateEditedDecisions(decisionsOfProfile);
+                if (!string.IsNullOrEmpty(validationError))
+                {
+                    MessageBox.Show(this, validationError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
             }
 
             buttonNext.Enabled = false;
@@ -1371,13 +1879,22 @@ namespace BooruDatasetTagManager
                 // pumps the queue and allows arbitrary reentrancy mid-apply.
                 labelProgress.Refresh();
 
+                List<CharacterTagAuditItem> decisions = decisionsByProfile[0];
+                List<IReadOnlyDictionary<string, CharacterTagAuditItem>> dualDecisions = dualRunActive
+                    ? decisionsByProfile
+                        .Select(items => (IReadOnlyDictionary<string, CharacterTagAuditItem>)items
+                            .ToDictionary(item => item.Tag, StringComparer.Ordinal))
+                        .ToList()
+                    : null;
                 List<(DataItem Item, IReadOnlyList<EditableTag> Tags)> affected = await Task.Run(() =>
-                    Program.DataManager.DataSet.Values
-                        .Select(item => (Item: item, Tags: TransformEditableTags(item.Tags, decisions)))
+                    Program.DataManager.GetScopedItems()
+                        .Select(item => (Item: item, Tags: dualRunActive
+                            ? TransformEditableTagsDualForItem(item, dualDecisions)
+                            : TransformEditableTags(item.Tags, decisions)))
                         .Where(change => !change.Item.Tags.TextTags.SequenceEqual(change.Tags.Select(tag => tag.Tag), StringComparer.Ordinal))
                         .ToList());
 
-                int changeCount = decisions.Count(item => item.ShouldDelete || item.ShouldReplace);
+                int changeCount = decisionsByProfile.Sum(items => items.Count(item => item.ShouldDelete || item.ShouldReplace));
                 if (affected.Count == 0)
                 {
                     MessageBox.Show(this, I18n.GetText("CharacterTagAuditNothingToDelete"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1548,23 +2065,25 @@ namespace BooruDatasetTagManager
             {
                 CharacterTagAuditStage.TextScreening => I18n.GetText("CharacterTagAuditTextScreening"),
                 CharacterTagAuditStage.TextScreeningCompleted => I18n.GetText("CharacterTagAuditTextScreening"),
-                CharacterTagAuditStage.VisualReview when completedSteps >= totalSteps =>
-                    I18n.GetText("CharacterTagAuditVisualReview"),
                 CharacterTagAuditStage.VisualReview => I18n.GetText("CharacterTagAuditVisualReview"),
                 _ => string.Empty
             };
 
-            int displayStep = update.Stage switch
-            {
-                CharacterTagAuditStage.TextScreening => 1,
-                CharacterTagAuditStage.TextScreeningCompleted => Math.Min(totalSteps, 2),
-                CharacterTagAuditStage.VisualReview when completedSteps >= totalSteps => totalSteps,
-                CharacterTagAuditStage.VisualReview => Math.Min(totalSteps, completedSteps + 1),
-                _ => Math.Min(totalSteps, Math.Max(1, completedSteps))
-            };
-            labelProgress.Text = string.IsNullOrEmpty(stageText)
+            // The running step is always the one after the completed count
+            // (works for both the single 2-step run and the dual 4-step run).
+            int displayStep = Math.Min(totalSteps, completedSteps + 1);
+            string progressText = string.IsNullOrEmpty(stageText)
                 ? string.Empty
                 : string.Format(I18n.GetText("CharacterTagAuditProgressStep"), displayStep, totalSteps, stageText);
+            if (dualRunActive && runProfiles != null && !string.IsNullOrEmpty(progressText)
+                && update.ProfileIndex < runProfiles.Count)
+            {
+                progressText = string.Format(
+                    I18n.GetText("CharacterTagAuditProfileTab"),
+                    (char)('A' + update.ProfileIndex),
+                    runProfiles[update.ProfileIndex].TriggerWord) + " - " + progressText;
+            }
+            labelProgress.Text = progressText;
 
             if (update.Stage == CharacterTagAuditStage.TextScreeningCompleted && update.Items != null)
                 ShowInitialResults(update.Items);
@@ -1587,6 +2106,7 @@ namespace BooruDatasetTagManager
                 cancellation?.Dispose();
                 referencePreview.Image?.Dispose();
                 galleryImages.Dispose();
+                referenceToolTip.Dispose();
                 translationCancellation.Cancel();
                 translationCancellation.Dispose();
                 reasonTranslator?.Dispose();

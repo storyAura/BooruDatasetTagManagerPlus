@@ -100,6 +100,9 @@ namespace BooruDatasetTagManager
                         TagsList.LoadTranslation(TransManager);
                         string chineseTagFile = Path.Combine(Application.StartupPath, "Data", "danbooru-0-zh.csv");
                         ChineseTagLookup = ChineseTagLookupService.LoadFromFile(chineseTagFile, Settings.FixTagsOnSaveLoad);
+                        CharacterTagLookup = Settings.MatchCharacterTags
+                            ? CharacterTagCatalog.LoadFromFile(GetCharacterTagCatalogPath())
+                            : null;
                     });
                 }
                 catch (Exception ex)
@@ -285,6 +288,15 @@ namespace BooruDatasetTagManager
         public static TagsDB TagsList;
 
         public static ChineseTagLookupService ChineseTagLookup = ChineseTagLookupService.Empty;
+
+        // Danbooru character-tag catalog (classification + 译名); null when
+        // Settings.MatchCharacterTags is off.
+        public static CharacterTagCatalog CharacterTagLookup;
+
+        public static string GetCharacterTagCatalogPath()
+        {
+            return Path.Combine(Application.StartupPath, "Data", "danbooru_character_tags.csv");
+        }
 
         public static AiApiClient AutoTagger;
         // In-process RMBG-2.0 background removal (replaces the AiApiServer path).

@@ -118,4 +118,47 @@ public sealed class VideoProcessingServiceTests
 
         Assert.Equal(@"D:\set\clip_frame_%06d.png", pattern);
     }
+
+    [Fact]
+    public void FinalizeReplaceOriginal_refuses_to_overwrite_an_unrelated_sibling()
+    {
+        // VIDEO-01: clip.mkv -> mp4 with an independent clip.mp4 already present
+        // must fail instead of silently clobbering the sibling and deleting mkv.
+        using var temp = new TemporaryDirectory();
+        string input = Path.Combine(temp.Path, "clip.mkv");
+        string tempOut = Path.Combine(temp.Path, "clip_convert_tmp.mp4");
+        string final = Path.Combine(temp.Path, "clip.mp4");
+        File.WriteAllText(input, "source");
+        File.WriteAllText(tempOut, "converted");
+        File.WriteAllText(final, "unrelated");
+        var service = VideoProcessingService.CreateDefault();
+
+        Assert.Throws<IOException>(() => service.FinalizeReplaceOriginal(input, tempOut, final));
+
+        Assert.Equal("unrelated", File.ReadAllText(final));
+        Assert.True(File.Exists(input));
+    }
+
+    [Fact]
+    public void FinalizeReplaceOriginal_replaces_same_extension_and_free_cross_format_targets()
+    {
+        using var temp = new TemporaryDirectory();
+        var service = VideoProcessingService.CreateDefault();
+
+        string sameExt = Path.Combine(temp.Path, "a.mp4");
+        string sameExtTemp = Path.Combine(temp.Path, "a_convert_tmp.mp4");
+        File.WriteAllText(sameExt, "old");
+        File.WriteAllText(sameExtTemp, "new");
+        service.FinalizeReplaceOriginal(sameExt, sameExtTemp, sameExt);
+        Assert.Equal("new", File.ReadAllText(sameExt));
+
+        string crossInput = Path.Combine(temp.Path, "b.mkv");
+        string crossTemp = Path.Combine(temp.Path, "b_convert_tmp.mp4");
+        string crossFinal = Path.Combine(temp.Path, "b.mp4");
+        File.WriteAllText(crossInput, "src");
+        File.WriteAllText(crossTemp, "conv");
+        service.FinalizeReplaceOriginal(crossInput, crossTemp, crossFinal);
+        Assert.Equal("conv", File.ReadAllText(crossFinal));
+        Assert.False(File.Exists(crossInput));
+    }
 }

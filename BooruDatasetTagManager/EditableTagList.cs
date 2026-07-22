@@ -46,6 +46,11 @@ namespace BooruDatasetTagManager
 
         public List<string> TextTags { get { return _tags; } }
 
+        // Image path of the DataItem that owns this list (null when detached).
+        // DatasetManager uses it to keep the folder-scoped AllTags view in sync
+        // only for items inside the active folder scope.
+        public string OwnerImagePath { get; set; }
+
         private void TagCountAdd(string tag)
         {
             if (tag == null)
@@ -562,6 +567,25 @@ namespace BooruDatasetTagManager
 
         public void Sort(int skipFirstCount = 0)
         {
+            SortCore(skipFirstCount, new SortEditableTagListAscending(), new SortStringAscending());
+        }
+
+        /// <summary>
+        /// Sorts by a semantic category rank (then alphabetically within one
+        /// rank), honoring the same "don't sort the first N rows" prefix as
+        /// <see cref="Sort"/>. The rank comes in as a delegate so this class
+        /// stays free of UI/Program dependencies (it is test-linked).
+        /// </summary>
+        public void SortByCategory(int skipFirstCount, Func<string, int> rankOf)
+        {
+            if (rankOf == null)
+                throw new ArgumentNullException(nameof(rankOf));
+            SortCore(skipFirstCount, new SortEditableTagByRank(rankOf), new SortStringByRank(rankOf));
+        }
+
+        private void SortCore(int skipFirstCount, IComparer tagComparer, IComparer<string> textComparer)
+        {
+            skipFirstCount = Math.Clamp(skipFirstCount, 0, InnerList.Count);
             var h = new EditableTagHistory();
             h.Index = 0;
             foreach (EditableTag c in List)
@@ -571,8 +595,8 @@ namespace BooruDatasetTagManager
                 h.ClearedTags.Add(clonedETag);
             }
             h.Type = EditableTagHistory.HistoryType.Sort;
-            InnerList.Sort(skipFirstCount, InnerList.Count - skipFirstCount, new SortEditableTagListAscending());
-            _tags.Sort(skipFirstCount, _tags.Count - skipFirstCount, new SortStringAscending());
+            InnerList.Sort(skipFirstCount, InnerList.Count - skipFirstCount, tagComparer);
+            _tags.Sort(skipFirstCount, _tags.Count - skipFirstCount, textComparer);
             foreach (EditableTag c in List)
             {
                 var clonedETag = (EditableTag)c.Clone();
@@ -989,6 +1013,40 @@ namespace BooruDatasetTagManager
             int IComparer<string>.Compare(string x, string y)
             {
                 return (x).CompareTo(y);
+            }
+        }
+
+        private sealed class SortEditableTagByRank : IComparer
+        {
+            private readonly Func<string, int> rankOf;
+
+            public SortEditableTagByRank(Func<string, int> rankOf)
+            {
+                this.rankOf = rankOf;
+            }
+
+            int IComparer.Compare(object x, object y)
+            {
+                EditableTag t1 = (EditableTag)x;
+                EditableTag t2 = (EditableTag)y;
+                int byRank = rankOf(t1.Tag).CompareTo(rankOf(t2.Tag));
+                return byRank != 0 ? byRank : t1.Tag.CompareTo(t2.Tag);
+            }
+        }
+
+        private sealed class SortStringByRank : IComparer<string>
+        {
+            private readonly Func<string, int> rankOf;
+
+            public SortStringByRank(Func<string, int> rankOf)
+            {
+                this.rankOf = rankOf;
+            }
+
+            int IComparer<string>.Compare(string x, string y)
+            {
+                int byRank = rankOf(x).CompareTo(rankOf(y));
+                return byRank != 0 ? byRank : x.CompareTo(y);
             }
         }
     }

@@ -27,7 +27,10 @@ namespace BooruDatasetTagManager
         [JsonIgnore]
         private HashSet<string> parentTags;
 
-        private const int curVersion = 101;
+        // v102: retain the danbooru tag-type column (general/artist/copyright/
+        // character/meta) that the CSV parser previously discarded; the bump
+        // forces a one-time rebuild of the cached DB so types populate.
+        private const int curVersion = 102;
 
         public TagsDB()
         {
@@ -171,10 +174,13 @@ namespace BooruDatasetTagManager
                     string[] aliases = match.Groups[4].Value.Replace("\"", "").Split(splitter, StringSplitOptions.RemoveEmptyEntries);
                     // The regex only guarantees digits, not that they fit an int.
                     int tagCount = int.TryParse(match.Groups[3].Value, out int parsedCount) ? parsedCount : int.MaxValue;
-                    AddTag(tagName, tagCount);
+                    // Column 2 is the danbooru tag type (0 general, 1 artist,
+                    // 3 copyright, 4 character, 5 meta); aliases inherit it.
+                    int tagType = int.TryParse(match.Groups[2].Value, out int parsedType) ? parsedType : -1;
+                    AddTag(tagName, tagCount, danbooruType: tagType);
                     foreach (var al in aliases)
                     {
-                        AddTag(al, tagCount, true, tagName);
+                        AddTag(al, tagCount, true, tagName, tagType);
                     }
                 }
             }
@@ -185,7 +191,7 @@ namespace BooruDatasetTagManager
             Tags.Sort((a, b) => a.Tag.CompareTo(b.Tag));
         }
 
-        private void AddTag(string tag, int count, bool isAlias = false, string parent = null)
+        private void AddTag(string tag, int count, bool isAlias = false, string parent = null, int danbooruType = -1)
         {
             if (string.IsNullOrWhiteSpace(tag))
                 return;
@@ -203,6 +209,8 @@ namespace BooruDatasetTagManager
             {
                 tagItem = Tags[existTagIndex];
                 tagItem.Count += count;
+                if (tagItem.DanbooruType < 0 && danbooruType >= 0)
+                    tagItem.DanbooruType = danbooruType;
             }
             else
             {
@@ -211,11 +219,29 @@ namespace BooruDatasetTagManager
                 tagItem.Count = count;
                 tagItem.IsAlias = isAlias;
                 tagItem.Parent = PrepareTag(parent);
+                tagItem.DanbooruType = danbooruType;
                 hashes.Add(tagItem.TagHash, Tags.Count);
                 Tags.Add(tagItem);
                 if (!string.IsNullOrEmpty(tagItem.Parent))
                     parentTags.Add(tagItem.Parent);
             }
+        }
+
+        /// <summary>
+        /// danbooru tag type of <paramref name="tag"/> (0 general, 1 artist,
+        /// 3 copyright, 4 character, 5 meta) or -1 when unknown. O(1).
+        /// </summary>
+        public int GetTagType(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+                return -1;
+            string prepared = PrepareTag(tag).Trim().ToLower();
+            if (hashes.TryGetValue(prepared.GetHash(), out int index)
+                && index >= 0 && index < Tags.Count)
+            {
+                return Tags[index].DanbooruType;
+            }
+            return -1;
         }
 
         /// <summary>
@@ -351,6 +377,8 @@ namespace BooruDatasetTagManager
             public bool IsAlias;
             public string Parent;
             public string AutocompleteDisplayText;
+            // danbooru tag type (0/1/3/4/5); -1 = unknown (txt lists etc.).
+            public int DanbooruType = -1;
 
             public string Translation;
 

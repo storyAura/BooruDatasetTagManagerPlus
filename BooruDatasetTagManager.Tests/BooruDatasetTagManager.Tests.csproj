@@ -25,6 +25,7 @@
     <Compile Include="..\BooruDatasetTagManager\Adler32.cs" Link="Source\Adler32.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagValue.cs" Link="Source\TagValue.cs" />
     <Compile Include="..\BooruDatasetTagManager\DatasetManager.cs" Link="Source\DatasetManager.cs" />
+    <Compile Include="..\BooruDatasetTagManager\DatasetFolders.cs" Link="Source\DatasetFolders.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageLruCache.cs" Link="Source\ImageLruCache.cs" />
     <Compile Include="..\BooruDatasetTagManager\SecretProtector.cs" Link="Source\SecretProtector.cs" />
     <Compile Include="..\BooruDatasetTagManager\SafeFile.cs" Link="Source\SafeFile.cs" />
@@ -55,12 +56,17 @@
     <Compile Include="..\BooruDatasetTagManager\ImageLoader.cs" Link="Source\ImageLoader.cs" />
     <Compile Include="..\BooruDatasetTagManager\QuickTagReplaceService.cs" Link="Source\QuickTagReplaceService.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagAudit.cs" Link="Source\CharacterTagAudit.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CharacterTagAuditMulti.cs" Link="Source\CharacterTagAuditMulti.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagReasonLocalizer.cs" Link="Source\CharacterTagReasonLocalizer.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagFileTransaction.cs" Link="Source\CharacterTagFileTransaction.cs" />
     <Compile Include="..\BooruDatasetTagManager\CropRegion.cs" Link="Source\CropRegion.cs" />
     <Compile Include="..\BooruDatasetTagManager\CropCanvasHelper.cs" Link="Source\CropCanvasHelper.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageCropExporter.cs" Link="Source\ImageCropExporter.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageEditorCanvasMath.cs" Link="Source\ImageEditorCanvasMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\PreviewCanvasMath.cs" Link="Source\PreviewCanvasMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagSemanticClassifier.cs" Link="Source\TagSemanticClassifier.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CharacterTagCatalog.cs" Link="Source\CharacterTagCatalog.cs" />
+    <Compile Include="..\BooruDatasetTagManager\BatchRenamePlanner.cs" Link="Source\BatchRenamePlanner.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageEditorDocument.cs" Link="Source\ImageEditorDocument.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageEditorSaveService.cs" Link="Source\ImageEditorSaveService.cs" />
     <Compile Include="..\BooruDatasetTagManager\AutoTagProvider.cs" Link="Source\AutoTagProvider.cs" />

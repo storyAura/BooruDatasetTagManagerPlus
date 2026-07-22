@@ -26,6 +26,9 @@ namespace BooruDatasetTagManager
 
         private readonly RadioButton radioSourceSelected = new RadioButton();
         private readonly RadioButton radioSourceAllImages = new RadioButton();
+        private readonly RadioButton radioSourceFolder = new RadioButton();
+        private readonly bool folderSourceAvailable =
+            !string.IsNullOrEmpty(Program.DataManager?.ActiveFolder);
 
         private readonly ComboBox comboMode = new ComboBox();
         private readonly NumericUpDown numericConcurrency = new NumericUpDown();
@@ -217,9 +220,13 @@ namespace BooruDatasetTagManager
             radioSourceSelected.AutoSize = true;
             radioSourceSelected.Margin = new Padding(0, 0, 16, 0);
             radioSourceAllImages.AutoSize = true;
+            radioSourceAllImages.Margin = new Padding(0, 0, 16, 0);
+            radioSourceFolder.AutoSize = true;
+            radioSourceFolder.Enabled = folderSourceAvailable;
 
             panelRadios.Controls.Add(radioSourceSelected);
             panelRadios.Controls.Add(radioSourceAllImages);
+            panelRadios.Controls.Add(radioSourceFolder);
             groupSource.Controls.Add(panelRadios);
             return groupSource;
         }
@@ -387,6 +394,7 @@ namespace BooruDatasetTagManager
 
             radioSourceSelected.Text = I18n.GetText("TaggerSourceSelected");
             radioSourceAllImages.Text = I18n.GetText("TaggerSourceAllImages");
+            radioSourceFolder.Text = I18n.GetText("TaggerSourceFolder");
             labelMode.Text = I18n.GetText("LlmTaggerModeLabel");
             labelConcurrency.Text = I18n.GetText("LlmTaggerConcurrency");
             labelPromptTemplate.Text = I18n.GetText("LlmTaggerPromptTemplate");
@@ -674,6 +682,19 @@ namespace BooruDatasetTagManager
             toolTip.SetToolTip(labelModelStatus, text);
         }
 
+        /// <summary>Preselects the "current folder" source (folder quick actions).</summary>
+        public void SelectFolderSource()
+        {
+            if (radioSourceFolder.Enabled)
+                radioSourceFolder.Checked = true;
+        }
+
+        /// <summary>Preselects the "all dataset images" source (the browser's All row).</summary>
+        public void SelectAllImagesSource()
+        {
+            radioSourceAllImages.Checked = true;
+        }
+
         private List<string> ResolveInputImages()
         {
             if (Program.DataManager == null)
@@ -682,7 +703,10 @@ namespace BooruDatasetTagManager
             if (radioSourceSelected.Checked)
                 return owner.GetSelectedDatasetImagePaths();
 
-            return Program.DataManager.DataSet.Values
+            IEnumerable<DataItem> pool = radioSourceFolder.Checked
+                ? Program.DataManager.GetScopedItems()
+                : Program.DataManager.DataSet.Values;
+            return pool
                 .Select(item => item.ImageFilePath)
                 .Where(path => IsImageFile(path) && !VideoProcessingService.IsVideoFile(path))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -895,20 +919,30 @@ namespace BooruDatasetTagManager
             }
 
             // Captions are built from the on-disk .txt files, so flush pending edits first.
+            // A failed save means the model would read stale files: stop before
+            // any paid request instead of continuing on the old disk content.
             if (Program.DataManager.IsDataSetChanged())
             {
                 await Task.Run(() => Program.DataManager.SaveAll()).ConfigureAwait(true);
+                // SaveAll returns "wrote at least one", so partial failures only
+                // show up in LastSaveErrors — and even one stale file is too many.
+                if (Program.DataManager.LastSaveErrors.Count > 0)
+                {
+                    MessageBox.Show(this, DescribeSaveFailures(), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
                 Program.DataManager.UpdateDatasetHash();
             }
 
             // Optionally tag untagged images with the local ONNX tagger first so the
             // caption prompt has reference tags to work from.
-            if (checkAutoOnnx.Checked)
-                await RunOnnxPretagAsync(inputs).ConfigureAwait(true);
+            if (checkAutoOnnx.Checked && !await RunOnnxPretagAsync(inputs).ConfigureAwait(true))
+                return;
 
             LlmCaptionOutputTarget target = GetSelectedCaptionTarget();
             CaptionScanResult scan = await CaptionGenerationService.ScanDirectoryAsync(root).ConfigureAwait(true);
-            if (radioSourceSelected.Checked)
+            // Selected and folder sources both narrow the whole-root scan.
+            if (!radioSourceAllImages.Checked)
                 scan = FilterScanToSelection(scan, inputs);
 
             if (scan.Total == 0)
@@ -967,7 +1001,17 @@ namespace BooruDatasetTagManager
             CaptionGenerationResult result = await service.ProcessAsync(scan, options, progress, jobCancellation.Token).ConfigureAwait(true);
 
             if (target == LlmCaptionOutputTarget.InPlace)
+            {
                 ApplyCaptionsInPlace(captured);
+                // "In place" completion must mean persisted: flush to disk like
+                // the ONNX pre-tag path does, and report files that failed.
+                if (captured.Count > 0)
+                {
+                    await Task.Run(() => Program.DataManager.SaveAll()).ConfigureAwait(true);
+                    foreach (string saveError in Program.DataManager.LastSaveErrors.Take(10))
+                        result.Errors.Add(string.Format(I18n.GetText("LlmTaggerInPlaceSaveFailed"), saveError));
+                }
+            }
 
             string resultText = result.Canceled
                 ? string.Format(I18n.GetText("LlmT2NlCanceledResult"), result.Succeeded, result.Skipped, result.Failed)
@@ -988,7 +1032,9 @@ namespace BooruDatasetTagManager
 
         // Runs the local WD14 ONNX tagger on images that currently have no tags, so the
         // caption step has reference tags. Writes tags through the DataManager + SaveAll.
-        private async Task RunOnnxPretagAsync(List<string> inputs)
+        // Returns false only when freshly written tags could not be saved to disk —
+        // the caption step reads disk files, so the caller must not start requests.
+        private async Task<bool> RunOnnxPretagAsync(List<string> inputs)
         {
             var untagged = new List<(string path, DataItem item)>();
             foreach (string path in inputs)
@@ -998,7 +1044,7 @@ namespace BooruDatasetTagManager
             }
 
             if (untagged.Count == 0)
-                return;
+                return true;
 
             string repo = Program.Settings.Wd14Tagger.SelectedModelRepo;
             if (!wd14Service.IsModelReady(repo))
@@ -1012,7 +1058,7 @@ namespace BooruDatasetTagManager
                 if (choice != DialogResult.Yes)
                 {
                     UpdateStatus(I18n.GetText("LlmTaggerOnnxSkipped"));
-                    return;
+                    return true;
                 }
 
                 var downloadReporter = VideoProgressReporter.CreateForControl(this, UpdateStatus);
@@ -1054,11 +1100,11 @@ namespace BooruDatasetTagManager
             {
                 // The service already deleted the bad file(s); skip pre-tagging this run.
                 MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                return true;
             }
 
             if (tagged.Count == 0)
-                return;
+                return true;
 
             Wd14TaggerSettings wd14Settings = Program.Settings.Wd14Tagger;
             owner.PrepareForBulkTagWrite();
@@ -1076,7 +1122,19 @@ namespace BooruDatasetTagManager
             }
 
             await Task.Run(() => Program.DataManager.SaveAll()).ConfigureAwait(true);
+            if (Program.DataManager.LastSaveErrors.Count > 0)
+            {
+                MessageBox.Show(this, DescribeSaveFailures(), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
             progressBar.Value = 0;
+            return true;
+        }
+
+        private static string DescribeSaveFailures()
+        {
+            return I18n.GetText("LlmTaggerSaveBeforeRunFailed") + Environment.NewLine
+                + string.Join(Environment.NewLine, Program.DataManager.LastSaveErrors.Take(10));
         }
 
         private static CaptionScanResult FilterScanToSelection(CaptionScanResult scan, List<string> selectedPaths)
@@ -1211,6 +1269,7 @@ namespace BooruDatasetTagManager
             buttonTaggerSettings.Enabled = !running;
             radioSourceSelected.Enabled = !running;
             radioSourceAllImages.Enabled = !running;
+            radioSourceFolder.Enabled = !running && folderSourceAvailable;
             comboMode.Enabled = !running;
             comboPromptTemplate.Enabled = !running;
             comboVisionModel.Enabled = !running;

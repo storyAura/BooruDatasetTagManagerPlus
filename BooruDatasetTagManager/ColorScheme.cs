@@ -43,7 +43,7 @@ namespace UmaMusumeDBBrowser
 
         public void SelectScheme(string name)
         {
-            int index = Items.FindIndex(a => string.Equals(a.SchemeName, name));
+            int index = Items.FindIndex(a => a != null && string.Equals(a.SchemeName, name));
             // Unknown scheme name (edited/corrupt settings) must not leave
             // SelectedScheme null: everything downstream dereferences it.
             if (index == -1 && Items.Count > 0)
@@ -63,7 +63,12 @@ namespace UmaMusumeDBBrowser
             {
                 if (File.Exists(path))
                 {
-                    var res = JsonConvert.DeserializeObject<ColorSchemeManager>(File.ReadAllText(path));
+                    // NullValueHandling.Ignore keeps the non-null style defaults
+                    // when a hand-edited file carries explicit null members.
+                    var res = JsonConvert.DeserializeObject<ColorSchemeManager>(
+                        File.ReadAllText(path),
+                        new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+                    res?.Items?.RemoveAll(s => s == null);
                     if (res?.Items == null || res.Items.Count == 0)
                         throw new InvalidDataException("Color scheme file contains no schemes.");
                     Items = new List<ColorScheme>(res.Items);
@@ -257,17 +262,20 @@ namespace UmaMusumeDBBrowser
 
         public class ColorScheme
         {
+            // Non-null defaults: theme application dereferences every style
+            // before the message loop, and a hand-edited scheme missing one
+            // used to kill startup with an NRE.
             public string SchemeName { get; set; }
-            public GenericColorData ButtonStyle { get; set; }
-            public GenericColorData TextBoxStyle { get; set; }
-            public GenericColorData ComboAndListBoxStyle { get; set; }
-            public GenericColorData FormStyle { get; set; }
-            public GridColorData GrigStyle { get; set; }
-            public TabColorData TabControlStyle { get; set; }
-            public GenericColorData ToolStripStyle { get; set; }
-            public GenericColorData LabelStyle { get; set; }
-            public GenericColorData OtherStyle { get; set; }
-            public ColoredCheckedListBoxData ColoredCheckedListBoxStyle { get; set; }
+            public GenericColorData ButtonStyle { get; set; } = new GenericColorData();
+            public GenericColorData TextBoxStyle { get; set; } = new GenericColorData();
+            public GenericColorData ComboAndListBoxStyle { get; set; } = new GenericColorData();
+            public GenericColorData FormStyle { get; set; } = new GenericColorData();
+            public GridColorData GrigStyle { get; set; } = new GridColorData();
+            public TabColorData TabControlStyle { get; set; } = new TabColorData();
+            public GenericColorData ToolStripStyle { get; set; } = new GenericColorData();
+            public GenericColorData LabelStyle { get; set; } = new GenericColorData();
+            public GenericColorData OtherStyle { get; set; } = new GenericColorData();
+            public ColoredCheckedListBoxData ColoredCheckedListBoxStyle { get; set; } = new ColoredCheckedListBoxData();
 
             public override string ToString()
             {

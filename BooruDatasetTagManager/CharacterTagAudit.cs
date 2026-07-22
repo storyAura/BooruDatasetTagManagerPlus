@@ -219,6 +219,9 @@ namespace BooruDatasetTagManager
         public IReadOnlyList<CharacterTagAuditItem> Items { get; set; } = Array.Empty<CharacterTagAuditItem>();
         public int CompletedSteps { get; set; }
         public int TotalSteps { get; set; } = 2;
+        // Which audited character this update belongs to (dual mode runs the
+        // two-stage pipeline once per profile; single mode always reports 0).
+        public int ProfileIndex { get; set; }
     }
 
     public sealed class CharacterTagAuditOptions
@@ -231,6 +234,9 @@ namespace BooruDatasetTagManager
         public string ReferenceImagePath { get; set; } = string.Empty;
         public string CharacterAuditorSkill { get; set; } = string.Empty;
         public string PromptPyramidSkill { get; set; } = string.Empty;
+        // Dual/multi audits: trigger words of the OTHER characters sharing
+        // images with the audited one, so the prompts can pin attribution.
+        public IReadOnlyList<string> OtherCharacterTriggers { get; set; } = Array.Empty<string>();
     }
 
     public sealed class CharacterTagTriggerCandidate
@@ -904,6 +910,12 @@ namespace BooruDatasetTagManager
                 if (firstLine >= 0 && closing > firstLine)
                     cleaned = cleaned.Substring(firstLine + 1, closing - firstLine - 1).Trim();
             }
+            // Models often wrap the JSON in prose ("Here is the JSON: {...}
+            // Hope this helps!"). Cut to the outermost object.
+            int start = cleaned.IndexOf('{');
+            int end = cleaned.LastIndexOf('}');
+            if (start >= 0 && end > start)
+                cleaned = cleaned.Substring(start, end - start + 1).Trim();
             return cleaned;
         }
     }
@@ -944,6 +956,7 @@ namespace BooruDatasetTagManager
             string inventoryJson = JsonConvert.SerializeObject(auditedInventory.Tags);
             string textPrompt = "Audit every supplied tag using the requested style. Return strict JSON only.\n"
                 + "Trigger word (must keep): " + options.TriggerWord.Trim() + "\n"
+                + BuildOtherCharactersHint(options)
                 + "Style: " + options.Style.ToString().ToLowerInvariant() + "\nTags: " + inventoryJson;
             EnsurePromptSize(systemPrompt, textPrompt);
 
@@ -1024,7 +1037,7 @@ namespace BooruDatasetTagManager
             int totalSteps = visualReviewOnly ? 1 : 2;
             int completedBeforeVisual = visualReviewOnly ? 0 : 1;
             string systemPrompt = BuildSystemPrompt(options);
-            string visualPrompt = BuildVisualPrompt(initial);
+            string visualPrompt = BuildVisualPrompt(initial, options);
             EnsurePromptSize(systemPrompt, visualPrompt);
             var visualRequest = new CharacterTagModelRequest
             {
@@ -1058,9 +1071,32 @@ namespace BooruDatasetTagManager
             return final;
         }
 
-        private static string BuildVisualPrompt(IReadOnlyList<CharacterTagAuditItem> initial)
+        /// <summary>
+        /// Dual/multi audits: the shared-image inventory mixes both
+        /// characters' features, and without this hint the model tends to
+        /// assign traits by frequency (character B inheriting A's hair).
+        /// </summary>
+        private static string BuildOtherCharactersHint(CharacterTagAuditOptions options)
         {
-            return "Review the preliminary tag decisions against the attached reference image. "
+            if (options.OtherCharacterTriggers == null || options.OtherCharacterTriggers.Count == 0)
+                return string.Empty;
+            return "Other characters also appear in some of these images: "
+                + string.Join(", ", options.OtherCharacterTriggers)
+                + ". Tags describing THOSE characters (their hair length/color, eye color, garments, accessories) "
+                + "must be decision=keep with include_in_prompt=false and a reason naming that character. "
+                + "Attribute every appearance tag strictly to the correct character; never assume a tag belongs "
+                + "to the locked character just because it is frequent.\n";
+        }
+
+        private static string BuildVisualPrompt(IReadOnlyList<CharacterTagAuditItem> initial, CharacterTagAuditOptions options)
+        {
+            return BuildOtherCharactersHint(options)
+                + (options.OtherCharacterTriggers != null && options.OtherCharacterTriggers.Count > 0
+                    ? "The attached reference image shows ONLY the locked character ("
+                        + options.TriggerWord.Trim()
+                        + "); use it as the sole authority for which features are theirs.\n"
+                    : string.Empty)
+                + "Review the preliminary tag decisions against the attached reference image. "
                 + "Return the same complete strict JSON schema. Replacement targets may be new normalized tags, "
                 + "but every original tag must still appear exactly once.\n"
                 + "Explicitly list and re-check every color-less garment, footwear, legwear, and wearable accessory tag "
@@ -1081,6 +1117,12 @@ namespace BooruDatasetTagManager
                 }));
         }
 
+        // A malformed model answer goes through one Repair request; if that
+        // still fails to validate, the whole [original → repair] pair is
+        // retried once from scratch (models are nondeterministic — a fresh
+        // sample usually parses) before the failure reaches the UI.
+        private const int MaxValidationAttempts = 2;
+
         private async Task<IReadOnlyList<CharacterTagAuditItem>> RequestValidatedAsync(
             CharacterTagModelRequest request,
             CharacterTagInventory inventory,
@@ -1088,30 +1130,43 @@ namespace BooruDatasetTagManager
             CharacterTagAuditMetrics metrics,
             CancellationToken cancellationToken)
         {
-            CharacterTagModelResponse response = await RequestWithMetricsAsync(request, metrics, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
-                throw new InvalidOperationException(response.ErrorMessage);
-            try
+            CharacterTagAuditResponseException lastFailure = null;
+            for (int attempt = 0; attempt < MaxValidationAttempts; attempt++)
             {
-                return CharacterTagAuditResponseParser.ParseAndValidate(response.Result, inventory, triggerWord);
-            }
-            catch (CharacterTagAuditResponseException original)
-            {
-                var repair = new CharacterTagModelRequest
+                cancellationToken.ThrowIfCancellationRequested();
+                CharacterTagModelResponse response = await RequestWithMetricsAsync(request, metrics, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
+                    throw new InvalidOperationException(response.ErrorMessage);
+                try
                 {
-                    Stage = CharacterTagAuditStage.Repair,
-                    Model = request.Model,
-                    SystemPrompt = "Repair JSON syntax, schema, and semantic validation. Preserve every original tag name exactly once. "
-                        + "You may correct invalid decisions and replacement targets. If a replace target equals its source, use keep with an empty replacement_tag. "
-                        + "Return strict JSON only.",
-                    UserPrompt = "Expected tags: " + JsonConvert.SerializeObject(inventory.Tags.Select(item => item.Tag))
-                        + "\nMalformed response:\n" + response.Result
-                };
-                CharacterTagModelResponse repaired = await RequestWithMetricsAsync(repair, metrics, cancellationToken).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(repaired.ErrorMessage))
-                    throw new CharacterTagAuditResponseException(repaired.ErrorMessage, original);
-                return CharacterTagAuditResponseParser.ParseAndValidate(repaired.Result, inventory, triggerWord);
+                    return CharacterTagAuditResponseParser.ParseAndValidate(response.Result, inventory, triggerWord);
+                }
+                catch (CharacterTagAuditResponseException original)
+                {
+                    var repair = new CharacterTagModelRequest
+                    {
+                        Stage = CharacterTagAuditStage.Repair,
+                        Model = request.Model,
+                        SystemPrompt = "Repair JSON syntax, schema, and semantic validation. Preserve every original tag name exactly once. "
+                            + "You may correct invalid decisions and replacement targets. If a replace target equals its source, use keep with an empty replacement_tag. "
+                            + "Return strict JSON only.",
+                        UserPrompt = "Expected tags: " + JsonConvert.SerializeObject(inventory.Tags.Select(item => item.Tag))
+                            + "\nMalformed response:\n" + response.Result
+                    };
+                    try
+                    {
+                        CharacterTagModelResponse repaired = await RequestWithMetricsAsync(repair, metrics, cancellationToken).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(repaired.ErrorMessage))
+                            throw new CharacterTagAuditResponseException(repaired.ErrorMessage, original);
+                        return CharacterTagAuditResponseParser.ParseAndValidate(repaired.Result, inventory, triggerWord);
+                    }
+                    catch (CharacterTagAuditResponseException repairFailure)
+                    {
+                        lastFailure = repairFailure;
+                    }
+                }
             }
+            throw lastFailure ?? new CharacterTagAuditResponseException("The model response is not valid character tag JSON.");
         }
 
         private async Task<CharacterTagModelResponse> RequestWithMetricsAsync(

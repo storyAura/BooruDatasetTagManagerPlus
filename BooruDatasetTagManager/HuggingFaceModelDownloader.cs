@@ -25,6 +25,18 @@ namespace BooruDatasetTagManager
             return $"{baseUrl}/{repo.Trim('/')}/resolve/main/{filename}";
         }
 
+        /// <summary>
+        /// The user's Hugging Face token must only ever reach huggingface.co
+        /// itself — never a third-party mirror host.
+        /// </summary>
+        public static bool ShouldAttachAuthToken(string url)
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
+                && uri.Scheme == Uri.UriSchemeHttps
+                && (string.Equals(uri.Host, "huggingface.co", StringComparison.OrdinalIgnoreCase)
+                    || uri.Host.EndsWith(".huggingface.co", StringComparison.OrdinalIgnoreCase));
+        }
+
         public static string GetLocalDirectory(string repo)
         {
             string safeRepo = (repo ?? string.Empty)
@@ -91,7 +103,12 @@ namespace BooruDatasetTagManager
                 // so match validation rules on the file name only.
                 string name = Path.GetFileName(filename ?? string.Empty);
                 if (string.Equals(name, "model.onnx", StringComparison.OrdinalIgnoreCase))
-                    return info.Length >= MinOnnxFileBytes;
+                {
+                    // External-data exports (cl_tagger_v2: 773KB graph +
+                    // 2.2GB model.onnx.data) are legitimately under the 1MB
+                    // floor — accept an ONNX protobuf header as an alternative.
+                    return info.Length >= MinOnnxFileBytes || LooksLikeOnnxProtobuf(path);
+                }
 
                 if (string.Equals(name, "selected_tags.csv", StringComparison.OrdinalIgnoreCase))
                 {
@@ -161,6 +178,10 @@ namespace BooruDatasetTagManager
                 DeleteCachedFile(repo, filename);
             }
 
+            // A token implies a gated repo: gated content must come from
+            // huggingface.co directly, so the credential never reaches a mirror.
+            if (!string.IsNullOrWhiteSpace(authToken))
+                source = HuggingFaceDownloadSource.HuggingFace;
             string url = BuildDownloadUrl(source, repo, filename);
 
             long existingLength = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
@@ -168,7 +189,7 @@ namespace BooruDatasetTagManager
             if (existingLength > 0)
                 request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingLength, null);
             // Gated repos (e.g. cl_tagger_v2) require the user's own HF token.
-            if (!string.IsNullOrWhiteSpace(authToken))
+            if (!string.IsNullOrWhiteSpace(authToken) && ShouldAttachAuthToken(url))
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authToken.Trim());
 
             using HttpResponseMessage response = await SharedClient.SendAsync(
@@ -194,15 +215,15 @@ namespace BooruDatasetTagManager
                 throw new InvalidOperationException(I18n.GetText("TaggerModelCorrupt"));
             }
 
-            long? total = response.Content.Headers.ContentLength.HasValue
-                ? existingLength + response.Content.Headers.ContentLength.Value
-                : null;
-
             FileMode fileMode = response.StatusCode == HttpStatusCode.PartialContent && existingLength > 0
                 ? FileMode.Append
                 : FileMode.Create;
             if (fileMode == FileMode.Create)
-                existingLength = 0;
+                existingLength = 0; // 200 despite a Range header: the full body is resent, stale partial bytes must not inflate `total`.
+
+            long? total = response.Content.Headers.ContentLength.HasValue
+                ? existingLength + response.Content.Headers.ContentLength.Value
+                : null;
 
             await using (Stream remote = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
             await using (FileStream local = new FileStream(partialPath, fileMode, FileAccess.Write, FileShare.Read))
@@ -264,6 +285,14 @@ namespace BooruDatasetTagManager
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(stream);
             return reader.ReadLine() ?? string.Empty;
+        }
+
+        private static bool LooksLikeOnnxProtobuf(string path)
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            // Every ONNX export starts with the ir_version field header (0x08);
+            // HTML/JSON error bodies start with '<' or '{'.
+            return stream.ReadByte() == 0x08;
         }
 
         private static bool LooksLikeHtml(string path)

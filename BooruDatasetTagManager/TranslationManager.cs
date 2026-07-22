@@ -136,11 +136,28 @@ namespace BooruDatasetTagManager
             try
             {
                 TransItem cached = GetTranslationItem(text);
-                if (cached != null)
+                // Manual translations always win.
+                if (cached != null && cached.IsManual)
+                    return cached.Trans;
+
+                // The character catalog outranks non-manual cache entries:
+                // caches predating the catalog hold machine translations of
+                // character names ("fuji miyako"→"富士都") that would
+                // otherwise shadow the real 译名 forever. A hit rewrites the
+                // cache entry.
+                if (!forceRefresh && Program.CharacterTagLookup != null)
                 {
-                    if (!forceRefresh || cached.IsManual)
-                        return cached.Trans;
+                    string characterTranslation = Program.CharacterTagLookup.GetDisplayTranslation(text);
+                    if (!string.IsNullOrEmpty(characterTranslation))
+                    {
+                        if (cached == null || !string.Equals(cached.Trans, characterTranslation, StringComparison.Ordinal))
+                            await AddOrUpdateTranslationAsync(text, characterTranslation, false, false);
+                        return characterTranslation;
+                    }
                 }
+
+                if (cached != null && !forceRefresh)
+                    return cached.Trans;
 
                 if (!forceRefresh && Program.Settings.UseDanbooruZhCsvBeforeTranslation)
                 {

@@ -91,11 +91,12 @@ public class AiServerSetMigrationAndDocumentationTests
         Assert.Contains(auditHeading, readme);
         Assert.Contains(creditsHeading, readme);
         Assert.Contains("github.com/starik222/BooruDatasetTagManager", readme);
-        Assert.Contains("docs/images/main-window-wiki.png", readme);
+        Assert.Contains("docs/images/main-window-dataset-browser.png", readme);
         Assert.Contains("docs/images/llm-settings.png", readme);
         Assert.Contains("docs/images/llm-tagger.png", readme);
         Assert.Contains("docs/images/onnx-tagger.png", readme);
         Assert.Contains("docs/images/character-tag-audit-review.png", readme);
+        Assert.Contains("docs/images/crop-image-multi-region.png", readme);
     }
 
     private static string FindRepoRoot()

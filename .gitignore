@@ -394,3 +394,8 @@ quick_build.log
 # Local planning / reference (not for repo)
 docs/superpowers/
 wd14-migration-package/
+
+# Local agent guidance / internal audit docs (kept locally, not published)
+CLAUDE.md
+IO_BUG_AUDIT.md
+COMPREHENSIVE_20_AGENT_AUDIT_2026-07-22.md

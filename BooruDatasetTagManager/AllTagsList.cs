@@ -53,6 +53,22 @@ namespace BooruDatasetTagManager
 
         public bool IsFilterByCount() => filterByCount;
 
+        /// <summary>
+        /// Drops every tag so the list can be rebuilt for a new scope (e.g. an
+        /// active dataset folder). Call inside <see cref="BeginBatchUpdate"/> so
+        /// the bound grid sees a single reset instead of thousands of events.
+        /// </summary>
+        public void ResetAllTags()
+        {
+            tagsList.Clear();
+            tagIndex.Clear();
+            InnerList.Clear();
+            if (batchUpdateDepth > 0)
+                batchDirty = true;
+            else
+                OnListChanged(resetEvent);
+        }
+
 
         public Task TranslateAllAsync()
         {
@@ -86,30 +102,53 @@ namespace BooruDatasetTagManager
                 if (pending.Count == 0)
                     return;
 
-                foreach (var entry in pending)
+                // Translate on the thread pool: with the old inline loop every
+                // per-tag await hopped back to the UI thread, so a folder-scope
+                // rebuild with translation enabled stuttered the whole window.
+                // (TranslationManager is internally locked, so a background
+                // worker is safe.)
+                var results = await Task.Run(async () =>
                 {
-                    string result = string.Empty;
-                    if (!string.IsNullOrEmpty(entry.Value))
+                    var translated = new List<(AllTagsItem Item, string Tag, string Result)>(pending.Count);
+                    foreach (var entry in pending)
                     {
-                        try
+                        string result = string.Empty;
+                        if (!string.IsNullOrEmpty(entry.Value))
                         {
-                            result = await translateAsync(entry.Value) ?? string.Empty;
+                            try
+                            {
+                                result = await translateAsync(entry.Value).ConfigureAwait(false) ?? string.Empty;
+                            }
+                            catch
+                            {
+                                result = string.Empty;
+                            }
                         }
-                        catch
-                        {
-                            result = string.Empty;
-                        }
+                        translated.Add((entry.Key, entry.Value, result));
                     }
+                    return translated;
+                });
 
-                    if (tagIndex.TryGetValue(entry.Value, out var current)
-                        && ReferenceEquals(current, entry.Key)
-                        && current.Tag == entry.Value)
+                // Back on the caller (UI) context: apply the whole batch with a
+                // single reset instead of per-item ItemChanged + O(n) IndexOf
+                // (that combination made the apply phase quadratic).
+                bool applied = false;
+                foreach ((AllTagsItem item, string tag, string result) in results)
+                {
+                    if (tagIndex.TryGetValue(tag, out var current)
+                        && ReferenceEquals(current, item)
+                        && current.Tag == tag)
                     {
                         current.SetTranslation(result);
-                        int listIndex = List.IndexOf(current);
-                        if (listIndex != -1)
-                            OnListChanged(new ListChangedEventArgs(ListChangedType.ItemChanged, listIndex));
+                        applied = true;
                     }
+                }
+                if (applied)
+                {
+                    if (batchUpdateDepth > 0)
+                        batchDirty = true;
+                    else
+                        OnListChanged(resetEvent);
                 }
             }
         }
@@ -135,10 +174,46 @@ namespace BooruDatasetTagManager
             OnListChanged(resetEvent);
         }
 
+        // Category-grouped default ordering (null = plain alphabetical). The
+        // same comparison drives sorted inserts, so grid rows and the direct
+        // List-index searches stay 1:1.
+        private Func<string, int> categoryRank;
+
+        /// <summary>
+        /// Turns category-grouped ordering of the default (no header sort)
+        /// view on or off; explicit column-header sorts stay untouched.
+        /// </summary>
+        public void SetCategorySort(Func<string, int> rankOf)
+        {
+            categoryRank = rankOf;
+            if (batchUpdateDepth > 0)
+            {
+                batchDirty = true;
+                return;
+            }
+            SortTagIndex();
+            RebuildVisibleList();
+            OnListChanged(resetEvent);
+        }
+
+        private int CompareByDefault(AllTagsItem x, AllTagsItem y)
+        {
+            if (categoryRank != null)
+            {
+                int byRank = categoryRank(x.Tag).CompareTo(categoryRank(y.Tag));
+                if (byRank != 0)
+                    return byRank;
+            }
+            return x.Tag.CompareTo(y.Tag);
+        }
+
         private void SortTagIndex()
         {
-            if (_propertyDescriptor == null
-                || (_propertyDescriptor.Name == "Tag" && _sortDirection == ListSortDirection.Ascending))
+            if (_propertyDescriptor == null)
+            {
+                tagsList.Sort(CompareByDefault);
+            }
+            else if (_propertyDescriptor.Name == "Tag" && _sortDirection == ListSortDirection.Ascending)
             {
                 tagsList.Sort(new SortByTagNameTIAscending());
             }
@@ -266,7 +341,7 @@ namespace BooruDatasetTagManager
                 {
                     int compareResult = 0;
                     if (_propertyDescriptor == null)
-                        compareResult = item.Tag.CompareTo(((AllTagsItem)lst[i]).Tag);
+                        compareResult = CompareByDefault(item, (AllTagsItem)lst[i]);
                     else if (_propertyDescriptor.Name == "Tag" && _sortDirection == ListSortDirection.Ascending)
                         compareResult = item.Tag.CompareTo(((AllTagsItem)lst[i]).Tag);
                     else if (_propertyDescriptor.Name == "Tag" && _sortDirection == ListSortDirection.Descending)

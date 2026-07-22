@@ -2,12 +2,14 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set "VERSION=1.1.3"
+set "VERSION=1.2.0"
 set "PROJECT=BooruDatasetTagManager\BooruDatasetTagManager.csproj"
 set "CONFIG=Release"
 set "FRAMEWORK=net8.0-windows"
 set "RUNTIME=win-x64"
-set "OUTPUT_DIR=dist"
+rem Publish into a fresh throwaway staging dir, never into dist: dist doubles
+rem as a local run dir, and zipping it shipped settings.json/caches before.
+set "STAGE_DIR=%TEMP%\bdtm-publish-%RANDOM%%RANDOM%"
 set "RELEASES_DIR=releases"
 set "ZIP_NAME=BooruDatasetTagManagerPlus-%VERSION%-win-x64.zip"
 set "ZIP_PATH=%RELEASES_DIR%\%ZIP_NAME%"
@@ -41,7 +43,7 @@ if errorlevel 1 (
 echo Publishing BooruDatasetTagManagerPlus %TAG%...
 echo.
 
-if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
+mkdir "%STAGE_DIR%"
 if not exist "%RELEASES_DIR%" mkdir "%RELEASES_DIR%"
 
 if not exist "BooruDatasetTagManager\ThirdParty\ffmpeg\win-x64\ffmpeg.exe" (
@@ -53,18 +55,31 @@ if not exist "BooruDatasetTagManager\ThirdParty\ffmpeg\win-x64\ffmpeg.exe" (
     )
 )
 
-dotnet publish "%PROJECT%" -c "%CONFIG%" -f "%FRAMEWORK%" -r "%RUNTIME%" --self-contained true -o "%OUTPUT_DIR%" --nologo
+dotnet publish "%PROJECT%" -c "%CONFIG%" -f "%FRAMEWORK%" -r "%RUNTIME%" --self-contained true -o "%STAGE_DIR%" --nologo
 if errorlevel 1 (
     echo Publish failed.
+    rmdir /s /q "%STAGE_DIR%"
     exit /b 1
 )
 
-if exist "%ZIP_PATH%" del /f /q "%ZIP_PATH%"
-powershell -NoProfile -Command "Compress-Archive -Path '%OUTPUT_DIR%\*' -DestinationPath '%ZIP_PATH%' -CompressionLevel Optimal"
+rem The tag/zip version must match what the EXE actually reports.
+powershell -NoProfile -Command "$v=(Get-Item '%STAGE_DIR%\BooruDatasetTagManagerPlus.exe').VersionInfo.ProductVersion; if ($v -notlike '%VERSION%*') { Write-Host ('EXE ProductVersion ' + $v + ' does not match %VERSION%.'); exit 1 }"
 if errorlevel 1 (
-    echo Failed to create zip: %ZIP_PATH%
+    echo Version check failed. Bump csproj/AssemblyInfo before releasing %VERSION%.
+    rmdir /s /q "%STAGE_DIR%"
     exit /b 1
 )
+
+del /q "%STAGE_DIR%\*.pdb" "%STAGE_DIR%\*.lib" >nul 2>nul
+
+if exist "%ZIP_PATH%" del /f /q "%ZIP_PATH%"
+powershell -NoProfile -Command "Compress-Archive -Path '%STAGE_DIR%\*' -DestinationPath '%ZIP_PATH%' -CompressionLevel Optimal"
+if errorlevel 1 (
+    echo Failed to create zip: %ZIP_PATH%
+    rmdir /s /q "%STAGE_DIR%"
+    exit /b 1
+)
+rmdir /s /q "%STAGE_DIR%"
 
 if not exist "%NOTES%" (
     echo Release notes not found: %NOTES%
@@ -72,17 +87,26 @@ if not exist "%NOTES%" (
     exit /b 1
 )
 
+rem Check every gh step separately: a failed upload used to be masked by the
+rem following edit succeeding, and the script still reported success.
 gh release view %TAG% --repo storyAura/BooruDatasetTagManagerPlus >nul 2>nul
 if errorlevel 1 (
     gh release create %TAG% "%ZIP_PATH%" --repo storyAura/BooruDatasetTagManagerPlus --title "%TAG%" --notes-file "%NOTES%"
+    if errorlevel 1 (
+        echo GitHub release create failed.
+        exit /b 1
+    )
 ) else (
     gh release upload %TAG% "%ZIP_PATH%" --repo storyAura/BooruDatasetTagManagerPlus --clobber
+    if errorlevel 1 (
+        echo GitHub release upload failed.
+        exit /b 1
+    )
     gh release edit %TAG% --repo storyAura/BooruDatasetTagManagerPlus --notes-file "%NOTES%"
-)
-
-if errorlevel 1 (
-    echo GitHub release step failed.
-    exit /b 1
+    if errorlevel 1 (
+        echo GitHub release notes update failed.
+        exit /b 1
+    )
 )
 
 echo.

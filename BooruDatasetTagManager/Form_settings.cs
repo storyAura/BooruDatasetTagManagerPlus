@@ -30,6 +30,7 @@ namespace BooruDatasetTagManager
         private FontSettings gridFontSettings = null;
         private FontSettings autocompleteFontSettings = null;
         private System.Windows.Forms.CheckBox checkBoxUseDanbooruCsv;
+        private System.Windows.Forms.CheckBox checkBoxMatchCharacterTags;
         private System.Windows.Forms.Label labelImageEditorSaveMode;
         private System.Windows.Forms.ComboBox comboBoxImageEditorSaveMode;
         private System.Windows.Forms.Label labelAllTagsDoubleClick;
@@ -108,10 +109,22 @@ namespace BooruDatasetTagManager
                 Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
                 Name = "checkBoxUseDanbooruCsv"
             };
-            translationTableLayoutPanel.RowCount = 5;
+            translationTableLayoutPanel.RowCount = 6;
             translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
             translationTableLayoutPanel.Controls.Add(checkBoxUseDanbooruCsv, 0, 4);
             translationTableLayoutPanel.SetColumnSpan(checkBoxUseDanbooruCsv, 2);
+            // Character-catalog matching (coloring + 译名) lives right below
+            // the general-tag CSV toggle it complements.
+            checkBoxMatchCharacterTags = new System.Windows.Forms.CheckBox
+            {
+                AutoSize = true,
+                Dock = System.Windows.Forms.DockStyle.Fill,
+                Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
+                Name = "checkBoxMatchCharacterTags"
+            };
+            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            translationTableLayoutPanel.Controls.Add(checkBoxMatchCharacterTags, 0, 5);
+            translationTableLayoutPanel.SetColumnSpan(checkBoxMatchCharacterTags, 2);
         }
 
         private void Form_settings_Load(object sender, EventArgs e)
@@ -127,6 +140,7 @@ namespace BooruDatasetTagManager
                 (decimal)(Program.Settings.TranslationTimeoutSeconds <= 0 ? 5 : Program.Settings.TranslationTimeoutSeconds),
                 numericUpDownTranslationTimeout.Minimum, numericUpDownTranslationTimeout.Maximum);
             checkBoxUseDanbooruCsv.Checked = Program.Settings.UseDanbooruZhCsvBeforeTranslation;
+            checkBoxMatchCharacterTags.Checked = Program.Settings.MatchCharacterTags;
             comboAutocompMode.Items.AddRange(Extensions.GetFriendlyEnumValues<AutocompleteMode>());
             comboAutocompMode.SelectedIndex = Extensions.GetEnumIndexFromValue<AutocompleteMode>(Program.Settings.AutocompleteMode.ToString());
             comboAutocompSort.Items.AddRange(Extensions.GetFriendlyEnumValues<AutocompleteSort>());
@@ -190,6 +204,7 @@ namespace BooruDatasetTagManager
             Program.Settings.TranslationTimeoutSeconds = (int)numericUpDownTranslationTimeout.Value;
             Program.Settings.OnlyManualTransInAutocomplete = checkBoxLoadOnlyManual.Checked;
             Program.Settings.UseDanbooruZhCsvBeforeTranslation = checkBoxUseDanbooruCsv.Checked;
+            Program.Settings.MatchCharacterTags = checkBoxMatchCharacterTags.Checked;
             Program.Settings.AutocompleteMode = Extensions.GetEnumItemFromFriendlyText<AutocompleteMode>(comboAutocompMode.SelectedItem.ToString());
             Program.Settings.AutocompleteSort = Extensions.GetEnumItemFromFriendlyText<AutocompleteSort>(comboAutocompSort.SelectedItem.ToString());
             Program.Settings.FixTagsOnSaveLoad = checkBoxFixOnLoad.Checked;
@@ -394,6 +409,7 @@ namespace BooruDatasetTagManager
             labelTranslationTimeout.Text = I18n.GetText("SettingTranslationTimeout");
             checkBoxLoadOnlyManual.Text = I18n.GetText("SettingLoadOnlyManualAutocomplete");
             checkBoxUseDanbooruCsv.Text = I18n.GetText("SettingUseDanbooruCsvBeforeTranslation");
+            checkBoxMatchCharacterTags.Text = I18n.GetText("SettingMatchCharacterTags");
             checkBoxCacheImages.Text = I18n.GetText("SettingsCheckBoxCacheImages");
             labelImageEditorSaveMode.Text = I18n.GetText("SettingsImageEditorSaveMode");
             FillImageEditorSaveModeItems();

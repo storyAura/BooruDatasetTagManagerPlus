@@ -1,6 +1,6 @@
 ---
 name: character-tag-auditor
-description: Audit dataset-wide booru tags for a character LoRA with one locked trigger and one visual reference.
+description: Audit dataset-wide booru tags for a character LoRA with a locked trigger and a visual reference; supports single- and dual-character datasets.
 ---
 
 # Character LoRA Tag Auditor
@@ -50,15 +50,53 @@ Keep all correct character appearance, garment, footwear, legwear, and worn-acce
 
 Unlike sparse mode, full mode keeps real bangs, small hair structures, fangs, moles, and specific hair ornaments when the reference confirms them.
 
-## Multiple people and hair colors
+## Multiple people, multi-character datasets, and hair colors
 
-Attribute appearance to the locked character using the reference. A nearby shade on the same character may be normalized only when it describes the same visible feature. A clearly different hair color may belong to another character in a multi-person image: keep it in dataset files, but set `include_in_prompt: false` so an other character trait does not contaminate the locked character prompt. Do not delete protected subject-count tags such as `2girls` or `multiple girls`.
+Attribute appearance to the locked character using the reference. A nearby shade on the same character may be normalized only when it describes the same visible feature. A clearly different hair color may belong to another character in a multi-person image: keep it in dataset files, but set `include_in_prompt: false` so an other character trait does not contaminate the locked character prompt. Do not delete protected subject-count tags such as `2girls` or `multiple girls`; the caller injects or corrects subject counts (`2girls`, `multiple girls`, `1girl` + `1boy`) deterministically on shared images, so never invent them yourself.
+
+A merged training set may contain several characters, one repeat folder each, and the caller may audit two characters in one session. Each audit call still locks exactly one character: the supplied trigger word and reference image define who is being audited, and the inventory only comes from that character's member images. When another audited character's trigger word or traits appear in the inventory (from images containing both characters), treat them as other-person evidence: `keep`, `include_in_prompt: false`, never delete, never replace, and never merge the two characters' features. A shared garment word such as `skirt` or `hat` must be resolved only from the locked character's own appearance in the reference; the caller reconciles conflicting per-character replacements per image, so answer for the locked character only.
 
 ## Two-stage review
 
 Text screening uses meaning and frequency for a preliminary decision. Frequency is evidence, not proof. Visual review must re-check colors, garment identity, headwear, hair style, and character ownership against the reference image. If a plausible feature is occluded or out of frame, prefer `uncertain` over guessing.
 
 Visual review must explicitly list and re-check every color-less garment, footwear, legwear, and wearable accessory tag it receives (for example `jacket`, `boots`, `shirt`, `skirt`, `hair ribbon`, `hairband`), including tags the text stage marked `keep`. When the reference clearly shows that item's color on the locked character, answer `replace` with the color-prefixed tag — for example `jacket → black jacket` or `boots → black boots` — even if that colored tag does not currently exist anywhere in the tag inventory. Keep the color-less tag only when its color is genuinely unverifiable in the reference (occluded, out of frame, or ambiguous), and state that in `reason`. Never answer `replace` with an empty `replacement_tag`; a replace decision without a target is invalid.
+
+## Canonical prompt order
+
+Assign `prompt_order` so the final sparse prompt reads as a stable visual-weight pyramid:
+
+1. locked trigger (always order 0)
+2. subject count (`1girl`) and `solo` when true
+3. eye color
+4. hair color → hair length → hair structure (`low twintails`, `short hair`, `low ponytail`)
+5. hair-worn accessories (`hair flower`, `hair ribbon`, `white hairband`, `hair ornament` when kept)
+6. headwear (`white beret`, `black hat`, `halo`, `sleep mask`)
+7. face/ear/neck jewelry (`earrings`, `white choker`, `black necklace`, generic `jewelry` when kept)
+8. upper-body clothing (`white cropped shirt`, `white jacket`, dress or leotard)
+9. swimwear/one-piece layers (`pink bikini`), then lower-body clothing (`pink skirt`, `blue denim shorts`)
+10. arm/hand wear (`black gloves`, `bracelet`, `bandolier`)
+11. legwear (`white thighhighs`, `white pantyhose`, `thigh strap`)
+12. footwear (`white slippers`, `high heels`, `brown thigh boots`)
+
+Keep one canonical tag per feature slot; a slot that is not visually confirmed is simply absent. Never pad the prompt with quality, pose, scene, or composition tags.
+
+## Reference sparse prompts
+
+These verified single-character prompts are the target shape and density for sparse mode (trigger first, then the pyramid above):
+
+- `lynae (peppermint) (wuthering waves), 1girl, solo, purple eyes, blonde hair, very long hair, low twintails, hair flower, earrings, white choker, black necklace, white cropped shirt, blue bikini, blue denim shorts, bracelet, white thigh strap`
+- `chisa (peach parfait) (wuthering waves), 1girl, solo, black hair, purple eyes, very long hair, low twintails, white beret, white hairband, hair flower, earrings, pink bikini, pink skirt, white bracelet, pink thigh strap`
+- `citlali \(whispers of stars and smoke\) \(genshin impact\), 1girl, blue eyes, pink hair, purple hairclip, low twintails, sleep mask, purple dress, white slippers`
+- `exusiai the new covenant \(the legend seeker\) \(arknights\), 1girl, orange eyes, red hair, halo, black hat, black jacket, red cape, black dress, black gloves, brown thigh boots`
+- `alf \(silver palace\), 1girl, blue eyes, pink hair, hair ribbon, cable tail, white maid apron, black skirt, red bowtie, bandolier, thigh strap, white pantyhose, high heels`
+- `velina airgid, 1girl, purple eyes, white hair, long hair, hair bow, earrings, blue dress, jewelry, black gloves, white thighhighs`
+- `zhuang fangyi \(arknights\), 1girl, green eyes, black hair, hair ornament, green dress, jewelry, black gloves`
+- `mi fu \(arknights\), 1girl, pink hair, white jacket, red shirt, black shorts, red gloves, green thighhighs`
+- `promeia \(zenless zone zero\), 1girl, purple eyes, purple hair, short hair, low ponytail, black leotard, black cape, jewelry, black thighhighs, thigh boots`
+- `sigrika \(wuthering waves\), 1girl, orange hair, long hair, white dress, black shorts, white gloves`
+
+Match their density: a sparse prompt is typically 8–16 tags. Note `denia haonvhai \(wuthering waves\)` and `denia huainvhai \(wuthering waves\)` are two different forms of one character with separate triggers — in a merged dataset each form is audited as its own locked character, exactly like two distinct characters.
 
 ## Chisa regression example
 

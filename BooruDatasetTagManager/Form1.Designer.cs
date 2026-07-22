@@ -164,8 +164,6 @@ namespace BooruDatasetTagManager
             btnAutoAddSelToImageTags = new System.Windows.Forms.ToolStripButton();
             toolStrip2 = new System.Windows.Forms.ToolStrip();
             toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
-            tabPreview = new Manina.Windows.Forms.Tab();
-            pictureBoxPreview = new System.Windows.Forms.PictureBox();
             customTextBoxColumn1 = new CustomTextBoxColumn();
             contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(components);
             toolStripMenuItem1 = new System.Windows.Forms.ToolStripMenuItem();
@@ -216,8 +214,6 @@ namespace BooruDatasetTagManager
             ((System.ComponentModel.ISupportInitialize)gridViewAutoTags).BeginInit();
             toolStripAutoTags.SuspendLayout();
             toolStrip2.SuspendLayout();
-            tabPreview.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)pictureBoxPreview).BeginInit();
             contextMenuStrip1.SuspendLayout();
             SuspendLayout();
             // 
@@ -1044,7 +1040,7 @@ namespace BooruDatasetTagManager
             // 
             toolStrip5.Anchor = System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
             toolStrip5.Dock = System.Windows.Forms.DockStyle.None;
-            toolStrip5.Items.AddRange(new System.Windows.Forms.ToolStripItem[] { toolStripSeparator14, toolStripLabelDSZoom, TrackBarRowHeight, toolStripSeparator15, BtnDSChangeSelection, toolStripLabelDSShown });
+            toolStrip5.Items.AddRange(new System.Windows.Forms.ToolStripItem[] { toolStripSeparator14, toolStripLabelDSZoom, TrackBarRowHeight, toolStripSeparator15 });
             toolStrip5.Location = new System.Drawing.Point(3, 0);
             toolStrip5.Name = "toolStrip5";
             toolStrip5.Size = new System.Drawing.Size(301, 38);
@@ -1259,7 +1255,6 @@ namespace BooruDatasetTagManager
             // 
             tabControl1.BorderStyle = System.Windows.Forms.BorderStyle.None;
             tabControl1.Controls.Add(tabAllTags);
-            tabControl1.Controls.Add(tabPreview);
             tabControl1.Dock = System.Windows.Forms.DockStyle.Fill;
             tabControl1.Location = new System.Drawing.Point(0, 0);
             tabControl1.Name = "tabControl1";
@@ -1268,7 +1263,6 @@ namespace BooruDatasetTagManager
             tabControl1.TabIndex = 0;
             tabControl1.TabLocation = Manina.Windows.Forms.TabLocation.Near | Manina.Windows.Forms.TabLocation.Bottom;
             tabControl1.Tabs.Add(tabAllTags);
-            tabControl1.Tabs.Add(tabPreview);
             tabControl1.TabSizing = Manina.Windows.Forms.TabSizing.Stretch;
             // 
             // tabAllTags
@@ -1475,27 +1469,7 @@ namespace BooruDatasetTagManager
             toolStripLabel1.Name = "toolStripLabel1";
             toolStripLabel1.Size = new System.Drawing.Size(150, 22);
             toolStripLabel1.Text = "Auto generated tags";
-            // 
-            // tabPreview
-            // 
-            tabPreview.BackColor = System.Drawing.SystemColors.AppWorkspace;
-            tabPreview.Controls.Add(pictureBoxPreview);
-            tabPreview.Location = new System.Drawing.Point(0, 0);
-            tabPreview.Name = "tabPreview";
-            tabPreview.Size = new System.Drawing.Size(0, 0);
-            tabPreview.Text = "Preview";
-            // 
-            // pictureBoxPreview
-            // 
-            pictureBoxPreview.BackColor = System.Drawing.SystemColors.ControlDarkDark;
-            pictureBoxPreview.Dock = System.Windows.Forms.DockStyle.Fill;
-            pictureBoxPreview.Location = new System.Drawing.Point(0, 0);
-            pictureBoxPreview.Name = "pictureBoxPreview";
-            pictureBoxPreview.Size = new System.Drawing.Size(0, 0);
-            pictureBoxPreview.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
-            pictureBoxPreview.TabIndex = 0;
-            pictureBoxPreview.TabStop = false;
-            // 
+            //
             // customTextBoxColumn1
             // 
             customTextBoxColumn1.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
@@ -1628,8 +1602,6 @@ namespace BooruDatasetTagManager
             toolStripAutoTags.PerformLayout();
             toolStrip2.ResumeLayout(false);
             toolStrip2.PerformLayout();
-            tabPreview.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)pictureBoxPreview).EndInit();
             contextMenuStrip1.ResumeLayout(false);
             ResumeLayout(false);
             PerformLayout();
@@ -1742,8 +1714,6 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ToolStripMenuItem generateTagsWithAutoTaggerForAllImagesToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator12;
         private System.Windows.Forms.ToolStripButton btnAutoAddSelToImageTags;
-        private Manina.Windows.Forms.Tab tabPreview;
-        private System.Windows.Forms.PictureBox pictureBoxPreview;
         private System.Windows.Forms.ContextMenuStrip contextMenuImageGridHeader;
         private System.Windows.Forms.ToolStripMenuItem debugToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem testSortingToolStripMenuItem;

@@ -169,7 +169,9 @@ namespace BooruDatasetTagManager
             }
             else
             {
-                File.Move(tempOutputPath, finalPath, overwrite: true);
+                // overwrite:false — a cross-format replace must never clobber an
+                // unrelated sibling that already owns the target name.
+                File.Move(tempOutputPath, finalPath, overwrite: false);
                 File.Delete(inputPath);
             }
         }

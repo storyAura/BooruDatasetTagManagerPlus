@@ -49,8 +49,8 @@ namespace BooruDatasetTagManager
             AutoScaleMode = AutoScaleMode.Dpi;
             Text = "AiServerSet";
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(900, 520);
-            MinimumSize = new Size(760, 460);
+            ClientSize = new Size(900, 430);
+            MinimumSize = new Size(760, 380);
             ShowInTaskbar = false;
 
             FlowLayoutPanel buttons = new FlowLayoutPanel
@@ -77,7 +77,7 @@ namespace BooruDatasetTagManager
             };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
 
             groupConnection = CreateConnectionGroup();
@@ -86,7 +86,9 @@ namespace BooruDatasetTagManager
             groupVisionModels = CreateVisionModelsGroup();
             root.Controls.Add(groupVisionModels, 0, 1);
 
-            groupLlmT2NlPrompt = new GroupBox { Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+            // The fixed natural-language prompt is internal detail; keep the
+            // group constructed (settings load still fills it) but hidden.
+            groupLlmT2NlPrompt = new GroupBox { Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0), Visible = false };
             textBoxLlmT2NlPrompt = CreatePromptTextBox(true);
             groupLlmT2NlPrompt.Controls.Add(textBoxLlmT2NlPrompt);
             root.Controls.Add(groupLlmT2NlPrompt, 0, 2);

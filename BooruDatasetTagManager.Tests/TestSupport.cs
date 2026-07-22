@@ -32,6 +32,7 @@ namespace BooruDatasetTagManager
         public static string AppPath { get; set; } = Path.GetTempPath();
         public static TranslationManager TransManager { get; set; }
         public static ChineseTagLookupService ChineseTagLookup { get; set; } = ChineseTagLookupService.Empty;
+        public static CharacterTagCatalog CharacterTagLookup { get; set; }
     }
 
     public sealed class AppSettingsStub
