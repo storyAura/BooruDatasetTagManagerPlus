@@ -42,6 +42,8 @@ namespace BooruDatasetTagManager
             Application.SetCompatibleTextRenderingDefault(false);
             AppPath = Application.StartupPath;
             Settings = new AppSettings(Application.StartupPath);
+            DebugLog.Enabled = Settings.DebugMode;
+            DebugLog.Write("App", $"Started v{Application.ProductVersion}, OS: {Environment.OSVersion}, 64-bit: {Environment.Is64BitProcess}");
             EditableTagListLocker = new SemaphoreSlim(1,1);
             ListChangeLocker = new object();
             ColorManager = new ColorSchemeManager();
@@ -142,26 +144,41 @@ namespace BooruDatasetTagManager
                 MessageBox.Show(I18n.GetText("TipApiKeyDecryptFailed"), "BooruDatasetTagManagerPlus",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
-            AutoTagger = new AiApiClient();
+            if (SecretProtector.LegacyPlaintextLoaded && Settings != null)
+            {
+                // Older versions stored API keys as plaintext. Save twice so the
+                // pre-migration plaintext also rotates out of settings.json.bak.
+                Settings.SaveSettings();
+                Settings.SaveSettings();
+            }
+            if (SecretProtector.ProtectFailureOccurred)
+            {
+                MessageBox.Show(I18n.GetText("TipApiKeyEncryptFailed"), "BooruDatasetTagManagerPlus",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             BackgroundRemover = new RmbgBackgroundRemoverService();
             if (!string.IsNullOrWhiteSpace(Settings.OpenAiAutoTagger.ConnectionAddress))
             {
                 try
                 {
-                    OpenAiAutoTagger = new AiOpenAiClient(
-                        Settings.OpenAiAutoTagger.ConnectionAddress,
-                        string.IsNullOrWhiteSpace(Settings.OpenAiAutoTagger.ApiKey) ? "not-required" : Settings.OpenAiAutoTagger.ApiKey,
-                        Settings.OpenAiAutoTagger.RequestTimeout);
+                    OpenAiAutoTagger = AiOpenAiClient.CreateFromSettings(Settings);
                 }
                 catch (Exception ex)
                 {
                     Trace.WriteLine($"Failed to initialize OpenAI client: {ex}");
                 }
             }
+            // The legacy Python AiApiServer backend was removed: configs that
+            // still select it migrate to the only remaining provider so
+            // GetRequired() can never face an unknown id from an old file.
+            if (string.Equals(Settings.AutoTagProviderId, "ai-api-server", StringComparison.OrdinalIgnoreCase))
+            {
+                Settings.AutoTagProviderId = "openai-compatible";
+                Settings.SaveSettings();
+            }
             AutoTagProviders = new AutoTagProviderRegistry(new IAutoTagProvider[]
             {
-                new OpenAiCompatibleAutoTagProvider(() => OpenAiAutoTagger),
-                new AiApiServerAutoTagProvider(() => AutoTagger, () => Settings.AutoTagger)
+                new OpenAiCompatibleAutoTagProvider(() => OpenAiAutoTagger)
             });
 
             Application.Run(new MainForm());
@@ -247,6 +264,7 @@ namespace BooruDatasetTagManager
         {
             if (ex == null)
                 return;
+            DebugLog.Write(source, $"{(terminating ? "[terminating] " : "")}{ex}");
             string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{source}]{(terminating ? " [terminating]" : "")} {ex}{Environment.NewLine}";
             try
             {
@@ -298,7 +316,6 @@ namespace BooruDatasetTagManager
             return Path.Combine(Application.StartupPath, "Data", "danbooru_character_tags.csv");
         }
 
-        public static AiApiClient AutoTagger;
         // In-process RMBG-2.0 background removal (replaces the AiApiServer path).
         public static RmbgBackgroundRemoverService BackgroundRemover;
         public static AiOpenAiClient OpenAiAutoTagger = null;

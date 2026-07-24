@@ -34,6 +34,7 @@
     <Compile Include="..\BooruDatasetTagManager\ImageSorter.cs" Link="Source\ImageSorter.cs" />
     <Compile Include="..\BooruDatasetTagManager\ModelCorruptedException.cs" Link="Source\ModelCorruptedException.cs" />
     <Compile Include="..\BooruDatasetTagManager\PromptParser.cs" Link="Source\PromptParser.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ReleaseNotesLocalizer.cs" Link="Source\ReleaseNotesLocalizer.cs" />
     <Compile Include="..\BooruDatasetTagManager\AllTagsItem.cs" Link="Source\AllTagsItem.cs" />
     <Compile Include="..\BooruDatasetTagManager\AllTagsList.cs" Link="Source\AllTagsList.cs" />
     <Compile Include="..\BooruDatasetTagManager\EditableTag.cs" Link="Source\EditableTag.cs" />
@@ -81,6 +82,7 @@
     <Compile Include="..\BooruDatasetTagManager\FfmpegLocator.cs" Link="Source\FfmpegLocator.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagPostProcessor.cs" Link="Source\TagPostProcessor.cs" />
     <Compile Include="..\BooruDatasetTagManager\AppSettings.cs" Link="Source\AppSettings.cs" />
+    <Compile Include="..\BooruDatasetTagManager\LlmApiProfiles.cs" Link="Source\LlmApiProfiles.cs" />
     <Compile Include="..\BooruDatasetTagManager\HotkeyData.cs" Link="Source\HotkeyData.cs" />
     <Compile Include="..\BooruDatasetTagManager\I18n.cs" Link="Source\I18n.cs" />
     <Compile Include="..\BooruDatasetTagManager\LanguageManager.cs" Link="Source\LanguageManager.cs" />

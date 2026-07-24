@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set "VERSION=1.2.0"
+set "VERSION=1.2.1"
 set "PROJECT=BooruDatasetTagManager\BooruDatasetTagManager.csproj"
 set "CONFIG=Release"
 set "FRAMEWORK=net8.0-windows"
@@ -15,6 +15,21 @@ set "ZIP_NAME=BooruDatasetTagManagerPlus-%VERSION%-win-x64.zip"
 set "ZIP_PATH=%RELEASES_DIR%\%ZIP_NAME%"
 set "NOTES=docs\RELEASE_NOTES_v%VERSION%.md"
 set "TAG=v%VERSION%"
+
+rem Validate the version argument BEFORE expanding it into paths and gh
+rem commands: a stray "1.0.0 & <cmd>" must fail here, not execute later.
+rem (Quoted set + delayed expansion keep special characters inert.)
+if "%~1"=="" goto :version_ok
+setlocal EnableDelayedExpansion
+set "ARG=%~1"
+echo(!ARG!|findstr /r /x /c:"[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*" >nul
+if errorlevel 1 (
+    endlocal
+    echo Invalid version argument. Expected digits-only MAJOR.MINOR.PATCH, e.g. 1.2.3
+    exit /b 1
+)
+endlocal
+:version_ok
 
 if not "%~1"=="" set "VERSION=%~1"
 if not "%~1"=="" set "ZIP_NAME=BooruDatasetTagManagerPlus-%VERSION%-win-x64.zip"

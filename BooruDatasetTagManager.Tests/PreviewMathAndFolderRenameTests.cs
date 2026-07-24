@@ -110,6 +110,22 @@ public sealed class DanbooruWikiExamplePostTests
         Assert.Equal(headerFirst, DanbooruWikiClient.TrimToIntroSection(headerFirst));
         Assert.Equal(string.Empty, DanbooruWikiClient.TrimToIntroSection(""));
     }
+
+    [Theory]
+    [InlineData("https://cdn.donmai.us/preview/ab/cd/abcd.jpg", true)]
+    [InlineData("https://danbooru.donmai.us/data/x.png", true)]
+    [InlineData("https://donmai.us/x.png", true)]
+    [InlineData("http://cdn.donmai.us/x.png", false)]
+    [InlineData("https://evil.example.com/x.png", false)]
+    [InlineData("https://donmai.us.evil.com/x.png", false)]
+    [InlineData("not a url", false)]
+    [InlineData(null, false)]
+    public void PreviewDownloadsOnlyAllowHttpsDanbooruHosts(string url, bool expected)
+    {
+        // NET-02: preview URLs come from API JSON and must not be able to
+        // point the client at arbitrary hosts or plain HTTP.
+        Assert.Equal(expected, DanbooruWikiClient.IsAllowedPreviewUrl(url));
+    }
 }
 
 public sealed class DatasetFolderRenameTests
@@ -146,6 +162,35 @@ public sealed class DatasetFolderRenameTests
         Assert.StartsWith(newDir, item.TextFilePath, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("1_renamed", manager.ActiveFolder);
         Assert.Equal(changedBefore, manager.IsDataSetChanged());
+    }
+
+    [Fact]
+    public void SetActiveFoldersScopesTheUnionOfSelectedFolders()
+    {
+        using var temp = new TemporaryDirectory();
+        CreateTaggedImage(Directory.CreateDirectory(Path.Combine(temp.Path, "1_alpha")).FullName, "a.png", "tag_a");
+        CreateTaggedImage(Directory.CreateDirectory(Path.Combine(temp.Path, "1_beta")).FullName, "b.png", "tag_b");
+        CreateTaggedImage(Directory.CreateDirectory(Path.Combine(temp.Path, "1_gamma")).FullName, "c.png", "tag_c");
+        var manager = new DatasetManager();
+        Assert.True(manager.LoadFromFolder(temp.Path, loadPreviewImages: false, readMetadata: false));
+
+        // Browser Ctrl/Shift folder multi-select: scope = union of the set,
+        // so the AllTags counts can follow the selection.
+        manager.SetActiveFolders(new[] { "1_alpha", "1_beta" });
+
+        Assert.Equal(2, manager.GetActiveScopeCount());
+        Assert.Equal("1_alpha", manager.ActiveFolder);
+        Assert.Equal(new[] { "1_alpha", "1_beta" }, manager.ActiveFolders);
+        Assert.Equal(
+            new[] { "a.png", "b.png" },
+            manager.GetScopedItems()
+                .Select(item => Path.GetFileName(item.ImageFilePath))
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray());
+
+        manager.SetActiveFolders(null);
+        Assert.Equal(3, manager.GetActiveScopeCount());
+        Assert.Null(manager.ActiveFolder);
     }
 
     [Fact]

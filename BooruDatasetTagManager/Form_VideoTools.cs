@@ -86,8 +86,13 @@ namespace BooruDatasetTagManager
             Text = "Video Tools";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.Sizable;
-            MinimumSize = new Size(1080, 820);
+            // Small screens (1366×768 laptops): let the window shrink below the
+            // designed layout and scroll instead of overflowing the desktop.
+            MinimumSize = new Size(760, 560);
+            AutoScroll = true;
+            AutoScrollMinSize = new Size(1080, 820);
             ClientSize = new Size(1180, 860);
+            CancelButton = buttonClose;
 
             splitMain.Dock = DockStyle.Fill;
             splitMain.Panel1.Controls.Add(panelPreview);
@@ -864,6 +869,10 @@ namespace BooruDatasetTagManager
             var errors = new List<string>();
             var extractedVideos = new List<string>();
             string imageFormat = comboImageFormat.SelectedItem?.ToString() ?? "png";
+            // Frames matching the output pattern that existed BEFORE this run:
+            // the post-run glob must not import leftovers of an earlier
+            // extraction (e.g. a previous 10fps pass) as if they were new.
+            var preexistingFrames = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
@@ -896,6 +905,9 @@ namespace BooruDatasetTagManager
                         }
                     }
 
+                    preexistingFrames[input] = new HashSet<string>(
+                        videoService.ListExtractedFrameFiles(input, imageFormat),
+                        StringComparer.OrdinalIgnoreCase);
                     var result = await videoService.ExtractFramesAsync(
                         input,
                         outputDir,
@@ -918,7 +930,12 @@ namespace BooruDatasetTagManager
                 {
                     var framePaths = new List<string>();
                     foreach (string video in extractedVideos)
-                        framePaths.AddRange(videoService.ListExtractedFrameFiles(video, imageFormat));
+                    {
+                        IEnumerable<string> frames = videoService.ListExtractedFrameFiles(video, imageFormat);
+                        if (preexistingFrames.TryGetValue(video, out HashSet<string> old))
+                            frames = frames.Where(path => !old.Contains(path));
+                        framePaths.AddRange(frames);
+                    }
 
                     if (framePaths.Count > 0)
                     {

@@ -206,7 +206,10 @@ namespace BooruDatasetTagManager
                 for (int i = 0; i < Rows.Count; i++)
                 {
                     var row = (MultiSelectDataRow)Rows[i];
-                    if (row.GetDataItem().Equals(dataItem) && row.GetTagIndex() > tagIndex && row.GetTagText() != textTag)
+                    // Every same-item row after the deleted one shifts down by one,
+                    // including other rows with the SAME text: excluding them left a
+                    // duplicate tag ('x','x','y') pointing one slot past its value.
+                    if (row.GetDataItem().Equals(dataItem) && row.GetTagIndex() > tagIndex)
                     {
                         row.SetTagIndex(row.GetTagIndex() - 1);
                     }

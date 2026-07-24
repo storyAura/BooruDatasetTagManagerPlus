@@ -25,6 +25,13 @@ namespace BooruDatasetTagManager
     public static class DatasetFolderIndex
     {
         /// <summary>
+        /// Explicit scope key for "images directly under the dataset root".
+        /// Distinct from null/"" (no scope, all images), so the root group can
+        /// be filtered on its own like any other folder (BROWSER-01a/d).
+        /// </summary>
+        public const string RootFolderKey = ".";
+
+        /// <summary>
         /// Relative folder of <paramref name="imagePath"/> under
         /// <paramref name="datasetRoot"/>, normalized to '/' separators.
         /// Returns an empty string for images directly in the root and for
@@ -56,9 +63,14 @@ namespace BooruDatasetTagManager
         {
             if (string.IsNullOrEmpty(relativeFolder))
                 return true;
+            string normalized = NormalizeRelative(relativeFolder);
+            if (normalized.Length == 0)
+                return true;
+            if (normalized == RootFolderKey)
+                return GetRelativeFolder(imagePath, datasetRoot).Length == 0;
             return string.Equals(
                 GetRelativeFolder(imagePath, datasetRoot),
-                NormalizeRelative(relativeFolder),
+                normalized,
                 StringComparison.OrdinalIgnoreCase);
         }
 

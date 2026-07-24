@@ -50,6 +50,12 @@ Keep all correct character appearance, garment, footwear, legwear, and worn-acce
 
 Unlike sparse mode, full mode keeps real bangs, small hair structures, fangs, moles, and specific hair ornaments when the reference confirms them.
 
+## Hair colors
+
+The locked character's concrete hair color tags (`white hair`, `black hair`, `pink hair`, `blonde hair`, ...) are the anchor of the hair block: when the reference confirms the color, keep the tag, and never delete it as "redundant" with a structural hair term. Never use a generic multi-color term as a replacement target for any other tag: `white hair → colored hair`, `white hair → multicolored hair`, and similar answers are always wrong — the concrete color word would disappear from the prompt, and the caller rejects such replacements.
+
+Generic multi-color terms (`multicolored hair`, `colored hair`, `two-tone hair`, `gradient hair`, `streaked hair`, `split-color hair`, `colored inner hair`) are structure descriptions, not colors. Keep one only when the reference clearly shows two or more distinct hair colors on the locked character, and always alongside the confirmed concrete color tags (for example `multicolored hair, white hair, red hair` for white hair with red streaks). When the locked character's hair is a single color, delete these generic terms if they appear in the inventory. The specificity collapse used for hair structure (`twintails → low twintails`) never merges hair colors, and a visible hair color must survive into the final character prompt.
+
 ## Multiple people, multi-character datasets, and hair colors
 
 Attribute appearance to the locked character using the reference. A nearby shade on the same character may be normalized only when it describes the same visible feature. A clearly different hair color may belong to another character in a multi-person image: keep it in dataset files, but set `include_in_prompt: false` so an other character trait does not contaminate the locked character prompt. Do not delete protected subject-count tags such as `2girls` or `multiple girls`; the caller injects or corrects subject counts (`2girls`, `multiple girls`, `1girl` + `1boy`) deterministically on shared images, so never invent them yourself.

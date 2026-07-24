@@ -87,12 +87,9 @@ namespace BooruDatasetTagManager
             replaceTransparentBackgroundToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             generateTagsWithAutoTaggerForAllImagesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             MenuOpenAiGenTagsForAllImages = new System.Windows.Forms.ToolStripMenuItem();
-            cropImagesWithMoondream2ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             backgroundRemovalWithRMBG20ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             debugToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            testSortingToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            openImageGridFormToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-            openManualCropToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            debugOpenLogToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             gridViewAllTags = new System.Windows.Forms.DataGridView();
             TagsColumn = new System.Windows.Forms.DataGridViewTextBoxColumn();
             TranslationColumn = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -247,7 +244,7 @@ namespace BooruDatasetTagManager
             gridViewTags.RowTemplate.Height = 29;
             gridViewTags.Size = new System.Drawing.Size(373, 614);
             gridViewTags.TabIndex = 2;
-            gridViewTags.TabStop = false;
+            gridViewTags.TabStop = true;
             gridViewTags.CellEndEdit += gridViewTags_CellEndEdit;
             gridViewTags.CellMouseEnter += dataGridViewTags_CellMouseEnter;
             gridViewTags.CellMouseLeave += dataGridViewTags_CellMouseLeave;
@@ -669,13 +666,6 @@ namespace BooruDatasetTagManager
             MenuOpenAiGenTagsForAllImages.Text = "Generate tags with OpenAI Compatibility Endpoints for all images";
             MenuOpenAiGenTagsForAllImages.Click += MenuOpenAiGenTagsForAllImages_Click;
             // 
-            // cropImagesWithMoondream2ToolStripMenuItem
-            // 
-            cropImagesWithMoondream2ToolStripMenuItem.Name = "cropImagesWithMoondream2ToolStripMenuItem";
-            cropImagesWithMoondream2ToolStripMenuItem.Size = new System.Drawing.Size(534, 26);
-            cropImagesWithMoondream2ToolStripMenuItem.Text = "Crop images with moondream2";
-            cropImagesWithMoondream2ToolStripMenuItem.Click += cropImagesWithMoondream2ToolStripMenuItem_Click;
-            // 
             // backgroundRemovalWithRMBG20ToolStripMenuItem
             // 
             backgroundRemovalWithRMBG20ToolStripMenuItem.Name = "backgroundRemovalWithRMBG20ToolStripMenuItem";
@@ -685,32 +675,18 @@ namespace BooruDatasetTagManager
             // 
             // debugToolStripMenuItem
             // 
-            debugToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { testSortingToolStripMenuItem, openImageGridFormToolStripMenuItem, openManualCropToolStripMenuItem });
+            debugToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { debugOpenLogToolStripMenuItem });
             debugToolStripMenuItem.Name = "debugToolStripMenuItem";
             debugToolStripMenuItem.Size = new System.Drawing.Size(68, 25);
             debugToolStripMenuItem.Text = "Debug";
             debugToolStripMenuItem.Visible = false;
-            // 
-            // testSortingToolStripMenuItem
-            // 
-            testSortingToolStripMenuItem.Name = "testSortingToolStripMenuItem";
-            testSortingToolStripMenuItem.Size = new System.Drawing.Size(233, 26);
-            testSortingToolStripMenuItem.Text = "Test Sorting";
-            testSortingToolStripMenuItem.Click += testSortingToolStripMenuItem_Click;
-            // 
-            // openImageGridFormToolStripMenuItem
-            // 
-            openImageGridFormToolStripMenuItem.Name = "openImageGridFormToolStripMenuItem";
-            openImageGridFormToolStripMenuItem.Size = new System.Drawing.Size(233, 26);
-            openImageGridFormToolStripMenuItem.Text = "Open ImageGrid form";
-            openImageGridFormToolStripMenuItem.Click += openImageGridFormToolStripMenuItem_Click;
-            // 
-            // openManualCropToolStripMenuItem
-            // 
-            openManualCropToolStripMenuItem.Name = "openManualCropToolStripMenuItem";
-            openManualCropToolStripMenuItem.Size = new System.Drawing.Size(233, 26);
-            openManualCropToolStripMenuItem.Text = "Open manual crop";
-            openManualCropToolStripMenuItem.Click += openManualCropToolStripMenuItem_Click;
+            //
+            // debugOpenLogToolStripMenuItem
+            //
+            debugOpenLogToolStripMenuItem.Name = "debugOpenLogToolStripMenuItem";
+            debugOpenLogToolStripMenuItem.Size = new System.Drawing.Size(233, 26);
+            debugOpenLogToolStripMenuItem.Text = "Open debug log";
+            debugOpenLogToolStripMenuItem.Click += debugOpenLogToolStripMenuItem_Click;
             // 
             // gridViewAllTags
             // 
@@ -743,7 +719,7 @@ namespace BooruDatasetTagManager
             gridViewAllTags.RowTemplate.ReadOnly = true;
             gridViewAllTags.Size = new System.Drawing.Size(352, 630);
             gridViewAllTags.TabIndex = 2;
-            gridViewAllTags.TabStop = false;
+            gridViewAllTags.TabStop = true;
             gridViewAllTags.CellDoubleClick += dataGridView2_CellDoubleClick;
             gridViewAllTags.SelectionChanged += gridViewAllTags_SelectionChanged;
             gridViewAllTags.Enter += gridView_Enter;
@@ -1716,7 +1692,7 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ToolStripButton btnAutoAddSelToImageTags;
         private System.Windows.Forms.ContextMenuStrip contextMenuImageGridHeader;
         private System.Windows.Forms.ToolStripMenuItem debugToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem testSortingToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem debugOpenLogToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator13;
         private System.Windows.Forms.ToolStripDropDownButton BtnMenuSorting;
         private System.Windows.Forms.ToolStripMenuItem BtnMenuSortNameAsc;
@@ -1725,7 +1701,6 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.DataGridViewTextBoxColumn TagsColumn;
         private System.Windows.Forms.DataGridViewTextBoxColumn TranslationColumn;
         private System.Windows.Forms.DataGridViewTextBoxColumn CountColumn;
-        private System.Windows.Forms.ToolStripMenuItem openImageGridFormToolStripMenuItem;
         private System.Windows.Forms.ToolStripButton BtnTagImageChecker;
         private System.Windows.Forms.ToolStrip toolStrip5;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator14;
@@ -1733,10 +1708,8 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ToolStripLabel toolStripLabelDSZoom;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator15;
         private System.Windows.Forms.ToolStripButton BtnDSChangeSelection;
-        private System.Windows.Forms.ToolStripMenuItem cropImagesWithMoondream2ToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem backgroundRemovalWithRMBG20ToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem removeBackgroundToolStripMenuItem;
-        private System.Windows.Forms.ToolStripMenuItem openManualCropToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem cropImageToolStripMenuItem;
         private System.Windows.Forms.ToolStripButton btnOpenAiAutoGetTagsDefSet;
         private System.Windows.Forms.ToolStripButton btnOpenAiAutoGetTagsOpenSet;

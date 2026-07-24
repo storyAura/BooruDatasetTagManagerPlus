@@ -18,6 +18,7 @@ namespace BooruDatasetTagManager
         {
             imgSorter = sorter;
             InitializeComponent();
+            ApplyLanguage();
             TableLayoutPanel rootPanel = new TableLayoutPanel();
             rootPanel.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
             rootPanel.Dock = DockStyle.Fill;
@@ -25,6 +26,13 @@ namespace BooruDatasetTagManager
             sorterElements = new Dictionary<string, Label>();
             CreateGrid(rootPanel, imgSorter.RootItem.Items, true);
         }
+        private void ApplyLanguage()
+        {
+            Text = I18n.GetText("SorterFormTitle");
+            toolStripButton2.Text = I18n.GetText("SorterStartCopying");
+            pasteToolStripMenuItem.Text = I18n.GetText("SorterPaste");
+        }
+
         private ImageSorter imgSorter;
         private Dictionary<string, Label> sorterElements;
         private string selectedElement;
@@ -204,20 +212,20 @@ namespace BooruDatasetTagManager
 
         private async void toolStripButton2_Click(object sender, EventArgs e)
         {
-            StatusLabel.Text = "Please wait, copying files...";
+            StatusLabel.Text = I18n.GetText("SorterStatusCopying");
             this.Enabled = false;
             try
             {
                 await imgSorter.StartCopyAsync();
                 if (imgSorter.LastCopyErrors.Count > 0)
                 {
-                    StatusLabel.Text = "Completed with errors";
+                    StatusLabel.Text = I18n.GetText("SorterStatusCompletedWithErrors");
                     MessageBox.Show(this, string.Join("\n", imgSorter.LastCopyErrors), Text,
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
                 else
                 {
-                    StatusLabel.Text = "Complete!";
+                    StatusLabel.Text = I18n.GetText("SorterStatusComplete");
                 }
                 listBoxFiles.Items.Clear();
             }

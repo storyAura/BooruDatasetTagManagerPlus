@@ -118,13 +118,9 @@ namespace UmaMusumeDBBrowser
                 ctrl.BackColor = scheme.TextBoxStyle.BackColor;
                 ctrl.ForeColor = scheme.TextBoxStyle.ForeColor;
             }
-            else if (ctrl is ColouredCheckedListBox)
-            {
-                ctrl.BackColor = scheme.ColoredCheckedListBoxStyle.BackColor;
-                ctrl.ForeColor = scheme.ColoredCheckedListBoxStyle.ForeColor;
-                ((ColouredCheckedListBox)ctrl).SupportedVideoColor = scheme.ColoredCheckedListBoxStyle.SupportedVideoColor;
-                ((ColouredCheckedListBox)ctrl).NotSupportedVideoColor = scheme.ColoredCheckedListBoxStyle.NotSupportedVideoColor;
-            }
+            // The ColouredCheckedListBox control left with the legacy
+            // AiApiServer settings form; ColoredCheckedListBoxStyle stays in
+            // the scheme data purely for JSON-file compatibility.
             else if (ctrl is ListBox || ctrl is CheckedListBox || ctrl is ComboBox)
             {
                 ctrl.BackColor = scheme.ComboAndListBoxStyle.BackColor;

@@ -164,7 +164,7 @@ namespace BooruDatasetTagManager
 
             string[] lines = ReadAllLines(data, Encoding.UTF8);
             if (!append)
-                Tags.Clear();
+                ClearDb(); // clearing only Tags left hashes/parentTags pointing at stale indices
             foreach (var item in lines)
             {
                 Match match = r.Match(item);

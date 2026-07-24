@@ -27,12 +27,21 @@ namespace BooruDatasetTagManager
 
         public string DatasetRoot { get; private set; } = string.Empty;
 
+        // Active sub-folder scope as a set ('/'-normalized paths relative to
+        // DatasetRoot; DatasetFolderIndex.RootFolderKey for root images).
+        // Empty = "all folders". Multi-entry sets come from Ctrl/Shift folder
+        // multi-select in the browser.
+        private IReadOnlyList<string> activeFolders = Array.Empty<string>();
+
         /// <summary>
-        /// Active sub-folder scope ('/'-normalized path relative to
-        /// <see cref="DatasetRoot"/>). Null or empty means "all folders".
-        /// Every filtered enumeration and the AllTags counts honor this scope.
+        /// Primary folder of the active scope (first of
+        /// <see cref="ActiveFolders"/>); null means "all folders". Every
+        /// filtered enumeration and the AllTags counts honor the scope.
         /// </summary>
-        public string ActiveFolder { get; private set; }
+        public string ActiveFolder => activeFolders.Count > 0 ? activeFolders[0] : null;
+
+        /// <summary>All folders of the active scope; empty means no scope.</summary>
+        public IReadOnlyList<string> ActiveFolders => activeFolders;
 
         // Order-independent signature of the key set at the last save/accept point.
         private long originalStructureSignature;
@@ -250,8 +259,14 @@ namespace BooruDatasetTagManager
         /// </summary>
         public bool IsInActiveScope(string imagePath)
         {
-            return string.IsNullOrEmpty(ActiveFolder)
-                || DatasetFolderIndex.IsInFolder(imagePath, DatasetRoot, ActiveFolder);
+            if (activeFolders.Count == 0)
+                return true;
+            foreach (string folder in activeFolders)
+            {
+                if (DatasetFolderIndex.IsInFolder(imagePath, DatasetRoot, folder))
+                    return true;
+            }
+            return false;
         }
 
         private IEnumerable<DataItem> ScopedItems()
@@ -271,7 +286,7 @@ namespace BooruDatasetTagManager
         /// <summary>Number of images inside the active folder scope.</summary>
         public int GetActiveScopeCount()
         {
-            return string.IsNullOrEmpty(ActiveFolder) ? DataSet.Count : ScopedItems().Count();
+            return activeFolders.Count == 0 ? DataSet.Count : ScopedItems().Count();
         }
 
         /// <summary>Items inside the active folder scope (audit tools use this
@@ -288,8 +303,21 @@ namespace BooruDatasetTagManager
         /// </summary>
         public void SetActiveFolder(string relativeFolder)
         {
-            string normalized = DatasetFolderIndex.NormalizeRelative(relativeFolder);
-            ActiveFolder = normalized.Length == 0 ? null : normalized;
+            SetActiveFolders(relativeFolder == null ? null : new[] { relativeFolder });
+        }
+
+        /// <summary>
+        /// Multi-folder variant of <see cref="SetActiveFolder"/>: the scope
+        /// becomes the union of the given folders (browser Ctrl/Shift
+        /// multi-select), so the AllTags counts follow the selection.
+        /// </summary>
+        public void SetActiveFolders(IEnumerable<string> relativeFolders)
+        {
+            activeFolders = (relativeFolders ?? Enumerable.Empty<string>())
+                .Select(DatasetFolderIndex.NormalizeRelative)
+                .Where(folder => folder.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
             RebuildAllTagsForScope();
         }
 
@@ -355,13 +383,19 @@ namespace BooruDatasetTagManager
                 DataSet[newPath] = item;
             }
 
-            if (!string.IsNullOrEmpty(ActiveFolder))
+            if (activeFolders.Count > 0)
             {
-                string active = DatasetFolderIndex.NormalizeRelative(ActiveFolder);
-                if (string.Equals(active, normalized, StringComparison.OrdinalIgnoreCase))
-                    ActiveFolder = newRelative;
-                else if (active.StartsWith(normalized + "/", StringComparison.OrdinalIgnoreCase))
-                    ActiveFolder = newRelative + active.Substring(normalized.Length);
+                activeFolders = activeFolders
+                    .Select(folder =>
+                    {
+                        string active = DatasetFolderIndex.NormalizeRelative(folder);
+                        if (string.Equals(active, normalized, StringComparison.OrdinalIgnoreCase))
+                            return newRelative;
+                        if (active.StartsWith(normalized + "/", StringComparison.OrdinalIgnoreCase))
+                            return newRelative + active.Substring(normalized.Length);
+                        return folder;
+                    })
+                    .ToList();
             }
 
             // The rename changed every key, but nothing needs saving because
@@ -788,7 +822,7 @@ namespace BooruDatasetTagManager
             LastLoadErrors.Clear();
             // A fresh load always starts unscoped; the previous dataset's folder
             // selection must not silently filter the new one.
-            ActiveFolder = null;
+            activeFolders = Array.Empty<string>();
             CharacterTagFileTransaction.RecoverIncompleteAsync(folder).GetAwaiter().GetResult();
             List<string> allowedExt = new List<string>();
             allowedExt.AddRange(Extensions.ImageExtensions);
@@ -805,6 +839,11 @@ namespace BooruDatasetTagManager
                 return false;
             int imgSize = Program.Settings.PreviewSize;
             int progress = 0;
+            // Batch the AllTags population: outside a bulk mutation every tag
+            // does a sorted insert (O(U) shift each → O(U²) for the first
+            // load); inside, AddTag appends O(1) and the list sorts once at
+            // the end of the batch.
+            ExecuteBulkMutation(() =>
             imgs.AsParallel()
                 // Half the cores: full-width parallel decode of large images
                 // spikes memory (each worker holds a full-resolution frame) and
@@ -834,7 +873,7 @@ namespace BooruDatasetTagManager
                 // Throttle: one event per image was a cross-thread UI storm.
                 if (current % 32 == 0 || current == imgs.Length)
                     LoadingProgressChanged?.Invoke(current, imgs.Length);
-            });
+            }));
             if (DataSet.IsEmpty)
                 return false;
             DatasetRoot = Path.GetFullPath(folder)

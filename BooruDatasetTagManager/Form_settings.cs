@@ -35,6 +35,7 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ComboBox comboBoxImageEditorSaveMode;
         private System.Windows.Forms.Label labelAllTagsDoubleClick;
         private System.Windows.Forms.ComboBox comboBoxAllTagsDoubleClick;
+        private System.Windows.Forms.CheckBox checkBoxDebugMode;
 
         // Double-click quick action of the All Tags grid; lives on the General
         // tab below the auto-sort checkbox. Positions derive from the already
@@ -57,6 +58,17 @@ namespace BooruDatasetTagManager
             };
             tabGeneral.Controls.Add(labelAllTagsDoubleClick);
             tabGeneral.Controls.Add(comboBoxAllTagsDoubleClick);
+            // Debug-mode toggle (Debug menu + debug.log), one row further down.
+            // Same rule as above: positions derive from already-scaled designer
+            // controls because runtime controls skip WinForms auto-scaling.
+            checkBoxDebugMode = new System.Windows.Forms.CheckBox
+            {
+                AutoSize = true,
+                Location = new System.Drawing.Point(LabelAutocompMode.Left,
+                    rowTop + comboAutocompMode.Height + comboAutocompMode.Height / 2),
+                Name = "checkBoxDebugMode"
+            };
+            tabGeneral.Controls.Add(checkBoxDebugMode);
         }
 
         // Default save behavior of the image editor; lives on the UI tab below
@@ -158,6 +170,7 @@ namespace BooruDatasetTagManager
             AutoSortCheckBox.Checked = Program.Settings.AutoSort;
             comboBoxAllTagsDoubleClick.Items.AddRange(Extensions.GetFriendlyEnumValues<AllTagsQuickAction>());
             comboBoxAllTagsDoubleClick.SelectedIndex = Extensions.GetEnumIndexFromValue<AllTagsQuickAction>(Program.Settings.AllTagsDoubleClickAction.ToString());
+            checkBoxDebugMode.Checked = Program.Settings.DebugMode;
             //UI
             checkBoxCacheImages.Checked = Program.Settings.CacheOpenImages;
             comboBoxImageEditorSaveMode.SelectedIndex = Math.Clamp(
@@ -216,6 +229,7 @@ namespace BooruDatasetTagManager
             Program.Settings.AutoSort = AutoSortCheckBox.Checked;
             if (comboBoxAllTagsDoubleClick.SelectedItem is string quickActionText)
                 Program.Settings.AllTagsDoubleClickAction = Extensions.GetEnumItemFromFriendlyText<AllTagsQuickAction>(quickActionText);
+            Program.Settings.DebugMode = checkBoxDebugMode.Checked;
             //UI
             Program.Settings.CacheOpenImages = checkBoxCacheImages.Checked;
             Program.Settings.ImageEditorSaveMode = (ImageEditorSaveMode)Math.Max(0, comboBoxImageEditorSaveMode.SelectedIndex);
@@ -239,6 +253,13 @@ namespace BooruDatasetTagManager
                 }
             }
             Program.Settings.SaveSettings();
+            if (SecretProtector.ProtectFailureOccurred)
+            {
+                // The key was stored, but as plaintext: the user must know the
+                // encryption fallback kicked in rather than assume it's secure.
+                MessageBox.Show(this, I18n.GetText("TipApiKeyEncryptFailed"), Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             ReloadTranslationManager();
             DialogResult = DialogResult.OK;
         }
@@ -304,7 +325,8 @@ namespace BooruDatasetTagManager
                 {
                     // The WinForms TextBox needs CRLF line breaks; localized text
                     // and GitHub release bodies may carry bare LF.
-                    string infoText = string.Format(I18n.GetText("TipUpdateNewVersion"), check.LatestTag, check.ReleaseNotes)
+                    string localizedNotes = ReleaseNotesLocalizer.SelectSection(check.ReleaseNotes, Program.Settings.Language);
+                    string infoText = string.Format(I18n.GetText("TipUpdateNewVersion"), check.LatestTag, localizedNotes)
                         .Replace("\r\n", "\n").Replace("\n", "\r\n");
                     updateInfo.SetText(infoText);
                     if (updateInfo.ShowDialog(this) != DialogResult.OK)
@@ -322,7 +344,7 @@ namespace BooruDatasetTagManager
                 string downloadedPath;
                 try
                 {
-                    downloadedPath = await UpdateChecker.DownloadReleaseAssetAsync(check.ZipAssetUrl, check.ZipAssetName, progress);
+                    downloadedPath = await UpdateChecker.DownloadReleaseAssetAsync(check.ZipAssetUrl, check.ZipAssetName, progress, check.ZipAssetDigest);
                 }
                 catch (Exception ex)
                 {
@@ -391,6 +413,7 @@ namespace BooruDatasetTagManager
             CheckAskChange.Text = I18n.GetText("SettingPromptToSave");
             checkBoxFixOnLoad.Text = I18n.GetText("SettingFixTagLoad");
             AutoSortCheckBox.Text = I18n.GetText("SettingAutoSortCheck");
+            checkBoxDebugMode.Text = I18n.GetText("SettingDebugMode");
             BtnSave.Text = I18n.GetText("SettingBtnSave");
             BtnCancel.Text = I18n.GetText("SettingBtnCancel");
             BtnCheckUpdate.Text = I18n.GetText("SettingBtnCheckUpdate");

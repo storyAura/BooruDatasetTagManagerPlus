@@ -67,6 +67,8 @@ namespace BooruDatasetTagManager
         public bool MatchCharacterTags { get; set; } = true;
         // Category-grouped ordering of the all-tags list (off = alphabetical).
         public bool AllTagsCategorySort { get; set; } = false;
+        // Shows the Debug menu and enables DebugLog output (debug.log).
+        public bool DebugMode { get; set; } = false;
         // Dataset grid columns hidden by default; the header right-click menu
         // toggles them and persists here. Replace (not append) on deserialize.
         [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
@@ -126,6 +128,24 @@ namespace BooruDatasetTagManager
             get => SecretProtector.Protect(HuggingFaceToken);
             set => HuggingFaceToken = SecretProtector.Unprotect(value);
         }
+        // LLM API site profiles (endpoint + rotating keys + per-site models).
+        // The active one is mirrored into OpenAiAutoTagger's flat fields on
+        // save, so every existing consumer keeps reading those.
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public List<LlmApiProfile> LlmApiProfiles { get; set; } = new List<LlmApiProfile>();
+        public int LlmApiProfileIndex { get; set; }
+
+        /// <summary>API keys of the active profile (legacy flat key as fallback).</summary>
+        public IReadOnlyList<string> GetActiveLlmApiKeys()
+        {
+            if (LlmApiProfiles != null && LlmApiProfiles.Count > 0)
+            {
+                int index = LlmApiProfileLogic.ClampIndex(LlmApiProfileIndex, LlmApiProfiles.Count);
+                return LlmApiProfileLogic.SanitizeTokens(LlmApiProfiles[index].Tokens);
+            }
+            return LlmApiProfileLogic.SanitizeTokens(new[] { OpenAiAutoTagger?.ApiKey });
+        }
+
         public string AiServerSetPromptTemplate { get; set; } = AiPromptTemplateCatalog.DanbooruTag;
         public string AiServerSetPromptTemplateId { get; set; } = AiPromptTemplateCatalog.DanbooruTagId;
         public List<AiPromptTemplateSettings> AiServerSetPromptTemplates { get; set; } =
@@ -232,6 +252,7 @@ namespace BooruDatasetTagManager
                 DatasetPreviewExpanded = tempSettings.DatasetPreviewExpanded;
                 MatchCharacterTags = tempSettings.MatchCharacterTags;
                 AllTagsCategorySort = tempSettings.AllTagsCategorySort;
+                DebugMode = tempSettings.DebugMode;
                 DatasetHiddenColumns = tempSettings.DatasetHiddenColumns ?? GetDefaultDatasetHiddenColumns();
                 LoadSettingsLoadPreviewImages = tempSettings.LoadSettingsLoadPreviewImages;
                 LoadSettingsReadMetadata = tempSettings.LoadSettingsReadMetadata;
@@ -279,6 +300,9 @@ namespace BooruDatasetTagManager
                 }
                 if (string.IsNullOrWhiteSpace(OpenAiAutoTagger.VisionModel))
                     OpenAiAutoTagger.VisionModel = OpenAiAutoTagger.Model ?? string.Empty;
+                LlmApiProfiles = tempSettings.LlmApiProfiles ?? new List<LlmApiProfile>();
+                LlmApiProfileIndex = tempSettings.LlmApiProfileIndex;
+                LlmApiProfileLogic.EnsureLegacyProfile(this);
                 AiPromptTemplateLibrary promptLibrary = AiPromptTemplateLibrary.Create(
                     tempSettings.AiServerSetPromptTemplates,
                     tempSettings.AiServerSetPromptTemplateId,

@@ -22,6 +22,8 @@ namespace BooruDatasetTagManager
         public DateTime created_at { get; set; }
         public DateTime updated_at { get; set; }
         public string browser_download_url { get; set; }
+        // GitHub reports "sha256:<hex>" for release assets; null on old releases.
+        public string digest { get; set; }
     }
 
     public class Author

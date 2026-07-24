@@ -156,6 +156,8 @@ namespace BooruDatasetTagManager
             buttonRun.Click += async (_, _) => await RunJobAsync().ConfigureAwait(true);
             buttonCancelJob.Click += (_, _) => jobCancellation?.Cancel();
             buttonClose.Click += (_, _) => Close();
+            // Esc closes (deferred while a job runs, via FormClosing).
+            CancelButton = buttonClose;
 
             Shown += (_, _) =>
             {
@@ -887,6 +889,21 @@ namespace BooruDatasetTagManager
                 // The service already deleted the bad file(s) and localized the
                 // message; just propagate.
                 throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // User cancel says nothing about the files: keep the download.
+                throw;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException
+                or EntryPointNotFoundException
+                or BadImageFormatException
+                or FileNotFoundException)
+            {
+                // Environment problems (missing/incompatible native runtime,
+                // missing file): deleting the cached download cannot fix these,
+                // so keep it and surface the real error.
+                throw new InvalidOperationException(ex.Message, ex);
             }
             catch (Exception ex)
             {

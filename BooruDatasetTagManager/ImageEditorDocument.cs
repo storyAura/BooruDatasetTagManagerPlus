@@ -12,9 +12,11 @@ namespace BooruDatasetTagManager
     /// </summary>
     public sealed class ImageEditorDocument : IDisposable
     {
-        // Full-bitmap snapshots: at ~4 bytes/pixel this bounds worst-case memory
-        // while still covering a normal editing session.
+        // Full-bitmap snapshots at ~4 bytes/pixel. Steps alone are no bound —
+        // 15 clones of a 24MP image is ~1.4GB — so a byte budget trims the
+        // oldest snapshots first, always keeping at least one so undo works.
         private const int MaxUndoSteps = 15;
+        private const long MaxUndoBytes = 512L * 1024 * 1024;
 
         private readonly List<Snapshot> undoStack = new List<Snapshot>();
         private readonly List<Snapshot> redoStack = new List<Snapshot>();
@@ -123,7 +125,10 @@ namespace BooruDatasetTagManager
         private void PushUndo()
         {
             undoStack.Add(new Snapshot((Bitmap)Image.Clone(), currentRevision));
-            if (undoStack.Count > MaxUndoSteps)
+            // ponytail: budget covers the undo stack only; redo holds at most
+            // what Undo moved over and is cleared on the next edit.
+            while (undoStack.Count > MaxUndoSteps
+                || (undoStack.Count > 1 && TotalUndoBytes() > MaxUndoBytes))
             {
                 undoStack[0].Dispose();
                 undoStack.RemoveAt(0);
@@ -132,6 +137,14 @@ namespace BooruDatasetTagManager
                 snapshot.Dispose();
             redoStack.Clear();
             currentRevision = ++revisionCounter;
+        }
+
+        private long TotalUndoBytes()
+        {
+            long total = 0;
+            foreach (Snapshot snapshot in undoStack)
+                total += snapshot.Bytes;
+            return total;
         }
 
         public void Dispose()
@@ -152,10 +165,14 @@ namespace BooruDatasetTagManager
             {
                 Bitmap = bitmap;
                 Revision = revision;
+                // Cached at creation: the budget check must not touch a
+                // possibly-disposed bitmap later.
+                Bytes = bitmap == null ? 0 : 4L * bitmap.Width * bitmap.Height;
             }
 
             public Bitmap Bitmap { get; }
             public int Revision { get; }
+            public long Bytes { get; }
 
             public void Dispose() => Bitmap?.Dispose();
         }

@@ -1,6 +1,7 @@
 using Newtonsoft.Json.Linq;
 using System;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace BooruDatasetTagManager
@@ -19,7 +20,7 @@ namespace BooruDatasetTagManager
             this.client.DefaultRequestHeaders.UserAgent.ParseAdd("BooruDatasetTagManager/1.0");
         }
 
-        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
@@ -29,7 +30,7 @@ namespace BooruDatasetTagManager
                 + "&langpair="
                 + Uri.EscapeDataString(fromLang + "|" + NormalizeLanguage(toLang));
 
-            string json = await client.GetStringAsync(url).ConfigureAwait(false);
+            string json = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             JObject root = JObject.Parse(json);
             int status = root.Value<int?>("responseStatus") ?? 0;
             if (status != 200)

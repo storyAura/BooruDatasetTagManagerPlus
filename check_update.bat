@@ -2,6 +2,7 @@
 setlocal EnableExtensions
 chcp 65001 >nul
 cd /d "%~dp0"
+set "EXITCODE=0"
 
 echo ================================================
 echo  BooruDatasetTagManagerPlus - Check for updates
@@ -18,6 +19,7 @@ where git >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Source checkout detected but git is not on PATH.
     echo         Install Git from https://git-scm.com/ and retry.
+    set "EXITCODE=1"
     goto :done
 )
 echo Source checkout detected. Running "git pull --ff-only"...
@@ -26,6 +28,7 @@ git pull --ff-only
 if errorlevel 1 (
     echo.
     echo [WARN] git pull failed. Resolve local changes or branch divergence manually.
+    set "EXITCODE=1"
 )
 goto :done
 
@@ -45,8 +48,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Write-Host ('Latest release: ' + $tag);" ^
   "if ($remote -le $local) { Write-Host ''; Write-Host 'Already up to date.'; exit 0 };" ^
   "$asset = $rel.assets | Where-Object { $_.name -like '*win-x64*.zip' } | Select-Object -First 1;" ^
-  "if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1 };" ^
-  "if (-not $asset) { Write-Host ('No zip asset found; open: ' + $rel.html_url); exit 1 };" ^
+  "if (-not $asset) { Write-Host ('No win-x64 zip asset found; open: ' + $rel.html_url); exit 1 };" ^
   "$out = Join-Path (Get-Location) $asset.name;" ^
   "Write-Host ('Downloading ' + $asset.name + ' (' + [math]::Round($asset.size / 1MB, 1) + ' MB)...');" ^
   "Invoke-WebRequest -Uri $asset.browser_download_url -OutFile ($out + '.partial') -UseBasicParsing;" ^
@@ -58,10 +60,12 @@ if errorlevel 1 (
     echo.
     echo [WARN] Update check or download failed. Visit:
     echo        https://github.com/storyAura/BooruDatasetTagManagerPlus/releases
+    set "EXITCODE=1"
 )
 goto :done
 
 :done
 echo.
 pause
-exit /b
+rem Propagate failure to callers/CI instead of always exiting 0.
+exit /b %EXITCODE%

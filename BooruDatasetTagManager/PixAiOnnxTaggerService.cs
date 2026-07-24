@@ -86,7 +86,19 @@ namespace BooruDatasetTagManager
                 labels = PixAiSelectedTagsCsvLoader.Load(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "selected_tags.csv"));
                 LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "thresholds.csv"));
                 LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "preprocess.json"));
-                session = CreateSession(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx"));
+                string modelPath = HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx");
+                try
+                {
+                    session = CreateSession(modelPath);
+                }
+                catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
+                {
+                    // A DirectML session can fail for device/driver reasons that
+                    // say nothing about the file on disk: retry on CPU before
+                    // the outer handler declares the model corrupt and purges
+                    // the cached download.
+                    session = CreateSession(modelPath, forceCpu: true);
+                }
                 ConfigureSessionMetadata(session);
             }
             catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
@@ -163,10 +175,13 @@ namespace BooruDatasetTagManager
 
             foreach (string preferred in PreferredOutputNames)
             {
-                if (!outputNames.Any(name => string.Equals(name, preferred, StringComparison.OrdinalIgnoreCase)))
+                // Return the model's real key, not the preferred constant: ORT
+                // name lookup is case-sensitive.
+                string match = outputNames.FirstOrDefault(name => string.Equals(name, preferred, StringComparison.OrdinalIgnoreCase));
+                if (match == null)
                     continue;
 
-                return (resolvedInput, preferred, string.Equals(preferred, "logits", StringComparison.OrdinalIgnoreCase));
+                return (resolvedInput, match, string.Equals(preferred, "logits", StringComparison.OrdinalIgnoreCase));
             }
 
             string available = string.Join(", ", outputNames);
@@ -250,7 +265,9 @@ namespace BooruDatasetTagManager
 
         private static InferenceSession CreateSession(string modelPath, bool forceCpu, out bool usesDirectMl)
         {
-            var options = new SessionOptions
+            // Disposed once the session is constructed: ORT copies what it
+            // needs, and each leaked SessionOptions held a native handle.
+            using var options = new SessionOptions
             {
                 GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
             };
@@ -393,8 +410,9 @@ namespace BooruDatasetTagManager
     {
         public static DenseTensor<float> CreateInputTensor(Image source, int width, int height)
         {
-            using Bitmap rgb = EnsureRgbOnWhite(source);
-            using Bitmap resized = Resize(rgb, width, height);
+            // Resize() clears the canvas white first, so alpha composites
+            // correctly without a separate full-size RGB pass.
+            using Bitmap resized = Resize(source, width, height);
             var tensor = new DenseTensor<float>(new[] { 1, 3, height, width });
             BitmapData data = resized.LockBits(
                 new Rectangle(0, 0, width, height),
@@ -424,21 +442,6 @@ namespace BooruDatasetTagManager
             }
 
             return tensor;
-        }
-
-        private static Bitmap EnsureRgbOnWhite(Image source)
-        {
-            if (source.PixelFormat == PixelFormat.Format24bppRgb)
-                return new Bitmap(source);
-
-            var bitmap = new Bitmap(source.Width, source.Height, PixelFormat.Format24bppRgb);
-            using (Graphics graphics = Graphics.FromImage(bitmap))
-            {
-                graphics.Clear(Color.White);
-                graphics.DrawImage(source, 0, 0, source.Width, source.Height);
-            }
-
-            return bitmap;
         }
 
         private static Bitmap Resize(Image source, int width, int height)

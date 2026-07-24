@@ -78,7 +78,9 @@ namespace BooruDatasetTagManager
             if (exactLookup.TryGetValue(normalized, out string englishTag))
                 return englishTag;
 
-            return input;
+            // Typed 译名 of a catalog character resolves to its character tag.
+            string characterTag = Program.CharacterTagLookup?.ResolveByName(input);
+            return characterTag ?? input;
         }
 
         public string GetChineseNameForEnglishTag(string tag, string language)
@@ -178,6 +180,19 @@ namespace BooruDatasetTagManager
             var countsByTag = result
                 .GroupBy(item => item.GetTag(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.Max(item => item.Count), StringComparer.OrdinalIgnoreCase);
+
+            // English tags known only to the dictionary become completable
+            // items too, so English typing works even when the user has no
+            // Tags/*.csv autocomplete files (empty TagsDB).
+            foreach (var entry in entries)
+            {
+                if (!existingNames.Add(entry.EnglishTag))
+                    continue;
+                countsByTag.TryGetValue(entry.EnglishTag, out int count);
+                var englishItem = CreateTagItem(entry.EnglishTag, count);
+                englishItem.AutocompleteDisplayText = $"{entry.EnglishTag} ({entry.ChineseNames[0]})";
+                result.Add(englishItem);
+            }
 
             foreach (var entry in entries)
             {

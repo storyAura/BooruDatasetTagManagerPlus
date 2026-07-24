@@ -291,6 +291,21 @@ namespace BooruDatasetTagManager
                         }
                     }
                 }
+                // Character catalog completion: English input matches character
+                // tags, Chinese input matches the primary translated names
+                // (译名). Appended after the regular matches; tags already
+                // matched above are skipped.
+                TagsDB.TagItem[] characterMatches =
+                    Program.CharacterTagLookup?.SearchAutocomplete(word) ?? Array.Empty<TagsDB.TagItem>();
+                if (characterMatches.Length > 0)
+                {
+                    var seenTags = new HashSet<string>(
+                        (matches ?? Array.Empty<TagsDB.TagItem>()).Select(item => item.GetTag()),
+                        StringComparer.OrdinalIgnoreCase);
+                    matches = (matches ?? Array.Empty<TagsDB.TagItem>())
+                        .Concat(characterMatches.Where(item => seenTags.Add(item.GetTag())))
+                        .ToArray();
+                }
                 if (matches != null && matches.Length > 0)
                 {
                     ShowListBox();

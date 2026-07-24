@@ -156,8 +156,21 @@ namespace BooruDatasetTagManager
 
         private static bool TryValidateManifest(string root, TransactionManifest manifest, out string error)
         {
+            // "Entries": null and [null] are legal JSON: they must fail
+            // validation (→ quarantine) instead of NRE-ing out of the
+            // recovery pass and blocking the whole dataset load.
+            if (manifest.Entries == null)
+            {
+                error = "manifest has no entries list";
+                return false;
+            }
             foreach (TransactionEntry entry in manifest.Entries)
             {
+                if (entry == null)
+                {
+                    error = "manifest contains a null entry";
+                    return false;
+                }
                 if (string.IsNullOrWhiteSpace(entry.TargetPath))
                 {
                     error = "manifest entry has an empty target path";

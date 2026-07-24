@@ -33,10 +33,7 @@ namespace BooruDatasetTagManager
             {
                 try
                 {
-                    Program.OpenAiAutoTagger = new AiOpenAiClient(
-                        Program.Settings.OpenAiAutoTagger.ConnectionAddress,
-                        string.IsNullOrWhiteSpace(Program.Settings.OpenAiAutoTagger.ApiKey) ? "not-required" : Program.Settings.OpenAiAutoTagger.ApiKey,
-                        Program.Settings.OpenAiAutoTagger.RequestTimeout);
+                    Program.OpenAiAutoTagger = AiOpenAiClient.CreateFromSettings(Program.Settings);
                 }
                 catch
                 {
@@ -90,15 +87,23 @@ namespace BooruDatasetTagManager
 
         private async void ConnectRechecker_Tick(object sender, EventArgs e)
         {
+            // Stop before awaiting: ticks keep firing while ConnectAsync is
+            // still pending, stacking concurrent probes and duplicate Load calls.
+            connectRechecker.Stop();
             var connetionResult = await Program.OpenAiAutoTagger.ConnectAsync();
+            if (IsDisposed)
+                return;
             if (connetionResult.Result)
             {
                 if (Controls.ContainsKey("errorLabel"))
                 {
                     Controls.RemoveByKey("errorLabel");
                 }
-                connectRechecker.Stop();
                 Form_AutoTaggerOpenAiSettings_Load(sender, e);
+            }
+            else
+            {
+                connectRechecker.Start();
             }
         }
 

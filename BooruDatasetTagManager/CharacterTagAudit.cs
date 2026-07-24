@@ -139,6 +139,29 @@ namespace BooruDatasetTagManager
                 && replacementTag.IndexOfAny(new[] { ',', '\r', '\n' }) < 0
                 && !replacementTag.Any(char.IsControl);
         }
+
+        // Generic multi-color hair terms are structure descriptions, not colors.
+        // They must never be the replacement TARGET of a non-generic tag:
+        // "white hair -> colored hair" silently drops the concrete color from
+        // the prompt. They stay legal as pre-existing tags (a genuinely
+        // multi-colored character keeps "multicolored hair" beside its colors)
+        // and may normalize among themselves ("streaked hair -> multicolored hair").
+        private static readonly HashSet<string> GenericHairColorTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "colored hair", "multicolored hair", "two-tone hair", "two tone hair",
+            "gradient hair", "streaked hair", "split-color hair", "split color hair",
+            "colored inner hair", "rainbow hair"
+        };
+
+        public static bool IsGenericHairColorTag(string tag)
+        {
+            return !string.IsNullOrWhiteSpace(tag) && GenericHairColorTags.Contains(tag.Trim());
+        }
+
+        public static bool IsForbiddenGenericHairReplacement(string sourceTag, string replacementTag)
+        {
+            return IsGenericHairColorTag(replacementTag) && !IsGenericHairColorTag(sourceTag);
+        }
     }
 
     public sealed class CharacterTagAuditItem
@@ -805,6 +828,14 @@ namespace BooruDatasetTagManager
                     }
                     if ((decision == CharacterTagDecision.Delete || decision == CharacterTagDecision.Replace)
                         && !CharacterTagAuditPolicy.CanDelete(category))
+                    {
+                        decision = CharacterTagDecision.Keep;
+                        replacementTag = string.Empty;
+                    }
+                    // "white hair -> colored hair" style answers drop the
+                    // concrete hair color; force them back to Keep.
+                    if (decision == CharacterTagDecision.Replace
+                        && CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement(tag, replacementTag))
                     {
                         decision = CharacterTagDecision.Keep;
                         replacementTag = string.Empty;

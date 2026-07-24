@@ -469,6 +469,10 @@ namespace BooruDatasetTagManager
         {
             if (oldTag == newTag)
                 return;
+            // A cell edit abandoned by a grid rebind leaves its
+            // IEditableObject transaction open, and the Tag setter then skips
+            // the _tags sync. Commit dangling transactions before mutating.
+            EndEdit();
             int index = IndexOf(oldTag);
             if (index != -1)
             {
@@ -524,6 +528,10 @@ namespace BooruDatasetTagManager
 
             if (tagsToRemove.Count == 0)
                 return;
+
+            // Same dangling-transaction guard as ReplaceTag: keep the text
+            // mirror trustworthy before bulk-removing by tag text.
+            EndEdit();
 
             bool previousStoreHistory = isStoreHistory;
             isStoreHistory = storeHistory;
@@ -709,26 +717,59 @@ namespace BooruDatasetTagManager
             }
             if (!CheckSyncLists())
             {
+                // Throwing here used to make things WORSE: the exception
+                // unwound through CollectionBase.RemoveAt, whose rollback
+                // re-inserts the removed item into the OBJECT list only, so
+                // the two lists also diverged in length and every later edit
+                // crashed. The object list is the source of truth (saves
+                // serialize it), so dump diagnostics and rebuild the text
+                // mirror instead of failing the mutation.
                 CreateDataForDebug();
-                throw new InvalidAsynchronousStateException("List desynchronization detected!\nPlease post the file \""+Path.Combine(Program.AppPath, "ErrorData.json") +"\" in the topic\nhttps://github.com/storyAura/BooruDatasetTagManagerPlus/discussions");
+                ResyncTextTagsFromList();
+            }
+        }
+
+        /// <summary>Rebuilds the _tags mirror and its count map from the
+        /// object list after a detected desynchronization.</summary>
+        private void ResyncTextTagsFromList()
+        {
+            _tags.Clear();
+            _tagCounts.Clear();
+            foreach (EditableTag tag in List)
+            {
+                _tags.Add(tag.Tag);
+                TagCountAdd(tag.Tag);
             }
         }
 
         private void CreateDataForDebug()
         {
-            ListsDebugInfo info = new ListsDebugInfo();
-            for (int i = 0; i < InnerList.Count; i++)
+            System.Diagnostics.Trace.WriteLine(
+                "EditableTagList: list desynchronization detected — repairing the text mirror (ErrorData.json written).");
+            try
             {
-                string tag = ((EditableTag)InnerList[i]).Tag == null ? "NULL" : ((EditableTag)InnerList[i]).Tag;
-                info.EditableList.Add(tag);
+                ListsDebugInfo info = new ListsDebugInfo();
+                for (int i = 0; i < InnerList.Count; i++)
+                {
+                    string tag = ((EditableTag)InnerList[i]).Tag == null ? "NULL" : ((EditableTag)InnerList[i]).Tag;
+                    info.EditableList.Add(tag);
+                }
+                for (int i = 0; i < _tags.Count; i++)
+                {
+                    string tag = _tags[i] == null ? "NULL" : _tags[i];
+                    info.TextList.Add(tag);
+                }
+                info.History = History;
+                // Write next to the executable (the old relative path landed in
+                // whatever the current directory happened to be).
+                File.WriteAllText(Path.Combine(Program.AppPath, "ErrorData.json"),
+                    JsonConvert.SerializeObject(info, Formatting.Indented));
             }
-            for (int i = 0; i < _tags.Count; i++)
+            catch (Exception ex)
             {
-                string tag = _tags[i] == null ? "NULL" : _tags[i];
-                info.TextList.Add(tag);
+                // Diagnostics must never take down the repair itself.
+                System.Diagnostics.Trace.WriteLine("EditableTagList: debug dump failed: " + ex.Message);
             }
-            info.History = History;
-            File.WriteAllText("ErrorData.json", JsonConvert.SerializeObject(info, Formatting.Indented));
         }
 
         public class ListsDebugInfo
@@ -870,6 +911,10 @@ namespace BooruDatasetTagManager
         {
 
             int index = List.IndexOf(tag);
+            // A tag with a stale Parent (removed from the list, reference kept
+            // elsewhere) must not index the mirror with -1.
+            if (index < 0)
+                return;
             if (_tags[index] != tag.Tag)
                 TagsListChanged?.Invoke(this, _tags[index], tag.Tag, ListChangedType.ItemChanged);
             _tags[index] = tag.Tag;

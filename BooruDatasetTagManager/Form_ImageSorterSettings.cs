@@ -18,6 +18,22 @@ namespace BooruDatasetTagManager
         public Form_ImageSorterSettings()
         {
             InitializeComponent();
+            ApplyLanguage();
+        }
+
+        private void ApplyLanguage()
+        {
+            Text = I18n.GetText("SorterSettingsFormTitle");
+            label1.Text = I18n.GetText("SorterOutputDirectory");
+            groupBox1.Text = I18n.GetText("SorterAddingItem");
+            button2.Text = I18n.GetText("SorterAdd");
+            checkBox1.Text = I18n.GetText("SorterAddToAllInLevel");
+            label2.Text = I18n.GetText("SorterName");
+            button3.Text = I18n.GetText("BtnOK");
+            button4.Text = I18n.GetText("BtnCancel");
+            button5.Text = I18n.GetText("SorterDelete");
+            label3.Text = I18n.GetText("SorterNameStartIndex");
+            button6.Text = I18n.GetText("SorterTryGetIndex");
         }
 
         private void Form_ImageSorterSettings_Load(object sender, EventArgs e)
@@ -66,7 +82,7 @@ namespace BooruDatasetTagManager
         private void button1_Click(object sender, EventArgs e)
         {
             OpenFolderDialog openFolderDialog = new OpenFolderDialog();
-            openFolderDialog.Title = "Specify the root folder where the images will be copied.";
+            openFolderDialog.Title = I18n.GetText("SorterSelectRootFolder");
             if (openFolderDialog.ShowDialog() != DialogResult.OK)
                 return;
             textBoxRootPath.Text = openFolderDialog.Folder;
@@ -81,7 +97,7 @@ namespace BooruDatasetTagManager
         {
             if (!Directory.Exists(textBoxRootPath.Text))
             {
-                MessageBox.Show("Root folder not selected");
+                MessageBox.Show(I18n.GetText("SorterRootFolderNotSelected"));
                 return;
             }
             if (!long.TryParse(textBoxIndex.Text, out long fileIndex) || fileIndex < 0)
@@ -108,7 +124,7 @@ namespace BooruDatasetTagManager
         {
             if (!Directory.Exists(textBoxRootPath.Text))
             {
-                MessageBox.Show("Root folder not selected");
+                MessageBox.Show(I18n.GetText("SorterRootFolderNotSelected"));
                 return;
             }
             var scanErrors = new List<string>();

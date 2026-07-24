@@ -112,7 +112,18 @@ namespace BooruDatasetTagManager
                 // next attempt re-downloads clean files.
                 labels = LoadLabels(labelsPath);
                 loadedModelPath = modelPath;
-                session = CreateSession(modelPath);
+                try
+                {
+                    session = CreateSession(modelPath);
+                }
+                catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
+                {
+                    // A DirectML session can fail for device/driver reasons that
+                    // say nothing about the file on disk: retry on CPU before
+                    // the outer handler declares the model corrupt and purges
+                    // the cached download.
+                    session = CreateSession(modelPath, forceCpu: true);
+                }
                 ConfigureSessionMetadata(session);
             }
             catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
@@ -223,8 +234,12 @@ namespace BooruDatasetTagManager
 
             foreach (string preferred in PreferredOutputNames)
             {
-                if (outputNames.Any(name => string.Equals(name, preferred, StringComparison.OrdinalIgnoreCase)))
-                    return (resolvedInput, preferred);
+                // Return the model's real key, not the preferred constant: ORT
+                // name lookup is case-sensitive, so answering "predictions" for
+                // a model that declares "Predictions" would fail at Run().
+                string match = outputNames.FirstOrDefault(name => string.Equals(name, preferred, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                    return (resolvedInput, match);
             }
 
             string resolvedOutput = outputNames.First();
@@ -305,7 +320,9 @@ namespace BooruDatasetTagManager
 
         private static InferenceSession CreateSession(string modelPath, bool forceCpu, out bool usesDirectMl)
         {
-            var options = new SessionOptions
+            // Disposed once the session is constructed: ORT copies what it
+            // needs, and each leaked SessionOptions held a native handle.
+            using var options = new SessionOptions
             {
                 GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
             };
@@ -443,63 +460,23 @@ namespace BooruDatasetTagManager
 
         private static Bitmap PrepareBitmap(Image source, int targetSize)
         {
-            using Bitmap rgb = EnsureRgbOnWhite(source);
-            using Bitmap squared = PadSquare(rgb, targetSize);
-            return ResizeIfNeeded(squared, targetSize);
-        }
+            // One white square canvas: composite alpha, scale (never upscale)
+            // and center in a single draw. The old pad-to-longest-side-then-
+            // resize path materialized a maxDim×maxDim intermediate (a
+            // 10000px-wide image cost ~300MB) and leaked its RGBA temporary.
+            double scale = Math.Min(1.0, targetSize / (double)Math.Max(source.Width, source.Height));
+            int scaledWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
+            int scaledHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
 
-        private static Bitmap EnsureRgbOnWhite(Image source)
-        {
-            var rgba = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
-            using (Graphics graphics = Graphics.FromImage(rgba))
-            {
-                graphics.Clear(Color.White);
-                graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
-                graphics.DrawImage(source, 0, 0, source.Width, source.Height);
-            }
-
-            var rgb = new Bitmap(rgba.Width, rgba.Height, PixelFormat.Format24bppRgb);
-            using (Graphics graphics = Graphics.FromImage(rgb))
-            {
-                graphics.DrawImage(rgba, 0, 0, rgba.Width, rgba.Height);
-            }
-
-            return rgb;
-        }
-
-        private static Bitmap PadSquare(Bitmap source, int targetSize)
-        {
-            int width = source.Width;
-            int height = source.Height;
-            int desiredSize = Math.Max(Math.Max(width, height), targetSize);
-            if (width == desiredSize && height == desiredSize)
-                return new Bitmap(source);
-
-            var square = new Bitmap(desiredSize, desiredSize, PixelFormat.Format24bppRgb);
+            var square = new Bitmap(targetSize, targetSize, PixelFormat.Format24bppRgb);
             using (Graphics graphics = Graphics.FromImage(square))
             {
                 graphics.Clear(Color.White);
-                graphics.DrawImage(source, (desiredSize - width) / 2, (desiredSize - height) / 2, width, height);
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                graphics.DrawImage(source, (targetSize - scaledWidth) / 2, (targetSize - scaledHeight) / 2, scaledWidth, scaledHeight);
             }
 
             return square;
-        }
-
-        private static Bitmap ResizeIfNeeded(Bitmap source, int targetSize)
-        {
-            if (source.Width == targetSize && source.Height == targetSize)
-                return new Bitmap(source);
-
-            var resized = new Bitmap(targetSize, targetSize, PixelFormat.Format24bppRgb);
-            using (Graphics graphics = Graphics.FromImage(resized))
-            {
-                graphics.InterpolationMode = source.Width > targetSize
-                    ? System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear
-                    : System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                graphics.DrawImage(source, 0, 0, targetSize, targetSize);
-            }
-
-            return resized;
         }
     }
 }

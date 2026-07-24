@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace BooruDatasetTagManager
@@ -22,16 +23,16 @@ namespace BooruDatasetTagManager
             client.Timeout = new TimeSpan(0, 0, 10);
         }
 
-        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
-            string res =  await Translate(text, fromLang, toLang);
-            await Task.Delay(500);//antispam:)
+            string res =  await Translate(text, fromLang, toLang, cancellationToken);
+            await Task.Delay(500, cancellationToken);//antispam:)
             return res;
         }
 
 
 
-        private async Task<string> Translate(string str, string from, string to)
+        private async Task<string> Translate(string str, string from, string to, CancellationToken cancellationToken)
         {
 
             // Encode the query so tags containing &, #, +, spaces, etc. cannot break
@@ -40,7 +41,7 @@ namespace BooruDatasetTagManager
             string data = null;
             try
             {
-                data = await client.GetStringAsync(val).ConfigureAwait(false);
+                data = await client.GetStringAsync(val, cancellationToken).ConfigureAwait(false);
                 String extracted = data.GetBetween("class=\"result-container\">", "</div>");//<div class="result-container">тестовая строка</div>
                 // WebUtility.HtmlDecode already handles all HTML entities (including
                 // multi-byte ones). The previous hand-written entity decoder was both

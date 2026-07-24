@@ -79,6 +79,12 @@ public sealed class HuggingFaceModelDownloaderTests
             string csvPath = Path.Combine(dir, "selected_tags.csv");
             File.WriteAllText(csvPath, "name,category" + Environment.NewLine + "1girl,0");
             Assert.True(HuggingFaceModelDownloader.ValidateCachedFile(csvPath, "selected_tags.csv"));
+
+            // ONNX-03: a header-only CSV loads as zero labels and made tagging
+            // silently return nothing — it must not count as a valid cache.
+            string headerOnlyCsv = Path.Combine(dir, "header_only.csv");
+            File.WriteAllText(headerOnlyCsv, "tag_id,name,category,count" + Environment.NewLine);
+            Assert.False(HuggingFaceModelDownloader.ValidateCachedFile(headerOnlyCsv, "selected_tags.csv"));
         }
         finally
         {

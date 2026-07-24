@@ -61,6 +61,45 @@ public class ChineseTagLookupTests
     }
 
     [Fact]
+    public void CreateAutocompleteValuesBackfillsEnglishTagsMissingFromBaseValues()
+    {
+        using var temp = new TemporaryDirectory();
+        string csvPath = Path.Combine(temp.Path, "danbooru-0-zh.csv");
+        File.WriteAllLines(csvPath, new[]
+        {
+            "long_hair,长发",
+            "black_shoes,黑鞋"
+        });
+
+        var lookup = ChineseTagLookupService.LoadFromFile(csvPath, fixTags: true);
+
+        // Empty base values = the user has no Tags/*.csv autocomplete files;
+        // English typing must still complete from the dictionary entries.
+        var values = lookup.CreateAutocompleteValues(Array.Empty<TagsDB.TagItem>(), "zh-CN");
+
+        var english = values.Single(item => item.Tag == "long hair");
+        Assert.False(english.IsAlias);
+        Assert.Equal("long hair (长发)", english.ToString());
+        Assert.Contains(values, item => item.Tag == "black shoes" && !item.IsAlias);
+    }
+
+    [Fact]
+    public void CreateAutocompleteValuesDoesNotDuplicateEnglishTagsAlreadyInBaseValues()
+    {
+        using var temp = new TemporaryDirectory();
+        string csvPath = Path.Combine(temp.Path, "danbooru-0-zh.csv");
+        File.WriteAllText(csvPath, "long_hair,长发");
+
+        var lookup = ChineseTagLookupService.LoadFromFile(csvPath, fixTags: true);
+        var baseValues = new[] { ChineseTagLookupService.CreateTagItem("long hair", 42) };
+
+        var values = lookup.CreateAutocompleteValues(baseValues, "zh-CN");
+
+        var english = values.Single(item => item.Tag == "long hair");
+        Assert.Equal(42, english.Count);
+    }
+
+    [Fact]
     public void CreateAutocompleteValuesAddsChineseDisplayTextToEnglishTags()
     {
         using var temp = new TemporaryDirectory();

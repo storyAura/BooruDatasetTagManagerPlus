@@ -415,16 +415,16 @@ namespace BooruDatasetTagManager
                     StringBuilder releaseNote = new StringBuilder();
                     foreach (var item in nVersions)
                     {
-                        string text = item.body;
-                        string[] listItems = text.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                        // Dual-language release bodies: show only the section
+                        // matching the UI language.
                         releaseNote.AppendLine(item.tag_name + ":");
-                        for (int i = 0; i < listItems.Length; i++)
-                        {
-                            releaseNote.AppendLine(listItems[i]);
-                        }
+                        releaseNote.AppendLine(ReleaseNotesLocalizer.SelectSection(item.body, Program.Settings?.Language));
+                        releaseNote.AppendLine();
                     }
                     Form_UpdateInfo formUpdate = new Form_UpdateInfo();
-                    formUpdate.SetText($"A new version of the program has been detected ({nVersions[0].tag_name.Substring(1)}).\r\nNew in version:\r\n{releaseNote}\r\nDo you want to go to the program download page?");
+                    formUpdate.SetText(string.Format(I18n.GetText("TipUpdateStartupPrompt"),
+                            nVersions[0].tag_name.TrimStart('v', 'V'), releaseNote.ToString().Trim())
+                        .Replace("\r\n", "\n").Replace("\n", "\r\n"));
                     if (formUpdate.ShowDialog() == DialogResult.OK)
                     {
                         Process.Start(new ProcessStartInfo

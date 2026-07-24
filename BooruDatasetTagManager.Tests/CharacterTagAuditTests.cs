@@ -100,6 +100,40 @@ public sealed class CharacterTagAuditTests
     }
 
     [Fact]
+    public void GenericHairColorReplacementPolicyBlocksConcreteToGenericOnly()
+    {
+        Assert.True(CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement("white hair", "colored hair"));
+        Assert.True(CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement("white hair", "Multicolored Hair"));
+        Assert.True(CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement("twintails", "two-tone hair"));
+        Assert.False(CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement("streaked hair", "multicolored hair"));
+        Assert.False(CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement("white hair", "grey hair"));
+        Assert.False(CharacterTagAuditPolicy.IsForbiddenGenericHairReplacement("white hair", ""));
+    }
+
+    [Fact]
+    public void ParserForcesGenericHairColorReplacementsBackToKeep()
+    {
+        CharacterTagInventory inventory = CharacterTagInventory.Create(new[] { new[] { "white hair", "streaked hair" } });
+        string json = JsonConvert.SerializeObject(new
+        {
+            tags = new[]
+            {
+                new { tag = "white hair", decision = "replace", replacement_tag = "colored hair", category = "hair", reason = "merge hair parts" },
+                new { tag = "streaked hair", decision = "replace", replacement_tag = "multicolored hair", category = "hair", reason = "normalize" }
+            }
+        });
+
+        IReadOnlyList<CharacterTagAuditItem> result = CharacterTagAuditResponseParser.ParseAndValidate(json, inventory, string.Empty);
+
+        CharacterTagAuditItem white = result.Single(item => item.Tag == "white hair");
+        CharacterTagAuditItem streaked = result.Single(item => item.Tag == "streaked hair");
+        Assert.Equal(CharacterTagDecision.Keep, white.FinalDecision);
+        Assert.Equal(string.Empty, white.ReplacementTag);
+        Assert.Equal(CharacterTagDecision.Replace, streaked.FinalDecision);
+        Assert.Equal("multicolored hair", streaked.ReplacementTag);
+    }
+
+    [Fact]
     public void ParserAcceptsValidReplacementAndBuildsEffectiveTag()
     {
         CharacterTagInventory inventory = CharacterTagInventory.Create(new[] { new[] { "skirt" } });

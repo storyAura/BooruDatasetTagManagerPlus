@@ -114,7 +114,9 @@ namespace BooruDatasetTagManager
             if (Program.DataManager == null)
                 return;
             List<string> keys = folderContextKeys;
-            Program.DataManager.SetActiveFolder(keys is { Count: 1 } ? keys[0] : null);
+            // Union scope: one folder scopes to it, several scope to their
+            // union (the AllTags counts and the tagger windows both honor it).
+            Program.DataManager.SetActiveFolders(keys);
             RefreshDatasetGrid();
             if (keys is { Count: > 1 })
                 SelectDatasetImagesInFolders(keys);
@@ -159,7 +161,13 @@ namespace BooruDatasetTagManager
         private void SelectDatasetImagesInFolders(IReadOnlyList<string> folderKeys)
         {
             var wanted = new HashSet<string>(
-                folderKeys.Select(DatasetFolderIndex.NormalizeRelative),
+                folderKeys.Select(key =>
+                {
+                    // GetRelativeFolder reports root images as "": translate
+                    // the explicit root sentinel back for the set lookup.
+                    string normalized = DatasetFolderIndex.NormalizeRelative(key);
+                    return normalized == DatasetFolderIndex.RootFolderKey ? string.Empty : normalized;
+                }),
                 StringComparer.OrdinalIgnoreCase);
             selectionMode = true;
             try
@@ -192,6 +200,7 @@ namespace BooruDatasetTagManager
         {
             datasetBrowserView = new DatasetBrowserView { Dock = DockStyle.Fill };
             datasetBrowserView.FolderScopeSelected += FolderList_FolderSelected;
+            datasetBrowserView.FolderMultiScopeSelected += FolderList_FoldersSelected;
             datasetBrowserView.SelectionChangedByUser += BrowserSelection_Changed;
             datasetBrowserView.ImageActivated += path => ShowPreview(path, true);
             datasetBrowserView.ImageContextRequested += screenPoint => contextMenuStrip1.Show(screenPoint);
@@ -214,9 +223,12 @@ namespace BooruDatasetTagManager
             {
                 folderContextKeys = folderKeys?.ToList();
                 // Rename actions only make sense for exactly one real folder;
-                // the tagging items handle one, many and All.
+                // the tagging items handle one, many and All. The root group
+                // (sentinel key) is a real scope but not a renamable directory.
                 bool single = SingleFolderContextKey != null;
-                menuRenameFolder.Enabled = single && SingleFolderContextKey.Length > 0;
+                menuRenameFolder.Enabled = single
+                    && SingleFolderContextKey.Length > 0
+                    && SingleFolderContextKey != DatasetFolderIndex.RootFolderKey;
                 menuBatchRenameImages.Enabled = single;
                 folderContextMenu.Show(screenPoint);
             };
@@ -311,7 +323,8 @@ namespace BooruDatasetTagManager
         private void RenameDatasetFolder()
         {
             string key = SingleFolderContextKey;
-            if (Program.DataManager == null || string.IsNullOrEmpty(key))
+            if (Program.DataManager == null || string.IsNullOrEmpty(key)
+                || key == DatasetFolderIndex.RootFolderKey)
                 return;
             int slash = key.LastIndexOf('/');
             string leaf = slash < 0 ? key : key.Substring(slash + 1);
@@ -400,9 +413,11 @@ namespace BooruDatasetTagManager
             string contextKey = SingleFolderContextKey;
             if (Program.DataManager == null || contextKey == null)
                 return;
-            // Exact directory match (IsInFolder treats "" as "all folders",
-            // which would batch-rename the entire dataset from the root group).
+            // Exact directory match against GetRelativeFolder, whose root value
+            // is "" — so the root sentinel key maps back to "" here.
             string folderKey = DatasetFolderIndex.NormalizeRelative(contextKey);
+            if (folderKey == DatasetFolderIndex.RootFolderKey)
+                folderKey = string.Empty;
             List<string> paths = Program.DataManager.DataSet.Keys
                 .Where(path => string.Equals(
                     DatasetFolderIndex.GetRelativeFolder(path, Program.DataManager.DatasetRoot),
@@ -561,6 +576,19 @@ namespace BooruDatasetTagManager
             if (Program.DataManager == null)
                 return;
             Program.DataManager.SetActiveFolder(relativeFolder);
+            RefreshDatasetGrid();
+        }
+
+        /// <summary>
+        /// Browser Ctrl/Shift folder multi-select: scope to the union of the
+        /// selected folders so the grid and the AllTags counts follow the
+        /// selection (an empty set falls back to "all folders").
+        /// </summary>
+        private void FolderList_FoldersSelected(IReadOnlyList<string> folderKeys)
+        {
+            if (Program.DataManager == null)
+                return;
+            Program.DataManager.SetActiveFolders(folderKeys);
             RefreshDatasetGrid();
         }
 
@@ -742,6 +770,8 @@ namespace BooruDatasetTagManager
                 if (!Program.DataManager.DataSet.TryGetValue(imagePath, out DataItem dataItem))
                     return;
 
+                // Same dangling-edit guard as LoadSelectedImageToGrid.
+                (gridViewTags.DataSource as EditableTagList)?.EndEdit();
                 gridViewTags.AutoGenerateColumns = false;
                 gridViewTags.SuspendLayout();
                 BtnTagImageChecker.Enabled = false;
@@ -767,20 +797,22 @@ namespace BooruDatasetTagManager
                 if (string.IsNullOrWhiteSpace(file))
                     continue;
 
-                string tagFile = Path.Combine(Path.GetDirectoryName(file) ?? string.Empty, Path.GetFileNameWithoutExtension(file) + ".txt");
-                try
+                // Resolve the real sidecar (txt/caption per settings) instead of
+                // assuming .txt, and delete media + sidecar transactionally —
+                // the old two-step direct delete could remove the video and
+                // then fail on a locked caption, leaving a half-deleted pair.
+                // ponytail: if both .txt and .caption exist, only the first
+                // configured match is deleted (same as every other delete path).
+                string tagFile = ImageEditorSaveService.FindExistingCaptionPath(file, Program.Settings.GetTagFilesExtensions());
+                if (ImageFileDeleter.DeleteImageWithTags(file, tagFile, out string deleteError))
                 {
-                    if (File.Exists(file))
-                        File.Delete(file);
-                    if (File.Exists(tagFile))
-                        File.Delete(tagFile);
                     deletedPaths.Add(file);
                 }
-                catch (Exception ex)
+                else
                 {
                     // Keep the item in the dataset if its file couldn't be deleted,
                     // so on-disk and in-memory state stay consistent.
-                    Trace.WriteLine($"Failed to delete '{file}': {ex}");
+                    Trace.WriteLine($"Failed to delete '{file}': {deleteError}");
                 }
             }
 
@@ -921,19 +953,13 @@ namespace BooruDatasetTagManager
 
         private bool EnsureSelectedAutoTagProviderConfigured(bool openAdvancedSettings)
         {
-            if (!string.Equals(Program.Settings.AutoTagProviderId, "ai-api-server", StringComparison.OrdinalIgnoreCase))
-                return EnsureOpenAiAutoTagConfigured(openAdvancedSettings);
-
-            if (openAdvancedSettings || Program.Settings.AutoTagger.InterragatorParams.Count == 0)
-            {
-                using Form_AutoTaggerSettings settings = new Form_AutoTaggerSettings();
-                if (settings.ShowDialog(this) != DialogResult.OK)
-                    return false;
-            }
-            return Program.Settings.AutoTagger.InterragatorParams.Count > 0;
+            // Only the OpenAI-compatible provider remains (the legacy
+            // ai-api-server backend was removed; old configs are migrated at
+            // startup).
+            return EnsureOpenAiAutoTagConfigured(openAdvancedSettings);
         }
 
-        private async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GenerateWithSelectedAutoTagProviderAsync(
+        private async Task<(List<AutoTagItem> data, string errorMessage, bool canceled)> GenerateWithSelectedAutoTagProviderAsync(
             string mediaPath)
         {
             string providerId = string.IsNullOrWhiteSpace(Program.Settings.AutoTagProviderId)
@@ -943,20 +969,18 @@ namespace BooruDatasetTagManager
             AutoTagConnectionResult connection = await provider.ConnectAsync();
             if (!connection.Success)
                 return (null, connection.ErrorMessage, false);
-            IReadOnlyList<string> modelIds = string.Equals(providerId, "ai-api-server", StringComparison.OrdinalIgnoreCase)
-                ? Program.Settings.AutoTagger.InterragatorParams.Keys.ToList()
-                : new[] { Program.Settings.OpenAiAutoTagger.ResolveVisionModel() };
+            IReadOnlyList<string> modelIds = new[] { Program.Settings.OpenAiAutoTagger.ResolveVisionModel() };
             AutoTagProviderResult result = await provider.GenerateAsync(new AutoTagProviderRequest
             {
                 MediaPath = mediaPath,
                 ModelIds = modelIds
             });
-            List<AiApiClient.AutoTagItem> items = result.Items.Select(item =>
-                new AiApiClient.AutoTagItem(item.Tag, item.Confidence)).ToList();
+            List<AutoTagItem> items = result.Items.Select(item =>
+                new AutoTagItem(item.Tag, item.Confidence)).ToList();
             return (result.Success ? items : null, result.ErrorMessage, result.Canceled);
         }
 
-        private async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GenerateWithOpenAiAutoTaggerAsync(
+        private async Task<(List<AutoTagItem> data, string errorMessage, bool canceled)> GenerateWithOpenAiAutoTaggerAsync(
             string mediaPath)
         {
             IAutoTagProvider provider = Program.AutoTagProviders.GetRequired("openai-compatible");
@@ -968,8 +992,8 @@ namespace BooruDatasetTagManager
                 MediaPath = mediaPath,
                 ModelIds = new[] { Program.Settings.OpenAiAutoTagger.ResolveVisionModel() }
             });
-            List<AiApiClient.AutoTagItem> items = result.Items.Select(item =>
-                new AiApiClient.AutoTagItem(item.Tag, item.Confidence)).ToList();
+            List<AutoTagItem> items = result.Items.Select(item =>
+                new AutoTagItem(item.Tag, item.Confidence)).ToList();
             return (result.Success ? items : null, result.ErrorMessage, result.Canceled);
         }
 
@@ -1277,9 +1301,8 @@ namespace BooruDatasetTagManager
             }
 #if !DEBUG
             Extensions.CheckForUpdateAsync(Application.ProductVersion);
-#else
-            debugToolStripMenuItem.Visible = true;
 #endif
+            debugToolStripMenuItem.Visible = Program.Settings.DebugMode;
         }
 
         /// <summary>
@@ -1631,8 +1654,13 @@ namespace BooruDatasetTagManager
             }
         }
 
+        // True while a batch job (auto-tag, translate, batch edit…) has the UI
+        // locked; the FormClosing handler uses it to refuse exit mid-job.
+        private bool editLocked;
+
         internal void LockEdit(bool locked)
         {
+            editLocked = locked;
             menuStrip1.Enabled = !locked;
             toolStripTags.Enabled = !locked;
             toolStripAllTags.Enabled = !locked;
@@ -1674,7 +1702,7 @@ namespace BooruDatasetTagManager
             {
                 if (fPreview == null || fPreview.IsDisposed)
                     fPreview = new Form_preview();
-                fPreview.Show(img, Path.GetFileName(imgPath));
+                fPreview.Show(this, img, Path.GetFileName(imgPath));
             }
             else if (Program.Settings.PreviewType == ImagePreviewType.PreviewInMainWindow)
             {
@@ -1733,8 +1761,17 @@ namespace BooruDatasetTagManager
             datasetPreviewPanel.SetImage(null, null);
         }
 
+        // Bumped on every LoadSelectedImageToGrid call so a slow, superseded
+        // load can tell it lost the race and must not touch the grid.
+        private int loadSelectedImageToGridVersion;
+
         private async void LoadSelectedImageToGrid()
         {
+            int loadVersion = ++loadSelectedImageToGridVersion;
+            // Commit any in-progress cell edit before the grid is rebound: an
+            // abandoned IEditableObject transaction would silently swallow
+            // later programmatic tag updates (text-mirror desync).
+            (gridViewTags.DataSource as EditableTagList)?.EndEdit();
             gridViewTags.AutoGenerateColumns = false;
             if (gridViewDS.SelectedRows.Count == 0)
             {
@@ -1795,6 +1832,10 @@ namespace BooruDatasetTagManager
                     MultiSelectDataTable multiSelectData = new MultiSelectDataTable();
                     multiSelectData.SetTranslationMode(isTranslate);
                     await multiSelectData.CreateTableFromSelectedImages(selectedTagsList);
+                    // The user may have re-selected while the table was being
+                    // built: a stale result must not overwrite the new grid.
+                    if (loadVersion != loadSelectedImageToGridVersion)
+                        return;
                     gridViewTags.DataSource = multiSelectData;
                 }
 
@@ -2482,10 +2523,14 @@ namespace BooruDatasetTagManager
                 }
 
                 gridViewDS.DataSource = Program.DataManager.GetDataSource(DatasetManager.OrderType.Name, filterAnd, GetSelectedTags());
+                ApplyDataSetGridStyle();
                 if (gridViewDS.RowCount == 0)
                     gridViewTags.DataSource = null;
                 isFiltered = true;
                 LoadSelectedInViewDs();
+                // The visible dataset browser mirrors the hidden grid; without
+                // this rebuild the filter only changed the hidden rows.
+                RefreshDatasetFolderList();
                 BtnImageExitFilter.Enabled = true;
             }
             SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
@@ -2497,9 +2542,11 @@ namespace BooruDatasetTagManager
             {
                 SaveSelectedInViewDs();
                 gridViewDS.DataSource = Program.DataManager.GetDataSource();
+                ApplyDataSetGridStyle();
                 isFiltered = false;
                 BtnImageExitFilter.Enabled = false;
                 LoadSelectedInViewDs();
+                RefreshDatasetFolderList();
             }
             SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
         }
@@ -2688,6 +2735,15 @@ namespace BooruDatasetTagManager
 
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
+            if (editLocked)
+            {
+                // A background batch is mid-flight on this thread's
+                // continuations; closing now would kill it half-applied.
+                MessageBox.Show(this, I18n.GetText("TipJobRunningCannotClose"), Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                e.Cancel = true;
+                return;
+            }
             if (Program.DataManager != null && Program.DataManager.IsDataSetChanged())
             {
                 DialogResult result = MessageBox.Show(I18n.GetText("TipDSChangeSaveText"), I18n.GetText("TipDSChangeSaveTitle"), MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
@@ -3167,7 +3223,8 @@ namespace BooruDatasetTagManager
                 List<string> failedPaths = new List<string>();
                 foreach (string file in pathsToDelete)
                 {
-                    string tagFile = Path.Combine(Path.GetDirectoryName(file) ?? string.Empty, Path.GetFileNameWithoutExtension(file) + ".txt");
+                    // Real sidecar per settings (txt/caption), not a hardcoded .txt.
+                    string tagFile = ImageEditorSaveService.FindExistingCaptionPath(file, Program.Settings.GetTagFilesExtensions());
                     // Staged two-phase delete: image and tag file are removed
                     // together or not at all, so a locked/read-only tag file can
                     // no longer leave the image permanently deleted while the
@@ -3399,6 +3456,8 @@ namespace BooruDatasetTagManager
             {
                 // Keep the text and tint the box instead of silently eating keys.
                 toolStripTextBox1.BackColor = Color.MistyRose;
+                // Color alone is invisible to color-blind/screen-reader users.
+                SetStatus(string.Format(I18n.GetText("SearchNoMatch"), query));
                 return;
             }
             toolStripTextBox1.BackColor = allTagsSearchDefaultBackColor;
@@ -3647,6 +3706,8 @@ namespace BooruDatasetTagManager
             {
                 // Keep the text and tint the box instead of silently eating keys.
                 toolStripImageTagsSearchBox.BackColor = Color.MistyRose;
+                // Color alone is invisible to color-blind/screen-reader users.
+                SetStatus(string.Format(I18n.GetText("SearchNoMatch"), query));
                 return;
             }
             toolStripImageTagsSearchBox.BackColor = imageTagsSearchDefaultBackColor;
@@ -3986,10 +4047,11 @@ namespace BooruDatasetTagManager
                 menuOnnxTagger.Text = I18n.GetText("MenuOnnxTagger");
             if (menuTestModule != null)
                 menuTestModule.Text = I18n.GetText("MenuTestModule");
+            debugToolStripMenuItem.Text = I18n.GetText("MenuDebug");
+            debugOpenLogToolStripMenuItem.Text = I18n.GetText("MenuDebugOpenLog");
             replaceTransparentBackgroundToolStripMenuItem.Text = I18n.GetText("MenuReplaceTranspColor");
             generateTagsWithAutoTaggerForAllImagesToolStripMenuItem.Text = I18n.GetText("MenuGenTagsForAllImages");
             MenuOpenAiGenTagsForAllImages.Text = I18n.GetText("MenuOpenAiGenTagsForAllImages");
-            cropImagesWithMoondream2ToolStripMenuItem.Text = I18n.GetText("MenuToolsAutoCropping");
             backgroundRemovalWithRMBG20ToolStripMenuItem.Text = I18n.GetText("MenuToolsBGRemoval");
             removeBackgroundToolStripMenuItem.Text = I18n.GetText("MenuContextDSRemoveBG");
             toolStripMenuItem1.Text = I18n.GetText("MenuContextDSOpenFolder");
@@ -4168,6 +4230,11 @@ namespace BooruDatasetTagManager
             settings.Close();
             switchLanguage();
             ApplyCharacterMatchSetting();
+            bool debugWasEnabled = DebugLog.Enabled;
+            DebugLog.Enabled = Program.Settings.DebugMode;
+            debugToolStripMenuItem.Visible = Program.Settings.DebugMode;
+            if (!debugWasEnabled && DebugLog.Enabled)
+                DebugLog.Write("App", "Debug mode enabled in settings");
             // The preview mode may have changed in the dialog: re-run the
             // sidebar layout, then refresh whichever preview surface is active.
             ApplyDatasetSidebarLayout();
@@ -4454,7 +4521,7 @@ namespace BooruDatasetTagManager
                         (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value, out DataItem selectedImageData))
                     return;
 
-                (List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
+                (List<AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
                 TaggerSettings settings = Program.Settings.OpenAiAutoTagger;
                 taggerResult = await GenerateWithSelectedAutoTagProviderAsync(selectedImageData.ImageFilePath);
                 if (!string.IsNullOrEmpty(taggerResult.errorMessage))
@@ -4530,7 +4597,7 @@ namespace BooruDatasetTagManager
             int currentIndex = 0;
             foreach (var item in selectedTagsList)
             {
-                (List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
+                (List<AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
                 taggerResult = await GenerateWithSelectedAutoTagProviderAsync(item.ImageFilePath);
                 if (taggerResult.canceled)
                 {
@@ -4588,110 +4655,10 @@ namespace BooruDatasetTagManager
             }
             if (sbErrors.Length > 0)
             {
-                sbErrors.Insert(0, "The following files were not processed (see ApiServer log):\n");
+                sbErrors.Insert(0, "The following files were not processed:\n");
                 MessageBox.Show(sbErrors.ToString());
             }
             SetStatus(I18n.GetText("TipProgressComplete"));
-        }
-
-        private async Task<bool> CropImages()
-        {
-            if (Program.DataManager == null)
-            {
-                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
-                return false;
-            }
-            using (Form_CropImage cropImageForm = new Form_CropImage(this))
-            {
-                if (gridViewDS.SelectedRows.Count > 1)
-                    cropImageForm.radioButtonOnlySelected.Checked = true;
-                if (cropImageForm.ShowDialog() != DialogResult.OK)
-                    return false;
-                bool allImages = cropImageForm.radioButtonAllImages.Checked;
-                LockEdit(true);
-                try
-                {
-                List<DataItem> selectedTagsList = new List<DataItem>();
-                if (!allImages)
-                {
-                    for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
-                    {
-                        if (Program.DataManager.DataSet.TryGetValue((string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value, out DataItem selectedItem))
-                            selectedTagsList.Add(selectedItem);
-                        Program.DataManager.RemoveFromCache((string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value);
-                    }
-                }
-                else
-                {
-                    foreach (var item in Program.DataManager.DataSet)
-                    {
-                        selectedTagsList.Add(item.Value);
-                    }
-                    Program.DataManager.ClearCache();
-                }
-                int index = 0;
-                StringBuilder sbErrors = new StringBuilder();
-                foreach (var item in selectedTagsList)
-                {
-                    try
-                    {
-                        var cropRect = await cropImageForm.CalcCropRectangle(item.ImageFilePath);
-                        if (cropRect.Width <= 1 || cropRect.Height <= 1)
-                        {
-                            continue;
-                        }
-                        using (Bitmap target = new Bitmap(cropRect.Width, cropRect.Height))
-                        {
-                            using (Bitmap src = System.Drawing.Image.FromFile(item.ImageFilePath) as Bitmap)
-                            {
-
-                                using (Graphics g = Graphics.FromImage(target))
-                                {
-                                    g.DrawImage(src, new Rectangle(0, 0, target.Width, target.Height),
-                                        cropRect,
-                                        GraphicsUnit.Pixel);
-                                }
-
-                            }
-                            // Encode to a temp file and swap: a failed encode
-                            // (disk full, lock) must not destroy the source image.
-                            string tmpPath = item.ImageFilePath + ".tmp";
-                            target.Save(tmpPath);
-                            SafeFile.ReplaceOrMove(tmpPath, item.ImageFilePath, null);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // One broken/locked image must not abort the whole batch.
-                        sbErrors.AppendLine($"{item.ImageFilePath}: {ex.Message}");
-                        continue;
-                    }
-                    try
-                    {
-                        Program.DataManager.DataSet[item.ImageFilePath].Img = Extensions.MakeThumb(item.ImageFilePath, Program.Settings.PreviewSize);
-                    }
-                    catch (Exception)
-                    {
-                        Program.DataManager.DataSet[item.ImageFilePath].Img = null;
-                    }
-                    SetStatus($"{++index} / {selectedTagsList.Count}");
-                }
-                gridViewDS.Refresh();
-                if (sbErrors.Length > 0)
-                    MessageBox.Show(sbErrors.ToString());
-                //if (selectedTagsList.Count > 1)
-                //{
-                //    LoadSelectedImageToGrid();
-                //}
-                //if (gridViewAllTags.DataSource == null)
-                //    BindTagList();
-                return true;
-                }
-                finally
-                {
-                    LockEdit(false);
-                }
-            }
         }
 
         private async Task<bool> RemoveBackgrounds(bool onlySelected)
@@ -5020,10 +4987,17 @@ namespace BooruDatasetTagManager
             }
         }
         #region Debug
-        private void testSortingToolStripMenuItem_Click(object sender, EventArgs e)
+        // Opt-in shell for future diagnostics (Settings -> Debug mode); the old
+        // developer-only test entries (sorter / image grid / manual crop) are gone.
+        private void debugOpenLogToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Form_ImageSorterSettings form_ImageSorter = new Form_ImageSorterSettings();
-            form_ImageSorter.ShowDialog();
+            if (!File.Exists(DebugLog.LogPath))
+            {
+                MessageBox.Show(this, I18n.GetText("TipDebugLogEmpty"), Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Process.Start(new ProcessStartInfo(DebugLog.LogPath) { UseShellExecute = true });
         }
         #endregion
 
@@ -5055,12 +5029,6 @@ namespace BooruDatasetTagManager
                 return;
             }
             ((BindingSource)gridViewAllTags.DataSource).Sort = "Count DESC";
-        }
-
-        private void openImageGridFormToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            Form_TagImagesGrid imgGrid = new Form_TagImagesGrid();
-            imgGrid.ShowDialog();
         }
 
         private void BtnTagImageChecker_Click(object sender, EventArgs e)
@@ -5137,15 +5105,6 @@ namespace BooruDatasetTagManager
             selectionMode = false;
         }
 
-        private async void cropImagesWithMoondream2ToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            var res = await CropImages();
-            if (res)
-                SetStatus("Cropping complete!");
-            else
-                SetStatus("Cropping canceled!");
-        }
-
         private async void backgroundRemovalWithRMBG20ToolStripMenuItem_Click(object sender, EventArgs e)
         {
             var res = await RemoveBackgrounds(false);
@@ -5162,20 +5121,6 @@ namespace BooruDatasetTagManager
                 SetStatus(I18n.GetText("TipBGRemovalComplete"));
             else
                 SetStatus(I18n.GetText("TipBGRemovalCanceled"));
-        }
-
-        private void openManualCropToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            // Was a hardcoded developer-machine path, which made this menu fail
-            // for every user.
-            using OpenFileDialog dialog = new OpenFileDialog
-            {
-                Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.gif|All files|*.*"
-            };
-            if (dialog.ShowDialog(this) != DialogResult.OK)
-                return;
-            using Form_ImageCrop form_ImageCrop = new Form_ImageCrop(dialog.FileName);
-            form_ImageCrop.ShowDialog();
         }
 
         private void cropImageToolStripMenuItem_Click(object sender, EventArgs e)

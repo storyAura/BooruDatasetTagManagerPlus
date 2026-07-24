@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.2.0
+# BooruDatasetTagManager+ 1.2.1
 
 [简体中文](README.md) | [Português do Brasil](docs/pt-BR/README_pt_BR.md)
 
@@ -8,7 +8,8 @@ Windows tool for LoRA and character dataset tagging, forked from **[starik222/Bo
 
 ## Changelog
 
-- **1.2.0** (current) — dataset panel rebuilt as a unified folder-group browser (search, collapse, batch rename, per-folder quick tagging) with an embedded multi-image preview; semantic tag colors and category sort; danbooru character-catalog matching (colors + translated names); many translation, wiki-popup and audit-wizard fixes; audit-driven release and data-safety hardening (rename rollback, HF token confined to huggingface.co, clean-room packaging, LLM save gate, video-replace overwrite guard, fault-tolerant settings startup). [Release notes](docs/RELEASE_NOTES_v1.2.0.md)
+- **1.2.1** (current) — second audit-fix wave: memory and data-safety hardening across the ONNX / network / image pipelines, faster first load, accessibility and i18n completion; the legacy Python AiApiServer backend is removed (old configs migrate automatically); the dataset browser can scope the root group alone and multi-folder selections scope to their union (All Tags counts follow); the dual-character audit gains checkpoints with retry of only the failed character; the floating preview no longer covers confirmation dialogs (the app looked frozen), and the tag list self-heals from mirror desynchronization (the "List desynchronization detected" error that blocked further tag edits); the LLM settings dialog no longer clips its API-key hint on high-DPI displays; the Debug menu drops its old developer-only test entries and becomes an opt-in debug mode (off by default; enabling it in settings shows the menu and writes debug.log); in-app update prompts now show the release notes in the UI language (independent Chinese and English versions). [Release notes](docs/RELEASE_NOTES_v1.2.1.md)
+- **1.2.0** — dataset panel rebuilt as a unified folder-group browser (search, collapse, batch rename, per-folder quick tagging) with an embedded multi-image preview; semantic tag colors and category sort; danbooru character-catalog matching (colors + translated names); many translation, wiki-popup and audit-wizard fixes; audit-driven release and data-safety hardening (rename rollback, HF token confined to huggingface.co, clean-room packaging, LLM save gate, video-replace overwrite guard, fault-tolerant settings startup). [Release notes](docs/RELEASE_NOTES_v1.2.0.md)
 - **1.1.3** — file-I/O and data-safety hardening (fixes the 8 risks confirmed by an internal audit: failed saves keep edits, transactional deletion, safe concurrent writes, …); adds the image editor, CL-family ONNX models, Chinese-dictionary tag search, and the All Tags double-click quick action. [Release notes](docs/RELEASE_NOTES_v1.1.3.md)
 - **1.1.2** — unified LLM tagging window (Tags / Natural-language modes); in-process background removal (RMBG-1.4); crash backstop, atomic writes, encrypted keys, and other robustness/security hardening. [Release notes](docs/RELEASE_NOTES_v1.1.2.md)
 - **1.1.1** — faster character-tag-audit save; unified Crop image dialog. [Release notes](docs/RELEASE_NOTES_v1.1.1.md)
@@ -128,7 +129,8 @@ Select multiple images and press **Shift+T**: a left tag list (with occurrence c
 ### Data & privacy
 
 - **LLM tagging and the character tag audit send images to your configured endpoint**; ONNX tagging, background removal, and video tools run entirely on your machine
-- Settings (including DPAPI-encrypted API keys) live in the local `settings.json`; tag saves are atomic, batch tools never destroy originals, and image deletion is transactional with rollback
+- Settings (including DPAPI-encrypted API keys) live in the local `settings.json`; tag saves are atomic, batch image tools write to a temp file and only swap it in on success, and deletion is staged so a mid-way failure restores the files. Note: video conversion with "replace original" checked deletes the source video after a successful conversion
+- **Debug mode** (Settings → General, off by default) shows a Debug menu and writes runtime info and exceptions to `debug.log` next to the executable (the menu can open it directly) — handy to attach when reporting issues
 
 ## Acknowledgments & license
 

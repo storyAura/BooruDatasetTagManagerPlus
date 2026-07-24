@@ -290,6 +290,31 @@ namespace BooruDatasetTagManager
     }
 
     /// <summary>
+    /// TAG-01 checkpoint: thrown when one profile's audit fails after earlier
+    /// profiles already completed. Carries the paid, completed results
+    /// (index-aligned with the profiles; null = not completed) so the caller
+    /// can offer to retry ONLY the failed profile instead of re-billing
+    /// everything.
+    /// </summary>
+    public sealed class CharacterTagDualAuditProfileException : Exception
+    {
+        public CharacterTagDualAuditProfileException(
+            int failedProfileIndex,
+            IReadOnlyList<CharacterTagAuditResult> completedResults,
+            Exception inner)
+            : base(inner?.Message ?? "Dual audit profile failed.", inner)
+        {
+            FailedProfileIndex = failedProfileIndex;
+            CompletedResults = completedResults ?? Array.Empty<CharacterTagAuditResult>();
+        }
+
+        public int FailedProfileIndex { get; }
+
+        /// <summary>Per-profile results; null entries were never run.</summary>
+        public IReadOnlyList<CharacterTagAuditResult> CompletedResults { get; }
+    }
+
+    /// <summary>
     /// Runs the existing two-stage audit once per character profile over that
     /// character's member images and aggregates progress into one 4-step
     /// sequence. Attribution statistics let the caller surface how many images
@@ -346,7 +371,8 @@ namespace BooruDatasetTagManager
         public async System.Threading.Tasks.Task<CharacterTagDualAuditResult> ExecuteAsync(
             CharacterTagDualAuditOptions options,
             System.IProgress<CharacterTagAuditProgress> progress = null,
-            System.Threading.CancellationToken cancellationToken = default)
+            System.Threading.CancellationToken cancellationToken = default,
+            IReadOnlyList<CharacterTagAuditResult> resumeFrom = null)
         {
             Validate(options);
             // Attribute every profile before the first model call so a typo'd
@@ -371,6 +397,13 @@ namespace BooruDatasetTagManager
                 CharacterAuditProfile profile = options.Profiles[i];
                 IReadOnlyList<CharacterImageTagRecord> members = membersByProfile[i];
                 memberCounts.Add(members.Count);
+                if (resumeFrom != null && i < resumeFrom.Count && resumeFrom[i] != null)
+                {
+                    // Checkpoint: this profile already completed in a previous
+                    // run — reuse its paid result instead of re-billing it.
+                    profileResults.Add(resumeFrom[i]);
+                    continue;
+                }
                 var innerOptions = new CharacterTagAuditOptions
                 {
                     Inventory = CharacterTagInventory.Create(members.Select(member => member.Tags.AsEnumerable())),
@@ -391,8 +424,20 @@ namespace BooruDatasetTagManager
                 OffsetProgress wrappedProgress = progress == null
                     ? null
                     : new OffsetProgress(progress, i, options.Profiles.Count * 2);
-                profileResults.Add(await inner.ExecuteAsync(innerOptions, wrappedProgress, cancellationToken)
-                    .ConfigureAwait(false));
+                try
+                {
+                    profileResults.Add(await inner.ExecuteAsync(innerOptions, wrappedProgress, cancellationToken)
+                        .ConfigureAwait(false));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Checkpoint the completed profiles so the caller can
+                    // retry only this one instead of discarding paid results.
+                    var completed = new CharacterTagAuditResult[options.Profiles.Count];
+                    for (int c = 0; c < profileResults.Count; c++)
+                        completed[c] = profileResults[c];
+                    throw new CharacterTagDualAuditProfileException(i, completed, ex);
+                }
             }
 
             // Each profile's final prompt describes ONE character: shared

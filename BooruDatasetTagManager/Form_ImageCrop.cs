@@ -248,12 +248,26 @@ namespace BooruDatasetTagManager
             }
         }
 
+        /// <summary>Disposes preview rows INCLUDING their PictureBox images:
+        /// control.Dispose() alone leaked one bitmap per region per rebuild.</summary>
+        private void DisposePreviewControls()
+        {
+            foreach (Control control in previewFlow.Controls.OfType<Control>().ToList())
+            {
+                foreach (PictureBox pictureBox in control.Controls.OfType<PictureBox>())
+                {
+                    pictureBox.Image?.Dispose();
+                    pictureBox.Image = null;
+                }
+                control.Dispose();
+            }
+            previewFlow.Controls.Clear();
+        }
+
         private void RebuildPreviewPanel()
         {
             previewFlow.SuspendLayout();
-            foreach (Control control in previewFlow.Controls.OfType<Control>().ToList())
-                control.Dispose();
-            previewFlow.Controls.Clear();
+            DisposePreviewControls();
 
             foreach (CropRegion region in regions)
             {
@@ -279,10 +293,19 @@ namespace BooruDatasetTagManager
                     Left = 8,
                     Top = 8
                 };
-                using (Bitmap cropped = imageData.Clone(bounds, imageData.PixelFormat))
+                // Render the ≤96px thumbnail straight from the source region:
+                // keeping a full-size crop clone per row held entire images in
+                // memory just to show a 96×96 preview.
+                double thumbScale = Math.Min(1.0, 96.0 / Math.Max(bounds.Width, bounds.Height));
+                int thumbWidth = Math.Max(1, (int)Math.Round(bounds.Width * thumbScale));
+                int thumbHeight = Math.Max(1, (int)Math.Round(bounds.Height * thumbScale));
+                var thumbBitmap = new Bitmap(thumbWidth, thumbHeight);
+                using (Graphics graphics = Graphics.FromImage(thumbBitmap))
                 {
-                    thumbnail.Image = new Bitmap(cropped);
+                    graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                    graphics.DrawImage(imageData, new Rectangle(0, 0, thumbWidth, thumbHeight), bounds, GraphicsUnit.Pixel);
                 }
+                thumbnail.Image = thumbBitmap;
 
                 var label = new Label
                 {
@@ -340,8 +363,7 @@ namespace BooruDatasetTagManager
         {
             if (disposing)
             {
-                foreach (Control control in previewFlow.Controls)
-                    control.Dispose();
+                DisposePreviewControls();
                 imageData?.Dispose();
             }
             base.Dispose(disposing);

@@ -168,6 +168,53 @@ namespace BooruDatasetTagManager.Tests
         }
 
         [Fact]
+        public async Task DualAuditCheckpointsCompletedProfileAndResumesWithoutRebilling()
+        {
+            using var temp = new TemporaryDirectory();
+            string referenceA = Path.Combine(temp.Path, "a.png");
+            string referenceB = Path.Combine(temp.Path, "b.png");
+            File.WriteAllBytes(referenceA, new byte[] { 1 });
+            File.WriteAllBytes(referenceB, new byte[] { 1 });
+
+            int profileACalls = 0;
+            bool failB = true;
+            IReadOnlyList<string> currentTags = null;
+            var service = new CharacterTagDualAuditService(new CharacterTagAuditService((request, _) =>
+            {
+                if (request.Stage == CharacterTagAuditStage.TextScreening)
+                {
+                    string json = request.UserPrompt.Substring(
+                        request.UserPrompt.IndexOf("Tags: ", StringComparison.Ordinal) + "Tags: ".Length);
+                    currentTags = JArray.Parse(json).Select(token => token.Value<string>("Tag")).ToList();
+                }
+                bool isProfileB = currentTags.Contains("hat");
+                if (isProfileB && failB)
+                    throw new InvalidOperationException("model down");
+                if (!isProfileB)
+                    profileACalls++;
+                return Task.FromResult(new CharacterTagModelResponse(KeepAllJson(currentTags), string.Empty));
+            }));
+
+            CharacterTagDualAuditOptions options = Options(temp.Path, referenceA, referenceB);
+            CharacterTagDualAuditProfileException failure =
+                await Assert.ThrowsAsync<CharacterTagDualAuditProfileException>(() => service.ExecuteAsync(options));
+
+            Assert.Equal(1, failure.FailedProfileIndex);
+            Assert.NotNull(failure.CompletedResults[0]);
+            Assert.Null(failure.CompletedResults[1]);
+            int paidCalls = profileACalls;
+
+            failB = false;
+            CharacterTagDualAuditResult result = await service.ExecuteAsync(
+                options, null, default, failure.CompletedResults);
+
+            Assert.Equal(2, result.ProfileResults.Count);
+            Assert.Same(failure.CompletedResults[0], result.ProfileResults[0]);
+            // TAG-01: resuming from the checkpoint must not re-bill profile A.
+            Assert.Equal(paidCalls, profileACalls);
+        }
+
+        [Fact]
         public async Task DualAuditRejectsDuplicateTriggersAndProfilesWithoutImages()
         {
             using var temp = new TemporaryDirectory();
@@ -219,6 +266,19 @@ namespace BooruDatasetTagManager.Tests
             Assert.True(DatasetFolderIndex.IsInFolder(image, Root, @"Andy3D\1_a"));
             Assert.False(DatasetFolderIndex.IsInFolder(image, Root, "Andy3D"));
             Assert.False(DatasetFolderIndex.IsInFolder(image, Root, "daodtt_webp/1_a"));
+        }
+
+        [Fact]
+        public void RootSentinelScopesRootImagesOnlyWhileEmptyStillMeansAll()
+        {
+            // BROWSER-01a/d: "." must select exactly the images directly under
+            // the root, while null/"" keep meaning "no scope, everything".
+            string rootImage = @"C:\dataset\cover.png";
+            string subImage = @"C:\dataset\Andy3D\1_a\pic.webp";
+            Assert.True(DatasetFolderIndex.IsInFolder(rootImage, Root, DatasetFolderIndex.RootFolderKey));
+            Assert.False(DatasetFolderIndex.IsInFolder(subImage, Root, DatasetFolderIndex.RootFolderKey));
+            Assert.True(DatasetFolderIndex.IsInFolder(rootImage, Root, null));
+            Assert.True(DatasetFolderIndex.IsInFolder(subImage, Root, ""));
         }
 
         [Fact]

@@ -21,8 +21,17 @@ namespace BooruDatasetTagManager.AiApi
         public string ServerEndpoint { get; private set; }
         //public event Extensions.ErrorHandler ErrorMessage;
 
-        private ChatClient chatClient = null;
-        private ApiKeyCredential credential;
+        // All chat clients for one model, one per API key; the whole set is
+        // swapped atomically when the requested model changes.
+        private sealed class ChatClientSet
+        {
+            public string Model;
+            public ChatClient[] Clients;
+        }
+
+        private ChatClientSet chatClients = null;
+        private readonly ApiKeyCredential[] credentials;
+        private int keyRotation = -1;
         private OpenAIClientOptions serverOptions;
 
         public bool IsConnected { get; private set; }
@@ -31,9 +40,17 @@ namespace BooruDatasetTagManager.AiApi
         public List<string> Models { get; private set; }
 
         public AiOpenAiClient(string srvEndpoint, string apiKey, int timeout)
+            : this(srvEndpoint, new[] { apiKey }, timeout)
+        {
+        }
+
+        public AiOpenAiClient(string srvEndpoint, IEnumerable<string> apiKeys, int timeout)
         {
             ServerEndpoint = srvEndpoint;
-            credential = new ApiKeyCredential(apiKey);
+            List<string> keys = LlmApiProfileLogic.SanitizeTokens(apiKeys);
+            if (keys.Count == 0)
+                keys.Add("not-required");
+            credentials = keys.Select(key => new ApiKeyCredential(key)).ToArray();
             serverOptions = new OpenAIClientOptions();
             serverOptions.Endpoint = new Uri(ServerEndpoint);
             serverOptions.NetworkTimeout = TimeSpan.FromSeconds(timeout);
@@ -41,11 +58,20 @@ namespace BooruDatasetTagManager.AiApi
 
         }
 
+        /// <summary>Client for the active LLM site profile (all its keys rotate per request).</summary>
+        public static AiOpenAiClient CreateFromSettings(AppSettings settings)
+        {
+            return new AiOpenAiClient(
+                settings.OpenAiAutoTagger.ConnectionAddress,
+                settings.GetActiveLlmApiKeys(),
+                settings.OpenAiAutoTagger.RequestTimeout);
+        }
+
         public async Task<(bool Result, string ErrMessage)> ConnectAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                OpenAIModelClient client = new OpenAIModelClient(credential, serverOptions);
+                OpenAIModelClient client = new OpenAIModelClient(credentials[0], serverOptions);
                 var models = await client.GetModelsAsync(cancellationToken);
                 Models.Clear();
                 Models.AddRange(models.Value.Select(a => a.Id).Order());
@@ -77,10 +103,22 @@ namespace BooruDatasetTagManager.AiApi
             Stopwatch timer = Stopwatch.StartNew();
             try
             {
-                if (chatClient == null || chatClient.Model != request.Model)
+                // Snapshot the shared field into a local: two concurrent requests
+                // for different models could otherwise send on each other's
+                // freshly-swapped clients (this instance is shared app-wide).
+                ChatClientSet set = chatClients;
+                if (set == null || set.Model != request.Model)
                 {
-                    chatClient = new ChatClient(request.Model, credential, serverOptions);
+                    set = new ChatClientSet
+                    {
+                        Model = request.Model,
+                        Clients = credentials.Select(c => new ChatClient(request.Model, c, serverOptions)).ToArray()
+                    };
+                    chatClients = set;
                 }
+                // Multiple saved API keys rotate across requests (round-robin).
+                ChatClient client = set.Clients[
+                    LlmApiProfileLogic.RotationIndex(Interlocked.Increment(ref keyRotation), set.Clients.Length)];
                 List<ChatMessage> messages = new List<ChatMessage>();
                 var chatOptions = new ChatCompletionOptions();
                 if (!string.IsNullOrEmpty(request.SystemPrompt))
@@ -112,7 +150,7 @@ namespace BooruDatasetTagManager.AiApi
                         chatOptions.FrequencyPenalty = request.RepeatPenalty;
                 }
                 ChatCompletion result;
-                result = await chatClient.CompleteChatAsync(
+                result = await client.CompleteChatAsync(
                     messages,
                     useChatOptions ? chatOptions : null,
                     cancellationToken);
@@ -175,7 +213,7 @@ namespace BooruDatasetTagManager.AiApi
             }
         }
 
-        public async Task<(List<AiApiClient.AutoTagItem> data, string errorMessage, bool canceled)> GetTagsWithAutoTagger(
+        public async Task<(List<AutoTagItem> data, string errorMessage, bool canceled)> GetTagsWithAutoTagger(
             string imagePath,
             bool defSettings,
             CancellationToken cancellationToken = default)
@@ -235,14 +273,14 @@ namespace BooruDatasetTagManager.AiApi
                 return (null, errMess, false);
             }
             response.Result = RemoveThinking(response.Result);
-            List<AiApiClient.AutoTagItem> result = new List<AiApiClient.AutoTagItem>();
+            List<AutoTagItem> result = new List<AutoTagItem>();
             if (Program.Settings.OpenAiAutoTagger.SplitString)
             {
-                result = response.Result.Split(Program.Settings.OpenAiAutoTagger.Splitter, StringSplitOptions.RemoveEmptyEntries).Select(a=>new AiApiClient.AutoTagItem(a.Trim(), 1f)).ToList();
+                result = response.Result.Split(Program.Settings.OpenAiAutoTagger.Splitter, StringSplitOptions.RemoveEmptyEntries).Select(a=>new AutoTagItem(a.Trim(), 1f)).ToList();
             }
             else
             {
-                result.Add(new AiApiClient.AutoTagItem(response.Result, 1f));
+                result.Add(new AutoTagItem(response.Result, 1f));
             }
 
             if (Program.Settings.OpenAiAutoTagger.TagFilteringMode != TagFilteringMode.None && !string.IsNullOrEmpty(Program.Settings.OpenAiAutoTagger.TagFilter))

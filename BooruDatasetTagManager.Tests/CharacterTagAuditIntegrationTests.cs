@@ -18,17 +18,17 @@ public sealed class CharacterTagAuditIntegrationTests
     }
 
     [Fact]
-    public void ProjectPublishesAgentSkillsAndVersionIs120()
+    public void ProjectPublishesAgentSkillsAndVersionIs121()
     {
         string project = ProjectDirectory();
         string csproj = File.ReadAllText(Path.Combine(project, "BooruDatasetTagManager.csproj"));
         string assembly = File.ReadAllText(Path.Combine(project, "Properties", "AssemblyInfo.cs"));
 
         Assert.Contains("..\\Agent\\skills\\**\\*", csproj);
-        Assert.Contains("<ApplicationVersion>1.2.0.0</ApplicationVersion>", csproj);
-        Assert.Contains("AssemblyVersion(\"1.2.0.0\")", assembly);
-        Assert.Contains("AssemblyFileVersion(\"1.2.0.0\")", assembly);
-        Assert.Contains("AssemblyInformationalVersion(\"1.2.0\")", assembly);
+        Assert.Contains("<ApplicationVersion>1.2.1.0</ApplicationVersion>", csproj);
+        Assert.Contains("AssemblyVersion(\"1.2.1.0\")", assembly);
+        Assert.Contains("AssemblyFileVersion(\"1.2.1.0\")", assembly);
+        Assert.Contains("AssemblyInformationalVersion(\"1.2.1\")", assembly);
     }
 
     [Fact]
@@ -116,7 +116,9 @@ public sealed class CharacterTagAuditIntegrationTests
         string adapters = File.ReadAllText(Path.Combine(project, "AutoTagProviderAdapters.cs"));
         Assert.Contains("AutoTagProviderId { get; set; } = \"openai-compatible\"", settings);
         Assert.Contains("OpenAiCompatibleAutoTagProvider", adapters);
-        Assert.Contains("AiApiServerAutoTagProvider", adapters);
+        // LEGACY-01: the ai-api-server provider (external Python backend) was
+        // removed; a resurrected registration must fail this guard.
+        Assert.DoesNotContain("class AiApiServerAutoTagProvider", adapters);
         foreach (string language in new[] { "en-US", "zh-CN", "zh-TW", "ru-RU", "pt-BR" })
         {
             string text = File.ReadAllText(Path.Combine(project, "Languages", language + ".txt"));

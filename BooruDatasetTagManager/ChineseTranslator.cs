@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace BooruDatasetTagManager
@@ -16,7 +17,7 @@ namespace BooruDatasetTagManager
             client = new HttpClient();
         }
 
-        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return null;
@@ -33,10 +34,10 @@ namespace BooruDatasetTagManager
                        new KeyValuePair<string, string>("content",text),
                        new KeyValuePair<string, string>("type","2"),
                    });
-            var ret = await client.PostAsync($"https://translate-api-fykz.xiangtatech.com/translation/webs/index", content);
+            var ret = await client.PostAsync($"https://translate-api-fykz.xiangtatech.com/translation/webs/index", content, cancellationToken);
             if (ret.IsSuccessStatusCode)
             {
-                string json = await ret.Content.ReadAsStringAsync();
+                string json = await ret.Content.ReadAsStringAsync(cancellationToken);
                 int begin = json.IndexOf("\"by\":\"");
                 if (begin == -1)
                     return null;

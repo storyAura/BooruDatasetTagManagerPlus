@@ -67,6 +67,9 @@ namespace BooruDatasetTagManager
                     return new GifEncoder();
                 case ".webp":
                     return new WebpEncoder();
+                case ".tif":
+                case ".tiff":
+                    return new SixLabors.ImageSharp.Formats.Tiff.TiffEncoder();
                 default:
                     return new PngEncoder();
             }

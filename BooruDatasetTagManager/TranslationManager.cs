@@ -127,12 +127,12 @@ namespace BooruDatasetTagManager
             return TranslateAsync(text, false);
         }
 
-        public async Task<string> TranslateAsync(string text, bool forceRefresh)
+        public async Task<string> TranslateAsync(string text, bool forceRefresh, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
 
-            await translationLocker.WaitAsync();
+            await translationLocker.WaitAsync(cancellationToken);
             try
             {
                 TransItem cached = GetTranslationItem(text);
@@ -169,7 +169,7 @@ namespace BooruDatasetTagManager
                     }
                 }
 
-                string result = await translator.TranslateAsync(text, "en", _language);
+                string result = await translator.TranslateAsync(text, "en", _language, cancellationToken);
                 if (!string.IsNullOrEmpty(result))
                     await AddOrUpdateTranslationAsync(text, result, false, forceRefresh);
                 return result ?? string.Empty;

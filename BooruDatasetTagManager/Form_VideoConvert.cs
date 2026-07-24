@@ -238,6 +238,8 @@ namespace BooruDatasetTagManager
             buttonCancelJob.Enabled = false;
             buttonCancelJob.Click += (_, _) => jobCancellation?.Cancel();
             buttonClose.Click += (_, _) => Close();
+            // Esc closes (deferred while a job runs, via FormClosing).
+            CancelButton = buttonClose;
 
             panelActionButtons.Controls.Add(buttonRun);
             panelActionButtons.Controls.Add(buttonCancelJob);
@@ -405,6 +407,9 @@ namespace BooruDatasetTagManager
             string format = comboTargetFormat.SelectedItem?.ToString() ?? "mp4";
             bool replaceOriginal = checkReplaceOriginal.Checked;
             var codec = comboCodec.SelectedItem is VideoConvertCodec selectedCodec ? selectedCodec : VideoConvertCodec.H264;
+            // Output ffmpeg is currently writing; deleted if cancel/crash
+            // interrupts the conversion so no half-written file survives.
+            string pendingOutput = null;
 
             try
             {
@@ -431,14 +436,16 @@ namespace BooruDatasetTagManager
                     string ffmpegOutput = replaceOriginal
                         ? videoService.GetConvertTempOutputPath(input, format)
                         : finalOutput;
+                    pendingOutput = ffmpegOutput;
                     var result = await videoService.ConvertAsync(input, ffmpegOutput, codec, progress, jobCancellation.Token).ConfigureAwait(true);
+                    pendingOutput = null;
                     if (!result.Success)
                     {
                         errors.Add(input + ": " + result.ErrorMessage);
-                        if (replaceOriginal)
-                        {
-                            try { File.Delete(ffmpegOutput); } catch { }
-                        }
+                        // Junk in both modes: the temp for replace, or a partial
+                        // file already carrying the final name (the pre-check
+                        // guaranteed that name was free before we started).
+                        try { File.Delete(ffmpegOutput); } catch { }
                     }
                     else if (replaceOriginal)
                     {
@@ -467,10 +474,18 @@ namespace BooruDatasetTagManager
             }
             catch (OperationCanceledException)
             {
+                if (pendingOutput != null)
+                {
+                    try { File.Delete(pendingOutput); } catch { }
+                }
                 UpdateStatus(I18n.GetText("VideoToolsCancelled"));
             }
             catch (Exception ex)
             {
+                if (pendingOutput != null)
+                {
+                    try { File.Delete(pendingOutput); } catch { }
+                }
                 MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally

@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.2.0
+# BooruDatasetTagManager+ 1.2.1
 
 [English](../../README_en.md) | [简体中文](../../README.md)
 
@@ -8,7 +8,8 @@ Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork
 
 ## Histórico de versões
 
-- **1.2.0** (atual) — painel do dataset reconstruído como navegador unificado por pastas (busca, recolher, renomear em lote, marcação rápida por pasta) com pré-visualização incorporada de várias imagens; cores semânticas de tags e ordenação por categoria; correspondência com o catálogo de personagens do danbooru (cores + nomes traduzidos); diversas correções de tradução, da janela da wiki e do assistente de auditoria; reforço de publicação e segurança de dados após auditoria (reversão de renomeação, token HF restrito ao huggingface.co, empacotamento isolado, trava de salvamento do LLM, proteção contra sobrescrita na conversão de vídeo, inicialização tolerante a falhas de configuração). [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
+- **1.2.1** (atual) — segunda leva de correções da auditoria: reforço de memória e segurança de dados nos pipelines ONNX / rede / imagem, primeiro carregamento mais rápido, acessibilidade e i18n completos; o backend legado AiApiServer em Python foi removido (configurações antigas migram automaticamente); o navegador do dataset filtra o grupo raiz isoladamente e seleções de várias pastas definem o escopo pela união (as contagens de Todas as tags acompanham); a auditoria de dois personagens ganha checkpoints com repetição apenas do personagem que falhou; a pré-visualização flutuante não cobre mais as caixas de confirmação (o app parecia travado) e a lista de tags se auto-repara da dessincronização interna (o erro "List desynchronization detected" que bloqueava novas edições); a janela de configurações LLM não corta mais a dica sob a lista de chaves de API em telas com DPI alto; o menu Debug perde as antigas entradas de teste do desenvolvedor e vira um modo de depuração opcional (desligado por padrão; ativá-lo nas configurações mostra o menu e grava o debug.log); os avisos de atualização no app agora mostram as notas da versão no idioma da interface (versões independentes em chinês e inglês). [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
+- **1.2.0** — painel do dataset reconstruído como navegador unificado por pastas (busca, recolher, renomear em lote, marcação rápida por pasta) com pré-visualização incorporada de várias imagens; cores semânticas de tags e ordenação por categoria; correspondência com o catálogo de personagens do danbooru (cores + nomes traduzidos); diversas correções de tradução, da janela da wiki e do assistente de auditoria; reforço de publicação e segurança de dados após auditoria (reversão de renomeação, token HF restrito ao huggingface.co, empacotamento isolado, trava de salvamento do LLM, proteção contra sobrescrita na conversão de vídeo, inicialização tolerante a falhas de configuração). [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
 - **1.1.3** — reforço de E/S de arquivos e segurança de dados (corrige os 8 riscos confirmados por uma auditoria interna: falhas de salvamento mantêm as edições, exclusão transacional, gravações concorrentes seguras, …); adiciona o editor de imagem, os modelos ONNX da família CL, a busca de tags com dicionário chinês e a ação rápida por clique duplo em Todas as tags. [Notas da versão](../RELEASE_NOTES_v1.1.3.md)
 - **1.1.2** — janela unificada de Marcação LLM (modos Tags / Linguagem natural); remoção de fundo dentro do processo (RMBG-1.4); proteção contra falhas, gravações atômicas, chaves criptografadas e outros reforços de robustez/segurança. [Notas da versão](../RELEASE_NOTES_v1.1.2.md)
 - **1.1.1** — salvamento mais rápido da auditoria de tags de personagem; diálogo unificado de Recortar imagem. [Notas da versão](../RELEASE_NOTES_v1.1.1.md)
@@ -128,7 +129,8 @@ Selecione várias imagens e pressione **Shift+T**: a lista de tags à esquerda (
 ### Dados e privacidade
 
 - **A Marcação LLM e a auditoria de tags de personagem enviam imagens ao endpoint que você configurou**; a marcação ONNX, a remoção de fundo e as ferramentas de vídeo executam totalmente na sua máquina
-- As configurações (incluindo as chaves de API criptografadas com DPAPI) ficam no arquivo local `settings.json`; o salvamento de tags é atômico, as ferramentas em lote nunca destroem os originais e a exclusão de imagens é transacional, com reversão
+- As configurações (incluindo as chaves de API criptografadas com DPAPI) ficam no arquivo local `settings.json`; o salvamento de tags é atômico, as ferramentas de imagem em lote gravam em arquivo temporário e só substituem em caso de sucesso, e a exclusão é feita em etapas, com restauração automática se falhar no meio. Atenção: a conversão de vídeo com "substituir o original" marcado apaga o vídeo de origem após uma conversão bem-sucedida
+- O **modo de depuração** (Configurações → Geral, desligado por padrão) mostra um menu Debug e grava informações de execução e exceções no `debug.log` ao lado do executável (o menu abre o arquivo diretamente) — útil para anexar ao relatar problemas
 
 ## Agradecimentos e licença
 

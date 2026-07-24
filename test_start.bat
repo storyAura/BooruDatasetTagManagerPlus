@@ -10,33 +10,14 @@ set "APP_RELEASE_LEGACY=BooruDatasetTagManager\bin\Release\net8.0-windows\BooruD
 set "APP_DEBUG_LEGACY=BooruDatasetTagManager\bin\Debug\net8.0-windows\BooruDatasetTagManager.exe"
 set "PROJECT=BooruDatasetTagManager\BooruDatasetTagManager.csproj"
 
-if exist "%APP_RELEASE%" (
-    start "" "%APP_RELEASE%"
-    exit /b 0
-)
+rem Launch the NEWEST existing binary, not the first found: preferring
+rem Release by position used to start a stale build after a Debug rebuild.
+set "APP_NEWEST="
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command ^
+  "@('%APP_RELEASE%','%APP_DEBUG%','%APP_RELEASE_PLUS_LEGACY%','%APP_DEBUG_PLUS_LEGACY%','%APP_RELEASE_LEGACY%','%APP_DEBUG_LEGACY%') | Where-Object { Test-Path $_ } | Sort-Object { (Get-Item $_).LastWriteTime } -Descending | Select-Object -First 1"`) do set "APP_NEWEST=%%i"
 
-if exist "%APP_DEBUG%" (
-    start "" "%APP_DEBUG%"
-    exit /b 0
-)
-
-if exist "%APP_RELEASE_PLUS_LEGACY%" (
-    start "" "%APP_RELEASE_PLUS_LEGACY%"
-    exit /b 0
-)
-
-if exist "%APP_DEBUG_PLUS_LEGACY%" (
-    start "" "%APP_DEBUG_PLUS_LEGACY%"
-    exit /b 0
-)
-
-if exist "%APP_RELEASE_LEGACY%" (
-    start "" "%APP_RELEASE_LEGACY%"
-    exit /b 0
-)
-
-if exist "%APP_DEBUG_LEGACY%" (
-    start "" "%APP_DEBUG_LEGACY%"
+if defined APP_NEWEST (
+    start "" "%APP_NEWEST%"
     exit /b 0
 )
 

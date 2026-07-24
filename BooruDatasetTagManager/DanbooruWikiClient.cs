@@ -29,6 +29,25 @@ namespace BooruDatasetTagManager
             this.client.Timeout = TimeSpan.FromSeconds(10);
         }
 
+        /// <summary>
+        /// GET with one bounded retry on 429, honoring Retry-After (capped at
+        /// 10s) so a rate-limited burst degrades to a short wait, not a flood.
+        /// </summary>
+        private async Task<HttpResponseMessage> GetWithRetryAsync(string url)
+        {
+            HttpResponseMessage response = await client.GetAsync(url).ConfigureAwait(false);
+            if ((int)response.StatusCode != 429)
+                return response;
+            TimeSpan delay = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(2);
+            response.Dispose();
+            if (delay < TimeSpan.Zero)
+                delay = TimeSpan.FromSeconds(1);
+            else if (delay > TimeSpan.FromSeconds(10))
+                delay = TimeSpan.FromSeconds(10);
+            await Task.Delay(delay).ConfigureAwait(false);
+            return await client.GetAsync(url).ConfigureAwait(false);
+        }
+
         public async Task<DanbooruWikiPage> GetWikiPageAsync(string tag)
         {
             if (string.IsNullOrWhiteSpace(tag))
@@ -41,7 +60,7 @@ namespace BooruDatasetTagManager
                     + Uri.EscapeDataString(normalizedTag)
                     + "&limit=1";
 
-                using HttpResponseMessage response = await client.GetAsync(url).ConfigureAwait(false);
+                using HttpResponseMessage response = await GetWithRetryAsync(url).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                     return null;
 
@@ -127,7 +146,7 @@ namespace BooruDatasetTagManager
             try
             {
                 string url = "https://danbooru.donmai.us/posts/" + postId + ".json";
-                using HttpResponseMessage response = await client.GetAsync(url).ConfigureAwait(false);
+                using HttpResponseMessage response = await GetWithRetryAsync(url).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                     return null;
                 JObject item = JObject.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
@@ -147,13 +166,45 @@ namespace BooruDatasetTagManager
             }
         }
 
+        private const int MaxPreviewBytes = 5 * 1024 * 1024;
+
+        /// <summary>Preview URLs come from API JSON — only fetch images from
+        /// danbooru's own hosts, and never more than MaxPreviewBytes.</summary>
+        internal static bool IsAllowedPreviewUrl(string url)
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
+                && uri.Scheme == Uri.UriSchemeHttps
+                && (string.Equals(uri.Host, "donmai.us", StringComparison.OrdinalIgnoreCase)
+                    || uri.Host.EndsWith(".donmai.us", StringComparison.OrdinalIgnoreCase));
+        }
+
         public async Task<byte[]> DownloadBytesAsync(string url)
         {
-            if (string.IsNullOrWhiteSpace(url))
+            if (string.IsNullOrWhiteSpace(url) || !IsAllowedPreviewUrl(url))
                 return null;
             try
             {
-                return await client.GetByteArrayAsync(url).ConfigureAwait(false);
+                using HttpResponseMessage response = await client
+                    .GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+                string mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+                if (!mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                    return null;
+                if (response.Content.Headers.ContentLength > MaxPreviewBytes)
+                    return null;
+                await using var remote = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                using var buffer = new System.IO.MemoryStream();
+                byte[] chunk = new byte[81920];
+                int read;
+                while ((read = await remote.ReadAsync(chunk.AsMemory(0, chunk.Length)).ConfigureAwait(false)) > 0)
+                {
+                    // Declared length can lie; enforce the cap on actual bytes.
+                    if (buffer.Length + read > MaxPreviewBytes)
+                        return null;
+                    buffer.Write(chunk, 0, read);
+                }
+                return buffer.ToArray();
             }
             catch
             {

@@ -21,6 +21,21 @@ public class FallbackTranslatorTests
     }
 
     [Fact]
+    public async Task FallbackTranslatorCancelsTheUnderlyingCallOnTimeout()
+    {
+        var slow = new CancellationObservingTranslator();
+        var fast = new StaticTranslator(TranslationService.MyMemoryTranslate, "fallback result");
+        using var translator = new FallbackTranslator(new AbstractTranslator[] { slow, fast }, TimeSpan.FromMilliseconds(40));
+
+        string result = await translator.TranslateAsync("black shoes", "en", "zh-CN");
+
+        Assert.Equal("fallback result", result);
+        // TRANS-01b: the timeout must actually cancel the in-flight request,
+        // not abandon it to keep running in the background.
+        Assert.True(slow.WasCanceled);
+    }
+
+    [Fact]
     public async Task FallbackTranslatorReturnsEmptyStringWhenEveryProviderFails()
     {
         using var translator = new FallbackTranslator(
@@ -192,10 +207,37 @@ public class FallbackTranslatorTests
         {
         }
 
-        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref callCount);
-            await Task.Delay(TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+            return "too late";
+        }
+
+        public override void Dispose()
+        {
+        }
+    }
+
+    private sealed class CancellationObservingTranslator : AbstractTranslator
+    {
+        public bool WasCanceled { get; private set; }
+
+        public CancellationObservingTranslator() : base(TranslationService.ChineseTranslate)
+        {
+        }
+
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                WasCanceled = true;
+                throw;
+            }
             return "too late";
         }
 
@@ -216,7 +258,7 @@ public class FallbackTranslatorTests
             this.result = result;
         }
 
-        public override Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref callCount);
             return Task.FromResult(result);
@@ -233,7 +275,7 @@ public class FallbackTranslatorTests
         {
         }
 
-        public override Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException("simulated failure");
         }
@@ -255,7 +297,7 @@ public class FallbackTranslatorTests
             this.results = new Queue<string>(results);
         }
 
-        public override Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref callCount);
             return Task.FromResult(results.Dequeue());

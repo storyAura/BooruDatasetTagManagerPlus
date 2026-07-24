@@ -38,8 +38,17 @@ namespace BooruDatasetTagManager
             Resize += (_, _) => OnViewportChanged();
         }
 
-        public void Show(Image img, string name = null)
+        /// <summary>
+        /// Floating follow preview. Owned instead of TopMost: an owned window
+        /// stays above the main window (same floating behavior) but does NOT
+        /// cover modal dialogs — the old TopMost preview sat on top of
+        /// confirmation boxes (which open dead-center, right under it), so a
+        /// hidden confirm left the whole app looking frozen.
+        /// </summary>
+        public void Show(Form owner, Image img, string name = null)
         {
+            if (owner != null && !ReferenceEquals(Owner, owner))
+                Owner = owner;
             SetImage(img, name);
             Show();
         }

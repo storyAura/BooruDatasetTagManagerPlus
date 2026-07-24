@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace BooruDatasetTagManager
@@ -39,9 +40,14 @@ namespace BooruDatasetTagManager
             }
         }
 
-        public virtual async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        /// <summary>
+        /// TRANS-01b: the token flows into the underlying HTTP call so a
+        /// fallback timeout (or caller cancel) really cancels the request
+        /// instead of leaving it running in the background.
+        /// </summary>
+        public virtual Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
-            return null;
+            return Task.FromResult<string>(null);
         }
 
         public abstract void Dispose();

@@ -13,36 +13,42 @@ BooruDatasetTagManager/Form1.Designer.cs
 
 窗体标题为 `BooruDatasetTagManagerPlus`。
 
-主窗口由 `ToolStripContainer`、`SplitContainer`、`DataGridView`、`MenuStrip`、`StatusStrip` 组成，整体布局是三栏加底部状态栏：
+主窗口由 `ToolStripContainer`、`SplitContainer`、`MenuStrip`、`StatusStrip` 与若干运行时构建的控件组成，整体布局是三栏加底部状态栏：
 
-- 左侧：数据集图片列表。
+- 左侧：数据集浏览器模块（`DatasetBrowserView`：搜索框 + 可折叠 kohya 文件夹分组 + 缩略图行），下方是可折叠的内嵌预览面板（`DatasetPreviewPanel`）。
 - 中间：当前图片 tags。
-- 右侧：All/Common tags 与 Preview 两个 tab。
+- 右侧：All/Common tags。
 - 顶部：菜单、图片列表工具栏、tag 工具栏、All tags 工具栏。
 - 底部：状态栏。
+
+注意：旧的右侧 Preview tab 已移除；预览要么显示在左侧底部的内嵌面板（`PreviewType=PreviewInMainWindow`），要么用独立缩放窗口 `Form_preview`（`SeparateWindow`）。
 
 ## 左侧数据集区域
 
 核心控件：
 
 ```text
-gridViewDS
+DatasetBrowserView   （可见的浏览器）
+DatasetPreviewPanel  （内嵌预览面板）
+gridViewDS           （隐藏，但仍是选择与操作的权威数据源）
 ```
 
 作用：
 
-- 展示数据集图片。
-- 支持单选、多选。
-- 当前选择会驱动中间 tag 列表和预览图更新。
+- `DatasetBrowserView` 展示数据集图片：多文件夹数据集按 kohya 文件夹分组，组头可折叠，点击组头把数据集范围切到该文件夹；单文件夹为平铺列表。支持 Ctrl/Shift/Ctrl+A 多选与搜索过滤（200ms 防抖）。
+- **`gridViewDS` 隐藏但保留**：所有既有操作仍读取它的 `SelectedRows`；浏览器把用户选择镜像进网格，网格侧的程序化选择变化再镜像回浏览器。折叠分组会把被隐藏的选择从两侧同步剪掉。
+- 当前选择会驱动中间 tag 列表和预览更新。
 - 相关操作包括加载文件夹、保存全部、过滤、删除图片和 tags、打开图片所在目录。
-- 右键菜单：打开所在目录、删除图片和 tags、移除背景、裁剪图片、编辑图片（`Form_ImageEditor`，PS 式左侧工具栏与快捷键）、ONNX 重新推标、LLM 打标、视频处理（仅视频文件）。
-- 表头右键菜单：切换各列显示/隐藏（列名已全部本地化）。
+- 图片右键菜单：打开所在目录、删除图片和 tags、移除背景、裁剪图片、编辑图片（`Form_ImageEditor`，PS 式左侧工具栏与快捷键）、ONNX 重新推标、LLM 打标、视频处理（仅视频文件）。
+- 组头右键菜单：重命名文件夹（磁盘 + 内存原位重映射）、批量重命名图片、对该文件夹跑 ONNX / LLM 打标。
+- 隐藏网格的表头右键菜单：切换各列显示/隐藏（列名已全部本地化，选择持久化在 `Settings.DatasetHiddenColumns`）。
 
 主要数据来源：
 
 ```text
 Program.DataManager
-DatasetManager
+DatasetManager        （ActiveFolder 驱动文件夹范围）
+DatasetFolders.cs     （DatasetFolderIndex 路径计算，已链接进测试工程）
 ```
 
 ## 中间当前 tags 区域
@@ -138,7 +144,7 @@ Form_LlmTagger
 - 自然语言模式支持内容格式（标签+自然语言 / 仅自然语言）、另存 `_captioned` 副本或就地写回 `.txt`、无标注时先用 ONNX 推标。
 - 窗口内可直接选提示词模板；「打标设置…」打开 `Form_AutoTaggerOpenAiSettings`（提示词/参数），「LLM 设置…」打开 `Form_AiServerSet`（端点/密钥/模型）。
 
-说明：旧的「AutoTagger 预览窗口」tab（`tabAutoTags` / `gridViewAutoTags`）已从界面移除，打标结果不再经预览中转；`Form_AutoTaggerSettings`（AiApiServer 后端设置）仅在切换到 ai-api-server 提供方时可达，无菜单入口。
+说明：旧的「AutoTagger 预览窗口」tab（`tabAutoTags` / `gridViewAutoTags`）已从界面移除，打标结果不再经预览中转；legacy Python AiApiServer 后端及其设置窗（`Form_AutoTaggerSettings`）、moondream2 裁剪功能已整体删除，旧配置在启动时自动迁移到 OpenAI 兼容提供方。
 
 ## ONNX 推标窗口
 
@@ -153,25 +159,19 @@ Form_OnnxTagger
 - 本地 WD14 / PixAI ONNX 推标（工具菜单或数据集右键「ONNX 重新推标」打开）。
 - 模型下载（HuggingFace 官方/镜像）、双阈值、写入模式、排序、前后缀、下划线替换、进度与取消。
 
-## Preview 区域
+## 预览区域
 
 核心控件：
 
 ```text
-tabPreview
-pictureBox / preview controls
+DatasetPreviewPanel  （主窗口内嵌预览，数据集浏览器下方）
+Form_preview         （独立缩放/平移预览窗口）
 ```
 
 作用：
 
-- 展示当前图片预览。
-- 支持根据设置在主窗口或独立预览窗口显示。
-
-相关窗口：
-
-```text
-Form_preview
-```
+- `PreviewType=PreviewInMainWindow` 时，左侧底部内嵌面板是预览表面：展开状态持久化为 `Settings.DatasetPreviewExpanded`；「视图 → 显示预览」、其热键与面板头部箭头都经 `ToggleEmbeddedPreview` 切换；多选时可并列显示多张缩略图。
+- `PreviewType=SeparateWindow` 时使用浮动 `Form_preview`：滚轮以光标为中心缩放、拖拽平移、双击在“适应窗口 ↔ 100%”间切换；跟随开关（isShowPreview）仅运行时有效。坐标映射数学在 `PreviewCanvasMath`（已链接进测试工程）。
 
 ## 菜单结构
 

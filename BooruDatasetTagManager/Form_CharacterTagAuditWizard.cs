@@ -115,6 +115,10 @@ namespace BooruDatasetTagManager
 
         private void InitializeComponent()
         {
+            // DPI-aware scaling: without it the fixed 1200×680 pixel minimum
+            // renders undersized text/controls on 150%+ displays.
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             Text = "Character tag audit";
             StartPosition = FormStartPosition.CenterParent;
             // Wide enough that the review page's rightmost column (加入 /
@@ -1125,7 +1129,7 @@ namespace BooruDatasetTagManager
                 hash = unchecked(hash * 31 ^ item.ImageFilePath.GetHashCode());
                 count++;
             }
-            return (Program.DataManager.ActiveFolder ?? string.Empty) + "|" + count + "|" + hash;
+            return string.Join(",", Program.DataManager.ActiveFolders) + "|" + count + "|" + hash;
         }
 
         private async Task ReloadGalleryIfScopeChangedAsync()
@@ -1304,7 +1308,7 @@ namespace BooruDatasetTagManager
             return true;
         }
 
-        private async Task RunAuditAsync()
+        private async Task RunAuditAsync(IReadOnlyList<CharacterTagAuditResult> dualResume = null)
         {
             bool dual = IsDualMode;
             ResetAuditSession();
@@ -1313,8 +1317,18 @@ namespace BooruDatasetTagManager
             buttonNext.Enabled = false;
             ResetAuditProgress(dual ? 4 : 2);
             cancellation = new CancellationTokenSource();
+            // TAG-01: a failed profile's exception carries the completed
+            // profiles' paid results; the retry prompt runs after finally.
+            CharacterTagDualAuditProfileException profileFailure = null;
             try
             {
+                // TAG-01: decode the reference image(s) up front — a corrupt
+                // file must fail before any paid model call (the existence
+                // check alone lets an HTML-error "image" through).
+                EnsureReferenceDecodes(selectedImagePath);
+                if (dual)
+                    EnsureReferenceDecodes(selectedImagePathB);
+
                 if (!Program.OpenAiAutoTagger.IsConnected)
                 {
                     labelProgress.Text = I18n.GetText("CharacterTagAuditConnecting");
@@ -1323,13 +1337,21 @@ namespace BooruDatasetTagManager
                         throw new InvalidOperationException(connection.ErrMessage);
                 }
 
+                // TAG-01: tell the user the worst-case bill before it happens
+                // (two model calls per still-pending profile).
+                int pendingProfiles = dual
+                    ? 2 - (dualResume?.Count(result => result != null) ?? 0)
+                    : 1;
+                labelProgress.Text = string.Format(
+                    I18n.GetText("CharacterTagAuditMaxRequests"), pendingProfiles * 2);
+
                 CharacterTagAuditService service = CreateAuditService();
                 var progress = new Progress<CharacterTagAuditProgress>(UpdateAuditProgress);
                 if (dual)
                 {
                     runProfiles = BuildProfiles();
                     var dualService = new CharacterTagDualAuditService(service);
-                    dualAuditInfo = await dualService.ExecuteAsync(BuildDualAuditOptions(), progress, cancellation.Token);
+                    dualAuditInfo = await dualService.ExecuteAsync(BuildDualAuditOptions(), progress, cancellation.Token, dualResume);
                     dualResults = dualAuditInfo.ProfileResults.ToList();
                 }
                 else
@@ -1361,6 +1383,11 @@ namespace BooruDatasetTagManager
                     ShowPage(0);
                 }
             }
+            catch (CharacterTagDualAuditProfileException ex)
+            {
+                if (!IsDisposed && !closeAfterWork)
+                    profileFailure = ex;
+            }
             catch (Exception ex)
             {
                 if (!IsDisposed && !closeAfterWork)
@@ -1386,6 +1413,46 @@ namespace BooruDatasetTagManager
                     if (!IsDisposed)
                         Close();
                 }
+            }
+            if (profileFailure != null)
+                await OfferDualProfileRetryAsync(profileFailure);
+        }
+
+        private static void EnsureReferenceDecodes(string path)
+        {
+            using System.Drawing.Image decoded = ImageLoader.GetImageFromFile(path);
+            if (decoded == null)
+            {
+                throw new InvalidOperationException(
+                    string.Format(I18n.GetText("CharacterTagAuditReferenceUndecodable"), path));
+            }
+        }
+
+        /// <summary>
+        /// TAG-01 checkpoint prompt: shows which profile failed, what the
+        /// completed profiles already cost, and offers to retry only the
+        /// failed profile with the completed results reused.
+        /// </summary>
+        private async Task OfferDualProfileRetryAsync(CharacterTagDualAuditProfileException failure)
+        {
+            string trigger = runProfiles != null && failure.FailedProfileIndex < runProfiles.Count
+                ? runProfiles[failure.FailedProfileIndex].TriggerWord
+                : "#" + (failure.FailedProfileIndex + 1);
+            int spentTokens = failure.CompletedResults
+                .Where(result => result?.Metrics != null && result.Metrics.HasTokenUsage)
+                .Sum(result => result.Metrics.TotalTokens);
+            string message = string.Format(
+                I18n.GetText("CharacterTagAuditProfileFailedRetry"),
+                trigger,
+                failure.InnerException?.Message ?? failure.Message,
+                spentTokens);
+            if (MessageBox.Show(this, message, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            {
+                await RunAuditAsync(failure.CompletedResults);
+            }
+            else
+            {
+                ShowPage(0);
             }
         }
 

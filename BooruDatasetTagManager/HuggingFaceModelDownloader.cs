@@ -112,8 +112,9 @@ namespace BooruDatasetTagManager
 
                 if (string.Equals(name, "selected_tags.csv", StringComparison.OrdinalIgnoreCase))
                 {
-                    string firstLine = ReadFirstLineShared(path);
-                    return firstLine.Contains("name", StringComparison.OrdinalIgnoreCase);
+                    // Header alone must not count as ready: a header-only CSV
+                    // loads as zero labels and tagging silently returns nothing.
+                    return HasCsvHeaderAndDataRow(path);
                 }
 
                 return info.Length > 0;
@@ -199,7 +200,16 @@ namespace BooruDatasetTagManager
 
             if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
             {
-                // The partial file already spans the full remote size.
+                // A 416 only means "your offset is past the end". Trust the
+                // partial as complete only when the server's Content-Range
+                // total ("bytes */<total>") matches its size — otherwise it is
+                // stale garbage from an older remote revision.
+                long? remoteTotal = response.Content.Headers.ContentRange?.Length;
+                if (remoteTotal.HasValue && remoteTotal.Value != existingLength)
+                {
+                    TryDelete(partialPath);
+                    throw new InvalidOperationException(I18n.GetText("TaggerModelCorrupt"));
+                }
                 progress?.Report((filename, existingLength, existingLength));
                 PromotePartialFile(partialPath, localPath);
                 EnsureValidDownloadedFile(repo, filename, localPath);
@@ -280,11 +290,20 @@ namespace BooruDatasetTagManager
             throw new InvalidOperationException(I18n.GetText("TaggerModelCorrupt"));
         }
 
-        private static string ReadFirstLineShared(string path)
+        private static bool HasCsvHeaderAndDataRow(string path)
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             using var reader = new StreamReader(stream);
-            return reader.ReadLine() ?? string.Empty;
+            string header = reader.ReadLine() ?? string.Empty;
+            if (!header.Contains("name", StringComparison.OrdinalIgnoreCase))
+                return false;
+            string line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (!string.IsNullOrWhiteSpace(line) && line.Contains(','))
+                    return true;
+            }
+            return false;
         }
 
         private static bool LooksLikeOnnxProtobuf(string path)

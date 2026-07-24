@@ -25,6 +25,20 @@ namespace BooruDatasetTagManager
         public static bool UnprotectFailureOccurred { get; private set; }
 
         /// <summary>
+        /// True when at least one secret could not be encrypted this session
+        /// and was stored as plaintext instead. The UI warns the user so the
+        /// silent-plaintext fallback never goes unnoticed.
+        /// </summary>
+        public static bool ProtectFailureOccurred { get; private set; }
+
+        /// <summary>
+        /// True when a legacy plaintext secret was read this session. Startup
+        /// uses this to re-save settings twice, so both settings.json and its
+        /// .bak rotate to the encrypted form.
+        /// </summary>
+        public static bool LegacyPlaintextLoaded { get; private set; }
+
+        /// <summary>
         /// Returns a storable representation of <paramref name="plainText"/>.
         /// On Windows the value is DPAPI-encrypted and prefixed; if encryption
         /// is unavailable the original text is returned unchanged so the
@@ -51,6 +65,7 @@ namespace BooruDatasetTagManager
             catch (Exception ex)
             {
                 Trace.WriteLine($"SecretProtector.Protect failed: {ex}");
+                ProtectFailureOccurred = true;
                 return plainText;
             }
         }
@@ -65,7 +80,10 @@ namespace BooruDatasetTagManager
                 return storedValue;
 
             if (!storedValue.StartsWith(ProtectedPrefix, StringComparison.Ordinal))
+            {
+                LegacyPlaintextLoaded = true;
                 return storedValue; // legacy plaintext
+            }
 
             if (!OperatingSystem.IsWindows())
                 return string.Empty;

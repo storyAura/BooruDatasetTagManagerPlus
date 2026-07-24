@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace BooruDatasetTagManager
@@ -30,11 +31,15 @@ namespace BooruDatasetTagManager
                 TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 5 : timeoutSeconds));
         }
 
-        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        // Extra time a canceled attempt gets to acknowledge its token before
+        // it is abandoned the old way (covers token-ignoring translators).
+        private static readonly TimeSpan GraceWindow = TimeSpan.FromSeconds(2);
+
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             foreach (var translator in translators)
             {
-                string result = await TryTranslateAsync(translator, text, fromLang, toLang);
+                string result = await TryTranslateAsync(translator, text, fromLang, toLang, cancellationToken);
                 if (!string.IsNullOrWhiteSpace(result))
                     return result;
             }
@@ -42,16 +47,27 @@ namespace BooruDatasetTagManager
             return string.Empty;
         }
 
-        private async Task<string> TryTranslateAsync(AbstractTranslator translator, string text, string fromLang, string toLang)
+        private async Task<string> TryTranslateAsync(AbstractTranslator translator, string text, string fromLang, string toLang, CancellationToken outerToken)
         {
+            // Linked per-attempt source: on timeout the underlying HTTP call
+            // is actually canceled instead of left running in the background
+            // while the chain moves on to the next provider.
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(outerToken);
+            attempt.CancelAfter(timeout);
             try
             {
-                Task<string> translateTask = translator.TranslateAsync(text, fromLang, toLang);
-                Task completed = await Task.WhenAny(translateTask, Task.Delay(timeout));
+                Task<string> translateTask = translator.TranslateAsync(text, fromLang, toLang, attempt.Token);
+                Task completed = await Task.WhenAny(translateTask, Task.Delay(timeout + GraceWindow));
                 if (!ReferenceEquals(completed, translateTask))
                     return string.Empty;
 
                 return await translateTask ?? string.Empty;
+            }
+            catch (OperationCanceledException) when (outerToken.IsCancellationRequested)
+            {
+                // The caller canceled the whole translation: don't fall
+                // through to the next provider.
+                throw;
             }
             catch
             {

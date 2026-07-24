@@ -68,4 +68,54 @@ public sealed class CharacterTagCatalogTests
         Assert.Equal(new[] { "\"a-z\"", "", "" }, CharacterTagCatalog.ParseCsvLine("\"\"\"a-z\"\"\",,"));
         Assert.Equal(new[] { "tag", "one, two", "ip" }, CharacterTagCatalog.ParseCsvLine("tag,\"one, two\",ip"));
     }
+
+    [Fact]
+    public void SearchAutocompleteMatchesEnglishTagsAndChineseNames()
+    {
+        CharacterTagCatalog catalog = Load(
+            "firefly_(honkai:_star_rail),流萤,honkai:_star_rail",
+            "fu_xuan_(honkai:_star_rail),符玄,honkai:_star_rail");
+
+        TagsDB.TagItem english = Assert.Single(catalog.SearchAutocomplete("firefly"));
+        Assert.False(english.IsAlias);
+        Assert.Equal("firefly (honkai: star rail)", english.GetTag());
+        Assert.Equal("firefly (honkai: star rail) (流萤 (honkai: star rail))", english.ToString());
+
+        TagsDB.TagItem alias = Assert.Single(catalog.SearchAutocomplete("流萤"));
+        Assert.True(alias.IsAlias);
+        Assert.Equal("firefly (honkai: star rail)", alias.GetTag());
+        Assert.Equal("firefly (honkai: star rail) (流萤 (honkai: star rail))", alias.ToString());
+
+        Assert.Empty(catalog.SearchAutocomplete("missing"));
+        Assert.Empty(catalog.SearchAutocomplete("   "));
+    }
+
+    [Fact]
+    public void SearchAutocompleteRanksPrefixMatchesFirstAndHonorsTheLimit()
+    {
+        CharacterTagCatalog catalog = Load(
+            "alpha_one,,x",
+            "the_alpha_two,,x",
+            "alpha_three,,x");
+
+        TagsDB.TagItem[] limited = catalog.SearchAutocomplete("alpha", 2);
+        Assert.Equal(2, limited.Length);
+        Assert.All(limited, item => Assert.StartsWith("alpha", item.GetTag()));
+
+        TagsDB.TagItem[] all = catalog.SearchAutocomplete("alpha");
+        Assert.Equal(3, all.Length);
+        Assert.Equal("the alpha two", all[2].GetTag());
+    }
+
+    [Fact]
+    public void ResolveByNameMatchesPrimaryTranslatedNameExactly()
+    {
+        CharacterTagCatalog catalog = Load("firefly_(honkai:_star_rail),流萤,honkai:_star_rail");
+
+        Assert.Equal("firefly (honkai: star rail)", catalog.ResolveByName("流萤"));
+        Assert.Equal("firefly (honkai: star rail)", catalog.ResolveByName(" 流萤 "));
+        Assert.Null(catalog.ResolveByName("符玄"));
+        Assert.Null(catalog.ResolveByName(null));
+        Assert.Null(catalog.ResolveByName("  "));
+    }
 }

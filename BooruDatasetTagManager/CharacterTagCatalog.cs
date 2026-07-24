@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace BooruDatasetTagManager
@@ -43,6 +44,92 @@ namespace BooruDatasetTagManager
             return string.IsNullOrEmpty(entry.Copyright)
                 ? entry.PrimaryName
                 : entry.PrimaryName + " (" + entry.Copyright + ")";
+        }
+
+        /// <summary>
+        /// Autocomplete matches for <paramref name="input"/>: English input
+        /// searches character tags, CJK input searches the primary translated
+        /// names (译名). Prefix matches rank before substring matches; at most
+        /// <paramref name="limit"/> items. A name-matched item carries alias
+        /// semantics (completing inserts the character tag) and every item
+        /// displays as "tag (译名 (作品))".
+        /// </summary>
+        public TagsDB.TagItem[] SearchAutocomplete(string input, int limit = 30)
+        {
+            if (string.IsNullOrWhiteSpace(input) || entries.Count == 0 || limit <= 0)
+                return Array.Empty<TagsDB.TagItem>();
+            string term = Normalize(input);
+            if (term.Length == 0)
+                return Array.Empty<TagsDB.TagItem>();
+            bool byName = ContainsCjk(term);
+            var prefixMatches = new List<TagsDB.TagItem>();
+            var containsMatches = new List<TagsDB.TagItem>();
+            foreach (KeyValuePair<string, (string PrimaryName, string Copyright)> pair in entries)
+            {
+                string haystack = byName ? pair.Value.PrimaryName : pair.Key;
+                if (string.IsNullOrEmpty(haystack))
+                    continue;
+                if (haystack.StartsWith(term, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (prefixMatches.Count < limit)
+                        prefixMatches.Add(CreateAutocompleteItem(pair.Key, pair.Value, byName));
+                }
+                else if (containsMatches.Count < limit
+                    && haystack.Contains(term, StringComparison.OrdinalIgnoreCase))
+                {
+                    containsMatches.Add(CreateAutocompleteItem(pair.Key, pair.Value, byName));
+                }
+                if (prefixMatches.Count >= limit && containsMatches.Count >= limit)
+                    break;
+            }
+            return prefixMatches.Concat(containsMatches).Take(limit).ToArray();
+        }
+
+        /// <summary>Character tag whose primary translated name equals <paramref name="name"/>, or null.</summary>
+        public string ResolveByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || entries.Count == 0)
+                return null;
+            string term = name.Trim();
+            foreach (KeyValuePair<string, (string PrimaryName, string Copyright)> pair in entries)
+            {
+                if (string.Equals(pair.Value.PrimaryName, term, StringComparison.OrdinalIgnoreCase))
+                    return pair.Key;
+            }
+            return null;
+        }
+
+        private static TagsDB.TagItem CreateAutocompleteItem(
+            string tag, (string PrimaryName, string Copyright) entry, bool asNameAlias)
+        {
+            var item = new TagsDB.TagItem();
+            if (asNameAlias)
+            {
+                item.SetTag(entry.PrimaryName);
+                item.IsAlias = true;
+                item.Parent = tag;
+            }
+            else
+            {
+                item.SetTag(tag);
+            }
+            string translation = string.IsNullOrEmpty(entry.PrimaryName)
+                ? null
+                : string.IsNullOrEmpty(entry.Copyright)
+                    ? entry.PrimaryName
+                    : entry.PrimaryName + " (" + entry.Copyright + ")";
+            item.AutocompleteDisplayText = translation == null ? tag : tag + " (" + translation + ")";
+            return item;
+        }
+
+        private static bool ContainsCjk(string text)
+        {
+            foreach (char c in text)
+            {
+                if (c >= '一' && c <= '鿿')
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>

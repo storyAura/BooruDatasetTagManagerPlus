@@ -399,3 +399,7 @@ wd14-migration-package/
 CLAUDE.md
 IO_BUG_AUDIT.md
 COMPREHENSIVE_20_AGENT_AUDIT_2026-07-22.md
+
+# Contributor guide kept locally, not published
+AGENTS.md
+AUDIT_REMAINING_TODO.md

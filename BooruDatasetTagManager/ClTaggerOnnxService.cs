@@ -175,7 +175,18 @@ namespace BooruDatasetTagManager
                 // the next attempt re-downloads clean files.
                 labels = LoadLabels(labelsPath, model.Preprocess);
                 loadedModelPath = modelPath;
-                session = CreateSession(modelPath);
+                try
+                {
+                    session = CreateSession(modelPath);
+                }
+                catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
+                {
+                    // A DirectML session can fail for device/driver reasons that
+                    // say nothing about the file on disk: retry on CPU before
+                    // the outer handler declares the model corrupt and purges
+                    // the cached download.
+                    session = CreateSession(modelPath, forceCpu: true);
+                }
                 (inputName, outputName) = Wd14OnnxTaggerService.ResolveSessionMetadata(session);
             }
             catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
@@ -368,7 +379,9 @@ namespace BooruDatasetTagManager
 
         private InferenceSession CreateSession(string modelPath, bool forceCpu = false)
         {
-            var options = new SessionOptions
+            // Disposed once the session is constructed: ORT copies what it
+            // needs, and each leaked SessionOptions held a native handle.
+            using var options = new SessionOptions
             {
                 GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
             };
@@ -460,60 +473,35 @@ namespace BooruDatasetTagManager
 
         private static Bitmap PrepareBitmap(Image source, int targetSize, ClTaggerPreprocess mode)
         {
-            using Bitmap rgb = EnsureRgbOnWhite(source);
+            // Resize() clears the canvas white first, so alpha composites
+            // correctly without a separate full-size RGB pass.
             if (mode == ClTaggerPreprocess.V2ResizeRgb)
-                return Resize(rgb, targetSize);
+                return Resize(source, targetSize);
 
-            using Bitmap squared = PadSquare(rgb);
-            return Resize(squared, targetSize);
-        }
+            // v1: center on a white square of the longest side, then scale to
+            // target — done in one draw so no maxDim×maxDim intermediate is
+            // materialized (a 10000px-wide image used to cost ~300MB here).
+            double scale = targetSize / (double)Math.Max(source.Width, source.Height);
+            int scaledWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
+            int scaledHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
 
-        private static Bitmap EnsureRgbOnWhite(Image source)
-        {
-            var rgba = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
-            using (Graphics graphics = Graphics.FromImage(rgba))
-            {
-                graphics.Clear(Color.White);
-                graphics.CompositingMode = CompositingMode.SourceOver;
-                graphics.DrawImage(source, 0, 0, source.Width, source.Height);
-            }
-
-            var rgb = new Bitmap(rgba.Width, rgba.Height, PixelFormat.Format24bppRgb);
-            using (Graphics graphics = Graphics.FromImage(rgb))
-            {
-                graphics.DrawImage(rgba, 0, 0, rgba.Width, rgba.Height);
-            }
-
-            rgba.Dispose();
-            return rgb;
-        }
-
-        private static Bitmap PadSquare(Bitmap source)
-        {
-            int width = source.Width;
-            int height = source.Height;
-            if (width == height)
-                return new Bitmap(source);
-
-            int size = Math.Max(width, height);
-            var square = new Bitmap(size, size, PixelFormat.Format24bppRgb);
+            var square = new Bitmap(targetSize, targetSize, PixelFormat.Format24bppRgb);
             using (Graphics graphics = Graphics.FromImage(square))
             {
                 graphics.Clear(Color.White);
-                graphics.DrawImage(source, (size - width) / 2, (size - height) / 2, width, height);
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.DrawImage(source, (targetSize - scaledWidth) / 2, (targetSize - scaledHeight) / 2, scaledWidth, scaledHeight);
             }
 
             return square;
         }
 
-        private static Bitmap Resize(Bitmap source, int targetSize)
+        private static Bitmap Resize(Image source, int targetSize)
         {
-            if (source.Width == targetSize && source.Height == targetSize)
-                return new Bitmap(source);
-
             var resized = new Bitmap(targetSize, targetSize, PixelFormat.Format24bppRgb);
             using (Graphics graphics = Graphics.FromImage(resized))
             {
+                graphics.Clear(Color.White);
                 graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 graphics.DrawImage(source, 0, 0, targetSize, targetSize);
             }

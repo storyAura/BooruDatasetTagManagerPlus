@@ -29,6 +29,51 @@ public class EditableTagHistoryTests
     }
 
     [Fact]
+    public void ReplaceTagCommitsDanglingEditTransactionSoTextMirrorStaysInSync()
+    {
+        var tags = new EditableTagList(new[] { "old_tag", "other" });
+
+        // Simulate a cell edit abandoned by a grid rebind: the transaction
+        // stays open, so a later programmatic Tag set would skip the mirror.
+        tags[0].BeginEdit();
+        tags.ReplaceTag("old_tag", "new tag");
+
+        Assert.True(tags.CheckSyncLists());
+        Assert.Equal("new tag", tags.TextTags[0]);
+    }
+
+    [Fact]
+    public void RemoveTagsCommitsDanglingEditTransactionBeforeRemoving()
+    {
+        var tags = new EditableTagList(new[] { "aaa", "bbb", "ccc" });
+
+        tags[1].BeginEdit();
+        tags[1].Tag = "changed"; // swallowed by the open transaction
+        tags.RemoveTags(new[] { "ccc" }, storeHistory: false);
+
+        Assert.True(tags.CheckSyncLists());
+        Assert.Equal(new[] { "aaa", "changed" }, tags.TextTags);
+    }
+
+    [Fact]
+    public void DesynchronizedMirrorSelfHealsInsteadOfThrowingAndCorruptingFurther()
+    {
+        var tags = new EditableTagList(new[] { "aaa", "bbb", "ccc" });
+
+        // Historical bug: an open transaction swallowed the mirror update, and
+        // the next mutation THREW from inside CollectionBase, whose rollback
+        // re-inserted the removed item into the object list only (lists then
+        // differed in length and every later edit crashed).
+        tags[1].BeginEdit();
+        tags[1].Tag = "changed";
+        tags.RemoveAt(2);
+
+        Assert.True(tags.CheckSyncLists());
+        Assert.Equal(2, tags.Count);
+        Assert.Equal(new[] { "aaa", "changed" }, tags.TextTags);
+    }
+
+    [Fact]
     public void PrevStateRestoresAddedTag()
     {
         var tags = new EditableTagList(new[] { "holding food" });

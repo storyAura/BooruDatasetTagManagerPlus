@@ -26,6 +26,14 @@ namespace BooruDatasetTagManager
     {
         /// <summary>Scope change requested (null = all folders).</summary>
         public event Action<string> FolderScopeSelected;
+
+        /// <summary>
+        /// Ctrl/Shift folder multi-select changed. Keys are outward scope keys
+        /// (root = sentinel); an empty list means the selection was cleared.
+        /// The owner scopes the dataset to the union so the AllTags counts
+        /// follow the selected folders.
+        /// </summary>
+        public event Action<IReadOnlyList<string>> FolderMultiScopeSelected;
         /// <summary>The user changed the image selection.</summary>
         public event Action SelectionChangedByUser;
         /// <summary>Image double-clicked (path).</summary>
@@ -69,6 +77,9 @@ namespace BooruDatasetTagManager
         private bool defaultCollapsePending = true;
         private readonly GlyphButton expandAllButton;
         private readonly GlyphButton collapseAllButton;
+        // Debounces search typing: a full row rebuild per keystroke made
+        // typing lag on large datasets.
+        private readonly Timer searchDebounce = new Timer { Interval = 200 };
 
         public DatasetBrowserView()
         {
@@ -77,7 +88,15 @@ namespace BooruDatasetTagManager
             list.MouseMoveHover += List_HoverChanged;
 
             searchBox = new TextBox { BorderStyle = BorderStyle.None };
-            searchBox.TextChanged += (_, _) => Rebuild();
+            searchDebounce.Tick += (_, _) =>
+            {
+                searchDebounce.Stop();
+                Rebuild();
+                // A narrower filter hides rows just like a collapse does.
+                PruneHiddenSelection();
+            };
+            searchBox.TextChanged += (_, _) => { searchDebounce.Stop(); searchDebounce.Start(); };
+            Disposed += (_, _) => searchDebounce.Dispose();
 
             expandAllButton = new GlyphButton(expanded: true) { Visible = false, Cursor = Cursors.Hand };
             expandAllButton.Click += (_, _) => ExpandAllFolders();
@@ -130,7 +149,11 @@ namespace BooruDatasetTagManager
             items = dataItems ?? Array.Empty<DataItem>();
             datasetRoot = root ?? string.Empty;
             string normalized = DatasetFolderIndex.NormalizeRelative(scopedFolder);
-            activeFolder = normalized.Length == 0 ? null : normalized;
+            // Three states: null = no scope, "" = root scope (the sentinel
+            // maps to the browser-internal root group key), "x" = folder scope.
+            activeFolder = normalized == DatasetFolderIndex.RootFolderKey
+                ? string.Empty
+                : normalized.Length == 0 ? null : normalized;
             totalImageCount = datasetTotalCount;
             fileInfoCache.Clear();
             if (defaultCollapsePending)
@@ -178,6 +201,27 @@ namespace BooruDatasetTagManager
             foreach (DatasetFolderEntry folder in folders)
                 collapsedFolders.Add(folder.RelativePath ?? string.Empty);
             Rebuild();
+            PruneHiddenSelection();
+        }
+
+        /// <summary>
+        /// Drops selected paths whose rows a collapse just hid and notifies the
+        /// owner. Without this the mirrored gridViewDS selection keeps the
+        /// hidden images, so delete/bulk ops silently act on rows the browser
+        /// no longer shows.
+        /// </summary>
+        private void PruneHiddenSelection()
+        {
+            if (selectedPaths.Count == 0)
+                return;
+            var visible = new HashSet<string>(
+                rows.Where(row => row.Kind == RowKind.Image).Select(row => row.Item.ImageFilePath),
+                StringComparer.OrdinalIgnoreCase);
+            if (selectedPaths.RemoveWhere(path => !visible.Contains(path)) > 0)
+            {
+                list.Invalidate();
+                SelectionChangedByUser?.Invoke();
+            }
         }
 
         /// <summary>Localized tooltips for the expand-all / collapse-all buttons.</summary>
@@ -361,10 +405,13 @@ namespace BooruDatasetTagManager
                         if ((ModifierKeys & (Keys.Control | Keys.Shift)) != 0)
                         {
                             // Shift/Ctrl + click toggles folder multi-select
-                            // without touching scope or collapse state.
+                            // without touching collapse state; the scope
+                            // follows the whole selected set so the AllTags
+                            // counts track the selection.
                             if (!selectedFolders.Remove(row.FolderKey))
                                 selectedFolders.Add(row.FolderKey);
                             list.Invalidate();
+                            FolderMultiScopeSelected?.Invoke(OrderedSelectedFolders());
                         }
                         else
                         {
@@ -421,6 +468,7 @@ namespace BooruDatasetTagManager
             return folders
                 .Select(folder => folder.RelativePath ?? string.Empty)
                 .Where(key => selectedFolders.Contains(key))
+                .Select(ToScopeKey)
                 .ToList();
         }
 
@@ -433,12 +481,13 @@ namespace BooruDatasetTagManager
                 if (!collapsedFolders.Remove(row.FolderKey))
                     collapsedFolders.Add(row.FolderKey);
                 Rebuild();
+                PruneHiddenSelection();
                 return;
             }
             if (!isActive)
             {
                 collapsedFolders.Remove(row.FolderKey);
-                FolderScopeSelected?.Invoke(row.FolderKey);
+                FolderScopeSelected?.Invoke(ToScopeKey(row.FolderKey));
             }
         }
 
@@ -590,9 +639,21 @@ namespace BooruDatasetTagManager
 
         private static bool FolderEquals(string left, string right)
         {
+            // null (no scope) must NOT equal "" (the root group), or the root
+            // header reads as "active" under All and can only collapse.
+            if (left == null || right == null)
+                return left == null && right == null;
             string l = DatasetFolderIndex.NormalizeRelative(left);
             string r = DatasetFolderIndex.NormalizeRelative(right);
             return string.Equals(l, r, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Outward key for a browser group: the root group ("") is
+        /// published as the explicit sentinel so scope/context consumers can
+        /// tell it apart from "no folder".</summary>
+        private static string ToScopeKey(string folderKey)
+        {
+            return string.IsNullOrEmpty(folderKey) ? DatasetFolderIndex.RootFolderKey : folderKey;
         }
 
         private static bool PathEquals(string left, string right)

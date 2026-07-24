@@ -174,6 +174,8 @@ namespace BooruDatasetTagManager
             buttonRun.Click += async (_, _) => await RunJobAsync().ConfigureAwait(true);
             buttonCancelJob.Click += (_, _) => jobCancellation?.Cancel();
             buttonClose.Click += (_, _) => Close();
+            // Esc closes (deferred while a job runs, via FormClosing).
+            CancelButton = buttonClose;
 
             Shown += async (_, _) =>
             {

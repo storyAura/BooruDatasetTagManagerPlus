@@ -19,6 +19,9 @@ namespace BooruDatasetTagManager
             try
             {
                 using var image = SixLabors.ImageSharp.Image.Load(imagePath);
+                // Bake the EXIF orientation into the pixels: GDI+ ignores the
+                // tag, so camera photos showed (and saved) sideways otherwise.
+                image.Mutate(context => context.AutoOrient());
                 return ToDrawingImage(image);
             }
             catch
@@ -35,7 +38,7 @@ namespace BooruDatasetTagManager
             try
             {
                 using var image = SixLabors.ImageSharp.Image.Load(imagePath);
-                image.Mutate(context => context.Resize(new ResizeOptions
+                image.Mutate(context => context.AutoOrient().Resize(new ResizeOptions
                 {
                     Mode = ResizeMode.Max,
                     Size = new SixLabors.ImageSharp.Size(imageSize, imageSize)
@@ -56,6 +59,7 @@ namespace BooruDatasetTagManager
             try
             {
                 using var image = SixLabors.ImageSharp.Image.Load(imagePath);
+                image.Mutate(context => context.AutoOrient());
                 if (Math.Max(image.Width, image.Height) > maximumDimension)
                 {
                     image.Mutate(context => context.Resize(new ResizeOptions

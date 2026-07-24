@@ -38,8 +38,14 @@ namespace BooruDatasetTagManager
                     foreach (string subDirectory in Directory.GetDirectories(directory))
                     {
                         string name = Path.GetFileName(subDirectory);
-                        if (!name.StartsWith(InternalDirectoryPrefix, StringComparison.OrdinalIgnoreCase))
-                            pending.Push(subDirectory);
+                        if (name.StartsWith(InternalDirectoryPrefix, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        // Don't follow junctions/symlinks: a reparse point can aim
+                        // outside the dataset root, so recursing into it would pull
+                        // in (and later let writes/deletes touch) unrelated files.
+                        if ((File.GetAttributes(subDirectory) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+                            continue;
+                        pending.Push(subDirectory);
                     }
                 }
                 catch (Exception ex) when (ex is UnauthorizedAccessException || ex is IOException)

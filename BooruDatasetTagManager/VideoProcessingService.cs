@@ -334,6 +334,10 @@ namespace BooruDatasetTagManager
             };
 
             var result = await RunProcessAsync(locator.FfprobeExe, args, null, cancellationToken).ConfigureAwait(false);
+            // A failed probe used to be parsed as an all-zero VideoInfo and
+            // silently poison downstream fps/size decisions.
+            if (result.ExitCode != 0)
+                throw new InvalidOperationException("ffprobe failed: " + result.GetErrorSummary());
             var info = new VideoInfo();
             foreach (string rawLine in (result.StdOut ?? string.Empty).Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
             {

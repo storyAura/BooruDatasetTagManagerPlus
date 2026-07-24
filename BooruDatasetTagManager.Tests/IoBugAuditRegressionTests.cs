@@ -318,7 +318,7 @@ public sealed class TranslationCachePersistenceTests : IDisposable
         {
         }
 
-        public override Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(string.Empty);
         }

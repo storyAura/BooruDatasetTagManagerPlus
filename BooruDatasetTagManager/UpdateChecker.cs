@@ -20,6 +20,7 @@ namespace BooruDatasetTagManager
         public string ReleasePageUrl { get; set; } = string.Empty;
         public string ZipAssetUrl { get; set; }
         public string ZipAssetName { get; set; }
+        public string ZipAssetDigest { get; set; }
     }
 
     /// <summary>
@@ -33,7 +34,6 @@ namespace BooruDatasetTagManager
         public const string RepoOwner = "storyAura";
         public const string RepoName = "BooruDatasetTagManagerPlus";
         private const string LatestReleaseApiUrl = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases/latest";
-        private const int MaxReleaseNotesChars = 4000;
 
         private static readonly Lazy<HttpClient> Client = new(() =>
         {
@@ -127,7 +127,7 @@ namespace BooruDatasetTagManager
             ReleaseInfo latest;
             try
             {
-                string json = await Client.Value.GetStringAsync(LatestReleaseApiUrl).ConfigureAwait(false);
+                string json = await GetStringWithRetryAsync(LatestReleaseApiUrl).ConfigureAwait(false);
                 latest = JsonConvert.DeserializeObject<ReleaseInfo>(json);
             }
             catch (Exception ex)
@@ -144,10 +144,9 @@ namespace BooruDatasetTagManager
             result.Success = true;
             result.LatestTag = latest.tag_name;
             result.ReleasePageUrl = latest.html_url;
-            string notes = (latest.body ?? string.Empty).Trim();
-            result.ReleaseNotes = notes.Length > MaxReleaseNotesChars
-                ? notes.Substring(0, MaxReleaseNotesChars) + "\n..."
-                : notes;
+            // Raw dual-language body; the UI selects one language section (and
+            // caps the length) via ReleaseNotesLocalizer before display.
+            result.ReleaseNotes = (latest.body ?? string.Empty).Trim();
 
             if (TryParseVersion(latest.tag_name, out Version remote) &&
                 TryParseVersion(currentVersion, out Version local))
@@ -155,18 +154,43 @@ namespace BooruDatasetTagManager
                 result.HasNewer = remote > local;
             }
 
+            // Only the win-x64 zip is installable here. No fallback to "any
+            // zip": that used to grab source archives or other platforms; with
+            // no match the UI sends the user to the release page instead.
             var zipAsset = latest.assets?.FirstOrDefault(a =>
                     a.name != null &&
                     a.name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
-                    a.name.Contains("win-x64", StringComparison.OrdinalIgnoreCase))
-                ?? latest.assets?.FirstOrDefault(a =>
-                    a.name != null && a.name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+                    a.name.Contains("win-x64", StringComparison.OrdinalIgnoreCase));
             if (zipAsset != null)
             {
                 result.ZipAssetUrl = zipAsset.browser_download_url;
                 result.ZipAssetName = zipAsset.name;
+                result.ZipAssetDigest = zipAsset.digest;
             }
             return result;
+        }
+
+        /// <summary>GET with one bounded retry on 429, honoring Retry-After
+        /// (capped at 10s).</summary>
+        private static async Task<string> GetStringWithRetryAsync(string url)
+        {
+            using (HttpResponseMessage first = await Client.Value.GetAsync(url).ConfigureAwait(false))
+            {
+                if ((int)first.StatusCode != 429)
+                {
+                    first.EnsureSuccessStatusCode();
+                    return await first.Content.ReadAsStringAsync().ConfigureAwait(false);
+                }
+                TimeSpan delay = first.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(2);
+                if (delay < TimeSpan.Zero)
+                    delay = TimeSpan.FromSeconds(1);
+                else if (delay > TimeSpan.FromSeconds(10))
+                    delay = TimeSpan.FromSeconds(10);
+                await Task.Delay(delay).ConfigureAwait(false);
+            }
+            using HttpResponseMessage second = await Client.Value.GetAsync(url).ConfigureAwait(false);
+            second.EnsureSuccessStatusCode();
+            return await second.Content.ReadAsStringAsync().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -174,7 +198,7 @@ namespace BooruDatasetTagManager
         /// user's Downloads folder when the install dir is not writable) via a
         /// .partial file so an interrupted download never looks complete.
         /// </summary>
-        public static async Task<string> DownloadReleaseAssetAsync(string url, string fileName, IProgress<int> progress)
+        public static async Task<string> DownloadReleaseAssetAsync(string url, string fileName, IProgress<int> progress, string expectedDigest = null)
         {
             string targetDir = GetWritableDownloadDirectory();
             string target = Path.Combine(targetDir, fileName);
@@ -213,8 +237,27 @@ namespace BooruDatasetTagManager
                 try { File.Delete(partial); } catch { }
                 throw new IOException("Download ended before the full file was received.");
             }
+            if (!VerifyDigest(partial, expectedDigest))
+            {
+                try { File.Delete(partial); } catch { }
+                throw new IOException("Downloaded file failed its sha256 digest check.");
+            }
             File.Move(partial, target, overwrite: true);
             return target;
+        }
+
+        /// <summary>True when <paramref name="digest"/> is absent or of an
+        /// unknown algorithm (nothing to check), or matches the file's SHA-256
+        /// ("sha256:&lt;hex&gt;", as the GitHub API reports it).</summary>
+        private static bool VerifyDigest(string path, string digest)
+        {
+            if (string.IsNullOrWhiteSpace(digest)
+                || !digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                return true;
+            string expected = digest.Substring("sha256:".Length).Trim();
+            using FileStream stream = File.OpenRead(path);
+            byte[] hash = System.Security.Cryptography.SHA256.HashData(stream);
+            return string.Equals(Convert.ToHexString(hash), expected, StringComparison.OrdinalIgnoreCase);
         }
 
         public static void OpenInBrowser(string url)

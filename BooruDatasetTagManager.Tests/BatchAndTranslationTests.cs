@@ -180,10 +180,10 @@ public class BatchAndTranslationTests
         {
         }
 
-        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref callCount);
-            await Task.Delay(30);
+            await Task.Delay(30, cancellationToken);
             return $"译:{text}";
         }
 
@@ -200,7 +200,7 @@ public class BatchAndTranslationTests
         {
         }
 
-        public override Task<string> TranslateAsync(string text, string fromLang, string toLang)
+        public override Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)
         {
             if (Interlocked.Increment(ref callCount) == 1)
                 throw new InvalidOperationException("simulated failure");
