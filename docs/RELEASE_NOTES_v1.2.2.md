@@ -1,7 +1,7 @@
 <!-- lang:zh-CN -->
 # BooruDatasetTagManager+ v1.2.2（中文）
 
-功能版本：新增「相似图片筛选」——参考 [czkawka](https://github.com/qarmin/czkawka) 的感知哈希方案，秒级找出数据集中的重复 / 近似重复图片并按组清理；角色标签审查从双角色升级为**多角色模式（最多 4 人）**；另有「重新导入当前数据集」（F5）、打标写入模式「跳过已有标签列表」的 P0 修复，以及一轮"未加载数据集"健壮性排查与界面修复。
+功能版本：新增「相似图片筛选」——参考 [czkawka](https://github.com/qarmin/czkawka) 的感知哈希方案，秒级找出数据集中的重复 / 近似重复图片并按组清理；角色标签审查从双角色升级为**多角色模式（最多 4 人）**；两个标签面板新增**类别筛选**下拉，数据集浏览器新增**平铺视图**；测试模块新增**错误标签修复**（人数冲突 / 多人 solo / 角色父子标签，含子级信任阈值），角色表升级为带真实父子关系的新数据；同一个 exe 还内置**全套命令行 CLI**（文件操作 + fix-tags + ONNX 推标 + LLM 审查）；另有「重新导入当前数据集」（F5）、打标写入模式「跳过已有标签列表」的 P0 修复，以及一轮"未加载数据集"健壮性排查与界面修复。
 
 ## 相似图片筛选（新功能）
 
@@ -25,6 +25,37 @@
 - 断点续跑沿用并扩展：任一角色失败时，已完成角色的付费结果保留为断点，可**只重试失败的角色**；每张参考图仍在任何付费调用前先完整解码验证。
 - 每槽位性别改为数组持久化（`CharacterTagAuditGenders`）；旧配置的 A / B 两字段在加载时自动规范化迁移，无需手动处理。
 
+## 标签类别筛选（两个标签面板）
+
+- 「全部标签」与「图片标签」工具栏各新增一个类别下拉框（全部类别 / 角色 / 作品 / 人数 / 头发 / 服装…）：选中某一大类即只显示该类标签，与文字搜索、次数过滤叠加生效，选「全部类别」恢复。
+- 图片标签侧按行隐藏实现，不触碰编辑数据——增删、撤销、保存与多选校对照常工作。
+
+## 数据集浏览器：平铺视图
+
+- 搜索框右侧新增平铺视图开关（仅多文件夹数据集显示）：开启后忽略 kohya 文件夹分组，把当前范围 + 标签筛选结果摊平为一列图片；进入平铺自动把范围放宽到全部文件夹，再点一次恢复分组。状态持久保存。
+
+## 错误标签修复（测试模块）
+
+测试模块新增「错误标签修复」：扫描当前范围，把矛盾标签整理成「图片 / 移除 / 保留 / 原因」预览表，确认后一键应用——应用为普通编辑，可逐图撤销，不自动写盘。
+
+- **人数标签冲突**：`1boy` 与 `2boys` 并存删低留高（同性别保留最大人数）；多人图中的 `solo` 一并清除，含义不同的 `solo focus` 永不误伤。
+- **角色父子 / 变体重复**：同一角色家族的多个标签同图出现时，按数据集内出现量投票保留胜者；家族判定使用角色表内置的真实父子关系——`racing miku` 与 `hatsune miku` 这类改名变体也能配对，同名不同人（如 `surtr (arknights)` 与 `surtr (ark order)`）不会误合并。
+- **子级信任阈值**（按钮旁可调，默认 30，0 关闭）：子级变体在数据集中出现次数低于阈值时不被信任，自动并入父级标签（沿父链落到最近的可信祖先）——零散小变体合流到主标签，训练特征更集中。
+
+## 全套命令行（CLI）
+
+`BooruDatasetTagManagerPlus.exe` 本身现在就是命令行工具：第一个参数是已知命令时无窗口运行（输出可重定向，退出码 0 / 1 / 2 = 成功 / 运行错误 / 用法错误），无参数或未知参数照常打开界面。`help` 列出全部用法：
+
+- **数据集操作**：`stats` 统计；`list-images` / `list-tags` / `classify-tags` 查询（按标签、语义类别、出现次数过滤）；`add-tags` / `remove-tags` / `replace-tag` 批量改标（条件筛选、`--dry-run` 预演）；`export` 导出 JSON。
+- **`fix-tags`**：错误标签修复的命令行版（`--child-threshold` 信任阈值、`--catalog` 自定义关系表）。
+- **`onnx-models` / `onnx-tag`**：本地 ONNX 推标——列出 / 自动下载模型（受限模型支持 `--hf-token`），阈值与写入模式与界面同语义，「跳过已有」在推理前过滤。
+- **`audit`**：LLM 角色标签审查——沿用界面保存的 API 配置（多密钥轮换）与审查提示词，两阶段审查后事务化写回；`--report` 输出完整 JSON 报告，`--dry-run` 只看决策不改文件。
+- 所有写盘走原子替换；标签格式（逗号分隔、小写去重）与界面一致，可与手工编辑混用。
+
+## 角色数据升级（父子关系）
+
+- `Data/danbooru_character_tags.csv` 更新为 5 列导出（新增 `parent_tag` 约 2.6 万条真实父子关系与 `post_count`）；加载器兼容旧 3 列文件。译名翻译、角色着色、自动补全等既有功能不受影响；父子关系供错误标签修复（及 CLI `fix-tags`）做家族判定。
+
 ## 重新导入当前数据集（文件菜单，F5）
 
 - 「文件 → 重新导入当前数据集」直接用当前数据集的根目录从磁盘重新加载：外部工具改图、增删文件后一键刷新，无需重新选文件夹。
@@ -47,13 +78,13 @@
 ## 其他
 
 - 缩略图审查控件的右键预览支持按原始文件解码显示（相似图片窗口用它看原图；多选标签编辑器行为不变）。
-- 五个语言文件（简中 / 繁中 / 英 / 俄 / 葡）同步补齐相似图片筛选与多角色审查的全部界面文本。
-- 测试套件从 481 增长到 **496**（新增：dHash 哈希稳定性 / 缩放与亮度不变性 / 分组边界、多角色归属与合并、性别数组规范化、打标写入模式语义等回归）。
+- 五个语言文件（简中 / 繁中 / 英 / 俄 / 葡）同步补齐相似图片筛选、多角色审查、类别筛选、平铺视图与错误标签修复的全部界面文本。
+- 测试套件从 481 增长到 **528**（新增：dHash 哈希稳定性 / 缩放与亮度不变性 / 分组边界、多角色归属与合并、性别数组规范化、打标写入模式语义、类别筛选叠加、错误标签规划器的人数 / 父子 / 阈值场景、CLI 全命令回归等）。
 
 <!-- lang:en -->
 # BooruDatasetTagManager+ v1.2.2 (English)
 
-A feature release: the new **Similar image finder** — perceptual hashing in the spirit of [czkawka](https://github.com/qarmin/czkawka) that surfaces duplicate / near-duplicate images in seconds for group-by-group cleanup — and the character tag audit growing from dual to a **multi-character mode (up to 4)**. Plus a File-menu **Reload current dataset** (F5), a P0 fix for the "skip existing" tagging write mode, and a no-dataset robustness sweep with UI fixes.
+A feature release: the new **Similar image finder** — perceptual hashing in the spirit of [czkawka](https://github.com/qarmin/czkawka) that surfaces duplicate / near-duplicate images in seconds for group-by-group cleanup — and the character tag audit growing from dual to a **multi-character mode (up to 4)**. Both tag panes gain a **category filter** dropdown and the dataset browser a **flat view**; the Test module gains a **tag consistency fixer** (subject-count conflicts / solo on multi-subject images / character parent-child duplicates, with a child trust threshold) backed by a character catalog upgraded with real parent relations; and the same exe now ships a full **headless CLI** (file operations + fix-tags + ONNX tagging + LLM audit). Plus a File-menu **Reload current dataset** (F5), a P0 fix for the "skip existing" tagging write mode, and a no-dataset robustness sweep with UI fixes.
 
 ## Similar image finder (new)
 
@@ -77,6 +108,37 @@ The subject mode gains **Multi-character (up to 4)** on top of the existing Sing
 - Checkpointing carries over and extends: if any character fails, the finished characters' paid results are kept as a checkpoint and you can **retry only the failed character**; every reference image is still fully decoded and validated before any paid model call.
 - Per-slot genders now persist as an array (`CharacterTagAuditGenders`); old configs with the previous A / B fields are normalized automatically on load — nothing to reconfigure.
 
+## Tag category filter (both tag panes)
+
+- The All Tags and Image Tags toolbars each gain a category dropdown (All categories / Character / Copyright / Subject count / Hair / Clothing / …): pick a category to show only its tags, stacking with the text search and count filter; "All categories" restores everything.
+- The image-tags side is implemented purely as row visibility — editing, undo, save and the multi-select review keep working untouched.
+
+## Dataset browser: flat view
+
+- A new toggle next to the search box (shown for multi-folder datasets only): when on, kohya folder groups are ignored and the current scope + tag-filter result renders as one flat image list; entering flat view widens the folder scope back to All, toggling again restores the groups. The state persists.
+
+## Tag consistency fixer (Test module)
+
+The Test module gains a **tag consistency fixer**: it scans the current scope, lists every planned change as an "image / remove / keep / reason" preview, and applies only after confirmation — as normal edits (per-image undo works, nothing auto-saves).
+
+- **Subject-count conflicts**: `1boy` next to `2boys` drops the lower count (the highest count per gender survives); `solo` on multi-subject images is removed too, while the semantically different `solo focus` is never touched.
+- **Character parent/child duplicates**: when several tags of one character family appear on the same image, the dataset-wide counts vote for the survivor; families come from the catalog's real parent relations — renamed variants like `racing miku` pair with `hatsune miku`, while different characters that merely share a base name (`surtr (arknights)` vs `surtr (ark order)`) never merge.
+- **Child trust threshold** (next to the run button; default 30, 0 disables): a child variant with fewer dataset occurrences than the threshold is not trusted and folds into its nearest trusted ancestor — scattered rare variants consolidate onto the main tag for more focused training.
+
+## Full headless CLI
+
+`BooruDatasetTagManagerPlus.exe` itself is now a command-line tool: a known first argument runs windowless (output redirectable; exit codes 0 / 1 / 2 = ok / error / usage), while no or unknown arguments still start the GUI. `help` lists everything:
+
+- **Dataset operations**: `stats`; `list-images` / `list-tags` / `classify-tags` queries (filter by tags, semantic category, count); `add-tags` / `remove-tags` / `replace-tag` bulk edits (conditional targeting, `--dry-run`); `export` to JSON.
+- **`fix-tags`**: the consistency fixer's CLI twin (`--child-threshold`, `--catalog` for a custom relations CSV).
+- **`onnx-models` / `onnx-tag`**: local ONNX tagging — list / auto-download models (`--hf-token` for gated repos), thresholds and write modes with GUI-equal semantics, "skip existing" filters before inference.
+- **`audit`**: the LLM character tag audit — reuses the API configuration saved in the GUI (multi-key rotation included) and the audit skill prompts, runs the two-stage review and writes back transactionally; `--report` emits a full JSON report, `--dry-run` shows decisions without touching files.
+- Every write is an atomic replace; the tag format (comma-separated, lowercase, deduplicated) matches the GUI exactly, so CLI and manual edits mix freely.
+
+## Character data upgrade (parent relations)
+
+- `Data/danbooru_character_tags.csv` moves to a 5-column export (adding `parent_tag` with ~26k real parent/child relations, plus `post_count`); the loader still accepts the old 3-column file. Translations, character coloring and autocomplete are unaffected; the relations power the consistency fixer's (and CLI `fix-tags`') family grouping.
+
 ## Reload current dataset (File menu, F5)
 
 - **File → Reload current dataset** re-imports the loaded folder from disk using its current root — one keypress picks up external edits, added or removed files, no folder dialog needed.
@@ -99,5 +161,5 @@ The subject mode gains **Multi-character (up to 4)** on top of the existing Sing
 ## Other
 
 - The thumbnail review control's right-click preview can decode the original file for display (used by the similar-images window; the multi-select tag editor's behavior is unchanged).
-- All five language files (Simplified / Traditional Chinese, English, Russian, Portuguese) gained the complete UI text for the similar image finder and the multi-character audit.
-- The test suite grows from 481 to **496** (new regressions: dHash stability / resize & brightness invariance / grouping edge cases, multi-character attribution and merging, gender-array normalization, tagging write-mode semantics).
+- All five language files (Simplified / Traditional Chinese, English, Russian, Portuguese) gained the complete UI text for the similar image finder, the multi-character audit, the category filters, the flat view and the tag consistency fixer.
+- The test suite grows from 481 to **528** (new regressions: dHash stability / resize & brightness invariance / grouping edge cases, multi-character attribution and merging, gender-array normalization, tagging write-mode semantics, category-filter stacking, the consistency planner's subject-count / parent-child / threshold scenarios, and the full CLI command set).
