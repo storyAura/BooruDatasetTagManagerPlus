@@ -19,6 +19,11 @@ namespace BooruDatasetTagManager
         private Color yesColor = Color.LawnGreen;
         private Color noColor = Color.Salmon;
         private bool selectionMode = false;
+        /// <summary>
+        /// When set, the right-click preview decodes this file instead of
+        /// showing the (possibly small) <see cref="PictureBox.Image"/>.
+        /// </summary>
+        public string FullImagePreviewPath { get; set; }
         public CustomPictureBoxWithYN(int w, int h ,bool isYes) : base()
         {
             this.Width = w;
@@ -134,7 +139,10 @@ namespace BooruDatasetTagManager
                 pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
                 f.Controls.Add(pictureBox);
                 pictureBox.Dock = DockStyle.Fill;
-                pictureBox.Image = this.Image;
+                Image fullImage = FullImagePreviewPath == null
+                    ? null
+                    : ImageLoader.GetImageFromFile(FullImagePreviewPath);
+                pictureBox.Image = fullImage ?? this.Image;
                 pictureBox.Click += (o, e) =>
                 {
                     f.Close();
@@ -143,6 +151,7 @@ namespace BooruDatasetTagManager
                 // The picture box shares this control's Image; detach before
                 // dispose so the shared instance is not destroyed with the form.
                 pictureBox.Image = null;
+                fullImage?.Dispose();
             }
             else if (selectionMode && e.Button == MouseButtons.Left)
             {

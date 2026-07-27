@@ -7,7 +7,10 @@ namespace BooruDatasetTagManager
     public enum CharacterTagAuditSubjectMode
     {
         Single,
-        Dual
+        Dual,
+        // Up to four character slots; slots left without a trigger word are
+        // skipped, so this mode also covers three-character datasets.
+        Quad
     }
 
     public enum CharacterGender
@@ -104,10 +107,16 @@ namespace BooruDatasetTagManager
                 .Select(tag => tag.Trim())
                 .Where(tag => tag.Length > 0)
                 .ToList();
+            string single = gender == CharacterGender.Boy ? "1boy" : "1girl";
+            // A mixed cast injects 1girl + 1boy on shared images; the other
+            // gender's singular count must not survive into a prompt that
+            // describes this character alone.
+            string otherSingle = gender == CharacterGender.Boy ? "1girl" : "1boy";
             int firstRemoved = -1;
             for (int i = tags.Count - 1; i >= 0; i--)
             {
-                if (MultiSubjectTags.Contains(tags[i]))
+                if (MultiSubjectTags.Contains(tags[i])
+                    || string.Equals(tags[i], otherSingle, StringComparison.OrdinalIgnoreCase))
                 {
                     firstRemoved = i;
                     tags.RemoveAt(i);
@@ -115,7 +124,6 @@ namespace BooruDatasetTagManager
             }
             if (firstRemoved < 0)
                 return prompt;
-            string single = gender == CharacterGender.Boy ? "1boy" : "1girl";
             if (!tags.Contains(single, System.StringComparer.OrdinalIgnoreCase))
                 tags.Insert(System.Math.Min(firstRemoved, tags.Count), single);
             return string.Join(", ", tags);
@@ -123,76 +131,123 @@ namespace BooruDatasetTagManager
     }
 
     /// <summary>
-    /// Deterministic subject-count correction for images that contain both
-    /// audited characters: injects the matching count tags (2girls /
+    /// Deterministic subject-count correction for images that contain several
+    /// audited characters: injects the matching count tags (2girls / 3girls /
     /// multiple girls, 1girl + 1boy, ...) and removes the ones they refute
-    /// (solo, stale 1girl). Pure list-in/list-out so it is unit-testable.
+    /// (solo, stale lower counts). Pure list-in/list-out so it is unit-testable.
     /// </summary>
     public static class CharacterSubjectCountPlanner
     {
-        public static IReadOnlyList<string> GetRequiredTags(CharacterGender first, CharacterGender second)
-        {
-            if (first == CharacterGender.Girl && second == CharacterGender.Girl)
-                return new[] { "2girls", "multiple girls" };
-            if (first == CharacterGender.Boy && second == CharacterGender.Boy)
-                return new[] { "2boys", "multiple boys" };
-            return new[] { "1girl", "1boy" };
-        }
+        // Danbooru subject-count ladders, ascending: entry n-1 is the tag for
+        // n characters of that gender, the last entry covers "n or more".
+        private static readonly string[] GirlCounts = { "1girl", "2girls", "3girls", "4girls", "5girls", "6+girls" };
+        private static readonly string[] BoyCounts = { "1boy", "2boys", "3boys", "4boys", "5boys", "6+boys" };
 
-        public static IReadOnlyList<string> GetConflictingTags(CharacterGender first, CharacterGender second)
+        public static IReadOnlyList<string> GetRequiredTags(IReadOnlyList<CharacterGender> genders)
         {
-            if (first == CharacterGender.Girl && second == CharacterGender.Girl)
-                return new[] { "solo", "1girl" };
-            if (first == CharacterGender.Boy && second == CharacterGender.Boy)
-                return new[] { "solo", "1boy" };
-            return new[] { "solo" };
+            int girls = CountOf(genders, CharacterGender.Girl);
+            int boys = CountOf(genders, CharacterGender.Boy);
+            var required = new List<string>();
+            if (girls > 0)
+            {
+                required.Add(CountTag(GirlCounts, girls));
+                if (girls > 1)
+                    required.Add("multiple girls");
+            }
+            if (boys > 0)
+            {
+                required.Add(CountTag(BoyCounts, boys));
+                if (boys > 1)
+                    required.Add("multiple boys");
+            }
+            return required;
         }
 
         /// <summary>
-        /// Returns a new tag list with the subject-count tags of the two
-        /// present profiles enforced. Existing order is preserved; required
-        /// tags are inserted right after the last present trigger word (or at
-        /// the front when no trigger is present).
+        /// Tags refuted by the present cast: <c>solo</c>, plus the counts of a
+        /// gender that are LOWER than the number of audited characters of that
+        /// gender. A higher count is left alone — an unaudited extra person in
+        /// the image may legitimately justify it.
+        /// </summary>
+        public static IReadOnlyList<string> GetConflictingTags(IReadOnlyList<CharacterGender> genders)
+        {
+            var conflicting = new List<string> { "solo" };
+            conflicting.AddRange(GirlCounts.Take(CountOf(genders, CharacterGender.Girl) - 1));
+            conflicting.AddRange(BoyCounts.Take(CountOf(genders, CharacterGender.Boy) - 1));
+            return conflicting;
+        }
+
+        /// <summary>
+        /// Returns a new tag list with the subject-count tags of the present
+        /// profiles enforced. Existing order is preserved; required tags are
+        /// inserted right after the last present trigger word (or at the front
+        /// when no trigger is present).
         /// </summary>
         public static IReadOnlyList<string> Apply(
             IEnumerable<string> tags,
-            CharacterAuditProfile firstPresent,
-            CharacterAuditProfile secondPresent)
+            IReadOnlyList<CharacterAuditProfile> present)
         {
             if (tags == null)
                 throw new ArgumentNullException(nameof(tags));
-            if (firstPresent == null || secondPresent == null)
-                throw new ArgumentNullException(firstPresent == null ? nameof(firstPresent) : nameof(secondPresent));
+            if (present == null)
+                throw new ArgumentNullException(nameof(present));
 
-            var conflicting = new HashSet<string>(
-                GetConflictingTags(firstPresent.Gender, secondPresent.Gender), StringComparer.Ordinal);
+            IReadOnlyList<CharacterGender> genders = present.Select(profile => profile.Gender).ToList();
+            var conflicting = new HashSet<string>(GetConflictingTags(genders), StringComparer.Ordinal);
             List<string> result = tags
                 .Where(tag => tag != null && !conflicting.Contains(tag.Trim()))
                 .ToList();
 
-            var present = new HashSet<string>(result.Select(tag => tag.Trim()), StringComparer.Ordinal);
-            List<string> missing = GetRequiredTags(firstPresent.Gender, secondPresent.Gender)
-                .Where(tag => !present.Contains(tag))
+            var already = new HashSet<string>(result.Select(tag => tag.Trim()), StringComparer.Ordinal);
+            List<string> missing = GetRequiredTags(genders)
+                .Where(tag => !already.Contains(tag) && !HasHigherCount(already, tag))
                 .ToList();
             if (missing.Count == 0)
                 return result;
 
-            int insertAt = FindInsertIndex(result, firstPresent.TriggerWord, secondPresent.TriggerWord);
-            result.InsertRange(insertAt, missing);
+            result.InsertRange(FindInsertIndex(result, present), missing);
             return result;
         }
 
-        private static int FindInsertIndex(IReadOnlyList<string> tags, string firstTrigger, string secondTrigger)
+        private static int CountOf(IReadOnlyList<CharacterGender> genders, CharacterGender gender)
         {
+            if (genders == null)
+                throw new ArgumentNullException(nameof(genders));
+            return genders.Count(candidate => candidate == gender);
+        }
+
+        private static string CountTag(string[] ladder, int count)
+        {
+            return ladder[Math.Min(count, ladder.Length) - 1];
+        }
+
+        /// <summary>
+        /// An unaudited extra person can legitimately raise the count of a
+        /// gender. When a higher count is already tagged, keep it instead of
+        /// injecting a contradicting lower one next to it.
+        /// </summary>
+        private static bool HasHigherCount(HashSet<string> tags, string required)
+        {
+            foreach (string[] ladder in new[] { GirlCounts, BoyCounts })
+            {
+                int index = Array.IndexOf(ladder, required);
+                if (index >= 0)
+                    return ladder.Skip(index + 1).Any(tags.Contains);
+            }
+            return false;
+        }
+
+        private static int FindInsertIndex(IReadOnlyList<string> tags, IReadOnlyList<CharacterAuditProfile> present)
+        {
+            var triggers = new HashSet<string>(
+                present.Select(profile => profile.TriggerWord?.Trim() ?? string.Empty)
+                    .Where(trigger => trigger.Length > 0),
+                StringComparer.Ordinal);
             int lastTrigger = -1;
             for (int i = 0; i < tags.Count; i++)
             {
-                string tag = tags[i]?.Trim();
-                if (string.Equals(tag, firstTrigger?.Trim(), StringComparison.Ordinal)
-                    || string.Equals(tag, secondTrigger?.Trim(), StringComparison.Ordinal))
-                {
+                if (triggers.Contains(tags[i]?.Trim() ?? string.Empty))
                     lastTrigger = i;
-                }
             }
             return lastTrigger + 1;
         }
@@ -315,10 +370,11 @@ namespace BooruDatasetTagManager
     }
 
     /// <summary>
-    /// Runs the existing two-stage audit once per character profile over that
-    /// character's member images and aggregates progress into one 4-step
-    /// sequence. Attribution statistics let the caller surface how many images
-    /// are shared or not attributed to any character.
+    /// Runs the existing two-stage audit once per character profile (2 to
+    /// <see cref="MaxProfiles"/> of them) over that character's member images
+    /// and aggregates progress into one two-steps-per-profile sequence.
+    /// Attribution statistics let the caller surface how many images are
+    /// shared or not attributed to any character.
     /// </summary>
     public sealed class CharacterTagDualAuditService
     {
@@ -342,21 +398,32 @@ namespace BooruDatasetTagManager
                 .ToList();
         }
 
+        /// <summary>Character profiles a single multi-character run accepts.</summary>
+        public const int MaxProfiles = 4;
+
         public static void Validate(CharacterTagDualAuditOptions options)
         {
             if (options == null)
                 throw new System.ArgumentNullException(nameof(options));
-            if (options.Profiles == null || options.Profiles.Count != 2)
-                throw new System.ArgumentException("Dual audit requires exactly two character profiles.", nameof(options));
-            string triggerA = options.Profiles[0].TriggerWord?.Trim();
-            string triggerB = options.Profiles[1].TriggerWord?.Trim();
-            if (string.IsNullOrEmpty(triggerA) || string.IsNullOrEmpty(triggerB))
-                throw new System.ArgumentException("Both dual audit profiles need a trigger word.", nameof(options));
-            if (string.Equals(triggerA, triggerB, System.StringComparison.Ordinal))
-                throw new System.ArgumentException("Dual audit profiles must use two different trigger words.", nameof(options));
-            // Both references are checked before the first model call so a
-            // missing reference of profile B cannot fail after a paid audit
-            // of profile A (the inner service re-validates per run).
+            if (options.Profiles == null || options.Profiles.Count < 2 || options.Profiles.Count > MaxProfiles)
+            {
+                throw new System.ArgumentException(
+                    "A multi-character audit needs between two and " + MaxProfiles + " character profiles.",
+                    nameof(options));
+            }
+            var triggers = new HashSet<string>(StringComparer.Ordinal);
+            foreach (CharacterAuditProfile profile in options.Profiles)
+            {
+                string trigger = profile.TriggerWord?.Trim();
+                if (string.IsNullOrEmpty(trigger))
+                    throw new System.ArgumentException("Every audited character needs a trigger word.", nameof(options));
+                if (!triggers.Add(trigger))
+                    throw new System.ArgumentException("Audited characters must use different trigger words.", nameof(options));
+            }
+            // Every reference is checked before the first model call so a
+            // missing reference of a later profile cannot fail after an
+            // earlier profile was already paid for (the inner service
+            // re-validates per run).
             foreach (CharacterAuditProfile profile in options.Profiles)
             {
                 if (string.IsNullOrWhiteSpace(profile.ReferenceImagePath)
@@ -510,13 +577,12 @@ namespace BooruDatasetTagManager
     {
         public static IReadOnlyList<EditableTag> ApplySubjectCount(
             IReadOnlyList<EditableTag> tags,
-            CharacterAuditProfile firstPresent,
-            CharacterAuditProfile secondPresent)
+            IReadOnlyList<CharacterAuditProfile> present)
         {
             if (tags == null)
                 throw new System.ArgumentNullException(nameof(tags));
             IReadOnlyList<string> desired = CharacterSubjectCountPlanner.Apply(
-                tags.Select(tag => tag.Tag).ToList(), firstPresent, secondPresent);
+                tags.Select(tag => tag.Tag).ToList(), present);
             var remaining = new List<EditableTag>(tags);
             var result = new List<EditableTag>();
             foreach (string tag in desired)
@@ -540,8 +606,8 @@ namespace BooruDatasetTagManager
     /// <summary>
     /// Per-image application pipeline for multi-character audits: attribute
     /// the image, pick or merge the per-character decisions, and enforce
-    /// subject-count tags on images containing both characters. Images that
-    /// belong to no audited character are returned unchanged.
+    /// subject-count tags on images containing more than one of them. Images
+    /// that belong to no audited character are returned unchanged.
     /// </summary>
     public static class CharacterTagMultiAuditPlan
     {
@@ -586,10 +652,10 @@ namespace BooruDatasetTagManager
             IReadOnlyDictionary<string, CharacterTagAuditItem> effective =
                 BuildEffectiveDecisions(present, decisionsByProfile);
             IReadOnlyList<string> transformed = CharacterTagTransformation.Apply(originalTags, effective.Values);
-            if (present.Count == 2)
+            if (present.Count >= 2)
             {
                 transformed = CharacterSubjectCountPlanner.Apply(
-                    transformed, profiles[present[0]], profiles[present[1]]);
+                    transformed, present.Select(index => profiles[index]).ToList());
             }
             return transformed;
         }

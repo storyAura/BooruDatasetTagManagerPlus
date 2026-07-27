@@ -20,8 +20,30 @@ namespace BooruDatasetTagManager
         /// Главная точка входа для приложения.
         /// </summary>
         [STAThread]
-        static void Main()
+        static int Main(string[] args)
         {
+            // Headless automation path: known verbs run without any UI and
+            // return a process exit code. Unknown/empty arguments start the
+            // GUI exactly as before.
+            if (CliCommands.IsCliInvocation(args))
+            {
+                // Best effort: a WinExe has no console, so borrow the parent
+                // shell's one for interactive runs; redirected output (the
+                // automation case) works either way.
+                AttachConsole(AttachParentProcess);
+                CliCommands.AiRunner = CliAiCommands.Run;
+                try
+                {
+                    Console.OutputEncoding = System.Text.Encoding.UTF8;
+                }
+                catch (Exception)
+                {
+                    // No usable console handle (fully detached run) — fine.
+                }
+                int exitCode = CliCommands.Run(args, Console.Out, Console.Error);
+                Console.Out.Flush();
+                return exitCode;
+            }
             // Global exception backstops: without these, any exception escaping an
             // async void handler or a worker thread killed the process silently.
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
@@ -182,7 +204,13 @@ namespace BooruDatasetTagManager
             });
 
             Application.Run(new MainForm());
+            return 0;
         }
+
+        private const int AttachParentProcess = -1;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AttachConsole(int dwProcessId);
 
         static void PreloadDotnetDependenciesFromSubdirectoryManually()
         {

@@ -50,6 +50,7 @@ namespace BooruDatasetTagManager
 
             Items.Add(new HotkeyItem("MenuItemSaveChanges", "Save all changes", Keys.S, true, false, false));
             Items.Add(new HotkeyItem("MenuItemShowPreview", "Show preview window", Keys.P, true, false, false));
+            Items.Add(new HotkeyItem("MenuItemReloadDataset", "Reload current dataset", Keys.F5, false, false, false));
             Items.Add(new HotkeyItem("MenuHideAllTags", "Hide/show all tags window", Keys.J, true, false, false));
             Items.Add(new HotkeyItem("MenuHideTags", "Hide/show image tags window", Keys.K, true, false, false));
             Items.Add(new HotkeyItem("MenuHideDataset", "Hide/show dataset window", Keys.L, true, false, false));
@@ -88,6 +89,7 @@ namespace BooruDatasetTagManager
             this["PreviewTabFocus"].Text = I18n.GetText("HKPreviewTabFocus");
             this["MenuItemSaveChanges"].Text = I18n.GetText("HKMenuItemSaveChanges");
             this["MenuItemShowPreview"].Text = I18n.GetText("HKMenuItemShowPreview");
+            this["MenuItemReloadDataset"].Text = I18n.GetText("HKMenuItemReloadDataset");
             this["MenuHideAllTags"].Text = I18n.GetText("HKMenuHideAllTags");
             this["MenuHideTags"].Text = I18n.GetText("HKMenuHideTags");
             this["MenuHideDataset"].Text = I18n.GetText("HKMenuHideDataset");

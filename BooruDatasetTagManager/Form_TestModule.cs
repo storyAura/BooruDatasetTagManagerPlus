@@ -15,6 +15,10 @@ namespace BooruDatasetTagManager
         private bool suppressSave;
         private GroupBox groupCharacterTagAudit;
         private Button buttonCharacterTagAudit;
+        private GroupBox groupTagFix;
+        private Label labelTagFixThreshold;
+        private NumericUpDown numericTagFixThreshold;
+        private Button buttonTagFix;
 
         public Form_TestModule(MainForm owner)
         {
@@ -41,9 +45,10 @@ namespace BooruDatasetTagManager
                 AutoSize = true,
                 Padding = new Padding(12),
                 ColumnCount = 1,
-                RowCount = 2
+                RowCount = 3
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
@@ -83,6 +88,33 @@ namespace BooruDatasetTagManager
             };
             groupCharacterTagAudit.Controls.Add(buttonCharacterTagAudit);
             root.Controls.Add(groupCharacterTagAudit, 0, 1);
+
+            groupTagFix = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10), Margin = new Padding(3, 10, 3, 3) };
+            TableLayoutPanel tagFixLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 3,
+                RowCount = 1
+            };
+            tagFixLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tagFixLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+            tagFixLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            labelTagFixThreshold = new Label { AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 8, 12, 3) };
+            // 0 disables the fold-into-parent rule entirely.
+            numericTagFixThreshold = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 0, Maximum = 99999, Value = 30, Margin = new Padding(3, 5, 12, 3) };
+            numericTagFixThreshold.ValueChanged += (_, _) => SaveSettingsImmediate();
+            buttonTagFix = new Button { AutoSize = true, MinimumSize = new Size(160, 30), Anchor = AnchorStyles.Right };
+            buttonTagFix.Click += (_, _) =>
+            {
+                SaveSettingsImmediate();
+                owner.RunTagConsistencyFix();
+            };
+            tagFixLayout.Controls.Add(labelTagFixThreshold, 0, 0);
+            tagFixLayout.Controls.Add(numericTagFixThreshold, 1, 0);
+            tagFixLayout.Controls.Add(buttonTagFix, 2, 0);
+            groupTagFix.Controls.Add(tagFixLayout);
+            root.Controls.Add(groupTagFix, 0, 2);
         }
 
         private void ApplyLanguage()
@@ -93,12 +125,16 @@ namespace BooruDatasetTagManager
             buttonQuickReplace.Text = I18n.GetText("TestQuickReplaceRun");
             groupCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditGroup");
             buttonCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditOpen");
+            groupTagFix.Text = I18n.GetText("TestTagFixGroup");
+            labelTagFixThreshold.Text = I18n.GetText("TestTagFixChildThreshold");
+            buttonTagFix.Text = I18n.GetText("TestTagFixRun");
         }
 
         private void LoadSettings()
         {
             suppressSave = true;
             numericThreshold.Value = Math.Clamp(Program.Settings.QuickReplaceThreshold, (int)numericThreshold.Minimum, (int)numericThreshold.Maximum);
+            numericTagFixThreshold.Value = Math.Clamp(Program.Settings.TagFixChildThreshold, (int)numericTagFixThreshold.Minimum, (int)numericTagFixThreshold.Maximum);
             suppressSave = false;
         }
 
@@ -108,6 +144,7 @@ namespace BooruDatasetTagManager
                 return;
 
             Program.Settings.QuickReplaceThreshold = (int)numericThreshold.Value;
+            Program.Settings.TagFixChildThreshold = (int)numericTagFixThreshold.Value;
             Program.Settings.SaveSettings();
             owner.SetStatus(I18n.GetText("StatusSettingsSaved"));
         }

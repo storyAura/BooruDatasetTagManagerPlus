@@ -80,6 +80,8 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuVideoConvert;
         private ToolStripMenuItem menuVideoExtract;
         private ToolStripMenuItem menuOnnxTagger;
+        private ToolStripMenuItem menuSimilarImages;
+        private ToolStripMenuItem menuReloadDataset;
         private ToolStripMenuItem menuContextDSVideoTools;
         private ToolStripMenuItem menuContextDSRetagOnnx;
         private ToolStripMenuItem menuContextDSRetagLlm;
@@ -205,6 +207,8 @@ namespace BooruDatasetTagManager
             datasetBrowserView.ImageActivated += path => ShowPreview(path, true);
             datasetBrowserView.ImageContextRequested += screenPoint => contextMenuStrip1.Show(screenPoint);
             datasetBrowserView.BrowserKeyDown += Browser_KeyDown;
+            datasetBrowserView.SetFlatView(Program.Settings.DatasetBrowserFlatView);
+            datasetBrowserView.FlatViewChanged += Browser_FlatViewChanged;
             folderContextMenu = new ContextMenuStrip();
             menuRenameFolder = new ToolStripMenuItem { Name = "menuRenameFolder" };
             menuRenameFolder.Click += (_, _) => RenameDatasetFolder();
@@ -580,6 +584,24 @@ namespace BooruDatasetTagManager
         }
 
         /// <summary>
+        /// Browser flat-view toggle: persists the choice and, when entering
+        /// flat view, widens any folder scope back to the whole dataset so
+        /// the flat list really shows every subfolder's images (the tag
+        /// filter, if active, keeps applying on top).
+        /// </summary>
+        private void Browser_FlatViewChanged(bool flat)
+        {
+            Program.Settings.DatasetBrowserFlatView = flat;
+            Program.Settings.SaveSettings();
+            if (flat && Program.DataManager != null
+                && !string.IsNullOrEmpty(Program.DataManager.ActiveFolder))
+            {
+                Program.DataManager.SetActiveFolder(null);
+                RefreshDatasetGrid();
+            }
+        }
+
+        /// <summary>
         /// Browser Ctrl/Shift folder multi-select: scope to the union of the
         /// selected folders so the grid and the AllTags counts follow the
         /// selection (an empty set falls back to "all folders").
@@ -858,6 +880,25 @@ namespace BooruDatasetTagManager
             menuOnnxTagger = new ToolStripMenuItem { Name = "menuOnnxTagger", Text = "ONNX tagger" };
             menuOnnxTagger.Click += (_, _) => ShowOnnxTaggerForSelectedImages();
 
+            menuReloadDataset = new ToolStripMenuItem { Name = "menuReloadDataset", Text = "Reload current dataset" };
+            menuReloadDataset.Click += async (_, _) => await ReloadCurrentDatasetAsync();
+            int reloadIndex = fileToolStripMenuItem.DropDownItems.IndexOf(loadFolderWithAdditionalSettingsToolStripMenuItem) + 1;
+            if (reloadIndex <= 0 || reloadIndex > fileToolStripMenuItem.DropDownItems.Count)
+                reloadIndex = fileToolStripMenuItem.DropDownItems.Count;
+            fileToolStripMenuItem.DropDownItems.Insert(reloadIndex, menuReloadDataset);
+
+            menuSimilarImages = new ToolStripMenuItem { Name = "menuSimilarImages", Text = "Find similar images" };
+            menuSimilarImages.Click += (_, _) =>
+            {
+                if (Program.DataManager == null || Program.DataManager.DataSet.Count == 0)
+                {
+                    MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                    return;
+                }
+                using Form_SimilarImages form = new Form_SimilarImages(this);
+                form.ShowDialog(this);
+            };
+
             menuContextDSVideoTools = new ToolStripMenuItem { Name = "menuContextDSVideoTools", Text = "Video tools..." };
             menuContextDSVideoTools.Click += (_, _) =>
             {
@@ -893,6 +934,7 @@ namespace BooruDatasetTagManager
             toolsToolStripMenuItem.DropDownItems.Add(menuOnnxTagger);
             toolsToolStripMenuItem.DropDownItems.Add(backgroundRemovalWithRMBG20ToolStripMenuItem);
             toolsToolStripMenuItem.DropDownItems.Add(menuLlmTagger);
+            toolsToolStripMenuItem.DropDownItems.Add(menuSimilarImages);
 
             int insertIndex = menuStrip1.Items.IndexOf(toolsToolStripMenuItem) + 1;
             if (insertIndex <= 0 || insertIndex > menuStrip1.Items.Count)
@@ -1445,7 +1487,11 @@ namespace BooruDatasetTagManager
             await LoadFromFolderAsync(true);
         }
 
-        private async Task LoadFromFolderAsync(bool useAdditionalSettings)
+        /// <summary>
+        /// True when it is safe to replace the current dataset: unsaved edits
+        /// were saved successfully or explicitly discarded by the user.
+        /// </summary>
+        private bool ConfirmDatasetSwitch()
         {
             if (Program.DataManager != null && Program.DataManager.IsDataSetChanged())
             {
@@ -1458,11 +1504,38 @@ namespace BooruDatasetTagManager
                     // explicitly discard, instead of the old dataset (and its
                     // unsaved edits) being disposed below.
                     if (ReportSaveErrorsIfAny())
-                        return;
+                        return false;
                 }
                 else if (result == DialogResult.Cancel)
-                    return;
+                    return false;
             }
+            return true;
+        }
+
+        /// <summary>
+        /// File → Reload current dataset: re-imports the loaded folder from
+        /// disk (external edits, added/removed files) without the folder
+        /// dialog. Whether thumbnails load again follows the current dataset.
+        /// </summary>
+        private async Task ReloadCurrentDatasetAsync()
+        {
+            string root = Program.DataManager?.DatasetRoot;
+            if (string.IsNullOrWhiteSpace(root))
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+            if (!ConfirmDatasetSwitch())
+                return;
+            bool loadPreviewImages = Program.DataManager.DataSet.IsEmpty
+                || Program.DataManager.DataSet.Values.Any(item => item.Img != null);
+            await LoadDatasetCoreAsync(root, loadPreviewImages, readMetadata: false);
+        }
+
+        private async Task LoadFromFolderAsync(bool useAdditionalSettings)
+        {
+            if (!ConfirmDatasetSwitch())
+                return;
             OpenFolderDialog openFolderDialog = new OpenFolderDialog();
             if (openFolderDialog.ShowDialog() != DialogResult.OK)
                 return;
@@ -1479,6 +1552,11 @@ namespace BooruDatasetTagManager
                 loadPreviewImages = Program.Settings.LoadSettingsLoadPreviewImages;
                 readMetadata = Program.Settings.LoadSettingsReadMetadata;
             }
+            await LoadDatasetCoreAsync(openFolderDialog.Folder, loadPreviewImages, readMetadata);
+        }
+
+        private async Task LoadDatasetCoreAsync(string folder, bool loadPreviewImages, bool readMetadata)
+        {
             LoadingStatusText = I18n.GetText("TipLoadingStart");
             SetStatus(LoadingStatusText);
             LockEdit(true);
@@ -1493,7 +1571,7 @@ namespace BooruDatasetTagManager
                 bool loaded;
                 try
                 {
-                    loaded = await candidateManager.LoadFromFolderAsync(openFolderDialog.Folder, loadPreviewImages, readMetadata);
+                    loaded = await candidateManager.LoadFromFolderAsync(folder, loadPreviewImages, readMetadata);
                 }
                 catch
                 {
@@ -1534,6 +1612,7 @@ namespace BooruDatasetTagManager
                 gridViewAllTags.DataSource = Program.DataManager.AllTagsBindingSource;
                 HookAllTagsSelectionAnchor();
                 ApplyAllTagsCategorySort();
+                ApplyAllTagsCategoryFilter();
                 ApplyDataSetGridStyle();
                 await ApplyTranslation(isTranslate);
                 gridViewDS.AutoResizeColumns();
@@ -1776,6 +1855,12 @@ namespace BooruDatasetTagManager
             if (gridViewDS.SelectedRows.Count == 0)
             {
                 BtnTagImageChecker.Enabled = true;
+                // Nothing selected (fresh dataset load, empty filter, ...):
+                // drop the stale binding — the previous list may even belong
+                // to an already-disposed dataset after a folder switch.
+                gridViewTags.Tag = null;
+                gridViewTags.DataSource = null;
+                gridViewTags.AllowDrop = false;
                 return;
             }
             gridViewTags.SuspendLayout();
@@ -1798,6 +1883,8 @@ namespace BooruDatasetTagManager
                     gridViewTags.Tag = selectedPath;
                     ChageImageColumn(false);
                     gridViewTags.DataSource = selectedItem.Tags;
+                    if (Program.Settings.ImageTagsCategorySort)
+                        SortPromptByCategory();
                     if (IsPreviewFollowActive)
                     {
                         ShowPreview(selectedPath);
@@ -2160,6 +2247,11 @@ namespace BooruDatasetTagManager
 
         private void toolStripButton6_Click(object sender, EventArgs e)
         {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
             isAllTags = !isAllTags;
             if (isAllTags)
             {
@@ -2216,6 +2308,11 @@ namespace BooruDatasetTagManager
 
         private void toolStripButton8_Click(object sender, EventArgs e)
         {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
             if (gridViewDS.SelectedRows.Count != 1)
             {
                 MessageBox.Show(I18n.GetText("TipReplaceNotSupportMultSel"));
@@ -2538,6 +2635,13 @@ namespace BooruDatasetTagManager
 
         private void ResetFilter()
         {
+            // The trailing status line dereferences DataManager even when no
+            // filter is active, so bail out before that with no dataset.
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
             if (isFiltered)
             {
                 SaveSelectedInViewDs();
@@ -3144,6 +3248,18 @@ namespace BooruDatasetTagManager
 
         private void toolStripButton23_Click(object sender, EventArgs e)
         {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+            // No current tag cell (image with zero tags, cleared panel, ...):
+            // there is nothing to locate in the all-tags list.
+            if (gridViewTags.CurrentCell == null)
+            {
+                SetStatus(I18n.GetText("TipImgOrTagNotSelect"));
+                return;
+            }
             string searchedTag;
             if (gridViewDS.SelectedRows.Count == 1)
             {
@@ -3803,6 +3919,11 @@ namespace BooruDatasetTagManager
 
         private void toolStripButton25_Click(object sender, EventArgs e)
         {
+            if (Program.DataManager == null || gridViewAllTags.DataSource == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
             ((BindingSource)gridViewAllTags.DataSource).RemoveFilter();
         }
 
@@ -3836,13 +3957,23 @@ namespace BooruDatasetTagManager
 
         private void InitializeTagCategoryUi()
         {
+            // Sticky toggle (mirrors the all-tags one): while checked, every
+            // newly selected image is sorted automatically on load.
             toolStripCategorySortBtn = new ToolStripButton
             {
                 Name = "toolStripCategorySortBtn",
                 Alignment = ToolStripItemAlignment.Right,
-                DisplayStyle = ToolStripItemDisplayStyle.Text
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                CheckOnClick = true,
+                Checked = Program.Settings.ImageTagsCategorySort
             };
-            toolStripCategorySortBtn.Click += (_, _) => SortPromptByCategory();
+            toolStripCategorySortBtn.CheckedChanged += (_, _) =>
+            {
+                Program.Settings.ImageTagsCategorySort = toolStripCategorySortBtn.Checked;
+                Program.Settings.SaveSettings();
+                if (toolStripCategorySortBtn.Checked && Program.DataManager != null)
+                    SortPromptByCategory();
+            };
             int sortIndex = toolStripTagsHeader.Items.IndexOf(toolStripPromptSortBtn);
             toolStripTagsHeader.Items.Insert(
                 sortIndex >= 0 ? sortIndex + 1 : toolStripTagsHeader.Items.Count,
@@ -3864,9 +3995,276 @@ namespace BooruDatasetTagManager
                 ApplyAllTagsCategorySort();
             };
             toolStrip1.Items.Add(toolStripAllTagsCategorySortBtn);
+
+            // All-tags pane: single-category filter (index 0 = every category).
+            toolStripAllTagsCategoryFilter = new ToolStripComboBox
+            {
+                Name = "toolStripAllTagsCategoryFilter",
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                AutoSize = false,
+                Width = LogicalToDeviceUnits(96)
+            };
+            toolStripAllTagsCategoryFilter.SelectedIndexChanged += (_, _) =>
+            {
+                if (!fillingCategoryFilterItems)
+                    ApplyAllTagsCategoryFilter();
+            };
+            toolStrip1.Items.Add(toolStripAllTagsCategoryFilter);
+
+            // Image-tags pane: same category dropdown, filtering the current
+            // image's rows by visibility (the EditableTagList binding itself
+            // stays untouched — hiding rows cannot desync the text mirror).
+            toolStripImageTagsCategoryFilter = new ToolStripComboBox
+            {
+                Name = "toolStripImageTagsCategoryFilter",
+                Alignment = ToolStripItemAlignment.Right,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                AutoSize = false,
+                Width = LogicalToDeviceUnits(96)
+            };
+            toolStripImageTagsCategoryFilter.SelectedIndexChanged += (_, _) =>
+            {
+                if (!fillingCategoryFilterItems)
+                    ApplyImageTagsCategoryVisibility();
+            };
+            int categoryIndex = toolStripTagsHeader.Items.IndexOf(toolStripCategorySortBtn);
+            toolStripTagsHeader.Items.Insert(
+                categoryIndex >= 0 ? categoryIndex + 1 : toolStripTagsHeader.Items.Count,
+                toolStripImageTagsCategoryFilter);
+            // Rebinds and list changes recreate/alter the rows; re-apply the
+            // visibility filter every time so it survives image switches.
+            gridViewTags.DataBindingComplete += (_, _) => ApplyImageTagsCategoryVisibility();
         }
 
         private ToolStripButton toolStripAllTagsCategorySortBtn;
+        private ToolStripComboBox toolStripAllTagsCategoryFilter;
+        private ToolStripComboBox toolStripImageTagsCategoryFilter;
+        private bool fillingCategoryFilterItems;
+        private bool imageTagsCategoryRowsHidden;
+
+        /// <summary>
+        /// (Re)fills a category-filter dropdown with localized names, keeping
+        /// the current selection across language switches.
+        /// </summary>
+        private void FillCategoryFilterItems(ToolStripComboBox combo)
+        {
+            fillingCategoryFilterItems = true;
+            try
+            {
+                int selected = Math.Max(0, combo.SelectedIndex);
+                combo.Items.Clear();
+                combo.Items.Add(I18n.GetText("TagCategoryAll"));
+                foreach (TagSemanticCategory category in Enum.GetValues<TagSemanticCategory>())
+                    combo.Items.Add(I18n.GetText("TagCategory" + category));
+                combo.SelectedIndex = selected < combo.Items.Count ? selected : 0;
+            }
+            finally
+            {
+                fillingCategoryFilterItems = false;
+            }
+        }
+
+        private static TagSemanticCategory? SelectedCategoryOf(ToolStripComboBox combo)
+        {
+            return combo == null || combo.SelectedIndex <= 0
+                ? null
+                : (TagSemanticCategory)(combo.SelectedIndex - 1);
+        }
+
+        private void ApplyAllTagsCategoryFilter()
+        {
+            TagSemanticCategory? category = SelectedCategoryOf(toolStripAllTagsCategoryFilter);
+            Program.DataManager?.AllTags.SetCategoryFilter(
+                category == null ? null : tag => ClassifyTagCached(tag) == category.Value);
+        }
+
+        /// <summary>
+        /// Shows only the current image's tag rows of the selected category by
+        /// toggling row visibility (works for both the single-image and the
+        /// multi-select binding). With no category selected this is a no-op
+        /// unless rows are still hidden from a previous filter.
+        /// </summary>
+        private void ApplyImageTagsCategoryVisibility()
+        {
+            if (toolStripImageTagsCategoryFilter == null || gridViewTags.DataSource == null)
+                return;
+            TagSemanticCategory? category = SelectedCategoryOf(toolStripImageTagsCategoryFilter);
+            if (category == null && !imageTagsCategoryRowsHidden)
+                return;
+            if (gridViewTags.IsCurrentCellInEditMode)
+                gridViewTags.EndEdit();
+            // The row under the currency manager's caret cannot be hidden.
+            if (category != null && gridViewTags.CurrentCell != null)
+                gridViewTags.CurrentCell = null;
+            bool anyHidden = false;
+            foreach (DataGridViewRow row in gridViewTags.Rows)
+            {
+                if (row.IsNewRow)
+                    continue;
+                bool visible = category == null
+                    || ClassifyTagCached(GetTagsRowTag(row.Index)) == category.Value;
+                if (row.Visible != visible)
+                    row.Visible = visible;
+                anyHidden |= !visible;
+            }
+            imageTagsCategoryRowsHidden = anyHidden;
+        }
+
+        // ---- tag consistency fixer (测试 → 错误标签修复) -----------------
+
+        /// <summary>
+        /// Scans the scoped dataset for inconsistent tags (subject-count
+        /// conflicts like 1boy next to 2boys, solo on multi-subject images,
+        /// same-character parent/child tags resolved by dataset counts),
+        /// previews the planned removals and applies them as normal edits
+        /// (undo works per image; nothing is saved to disk here).
+        /// </summary>
+        internal void RunTagConsistencyFix()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+            List<DataItem> items = Program.DataManager.GetScopedItems();
+            var datasetCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (DataItem item in items)
+            {
+                foreach (string tag in item.Tags.TextTags)
+                    datasetCounts[tag] = datasetCounts.TryGetValue(tag, out int count) ? count + 1 : 1;
+            }
+            // With the character catalog loaded, families follow the real
+            // danbooru parent/child relations; otherwise the textual
+            // base-name heuristic still applies. The threshold (测试模块,
+            // persisted) folds child variants rarer than N into their parent.
+            IReadOnlyList<TagConsistencyIssue> issues = TagConsistencyPlanner.Plan(
+                items.Select(item => (item.ImageFilePath, (IReadOnlyList<string>)item.Tags.TextTags)),
+                tag => ClassifyTagCached(tag) == TagSemanticCategory.Character,
+                datasetCounts,
+                Program.CharacterTagLookup == null ? null : Program.CharacterTagLookup.GetParentTag,
+                Program.Settings.TagFixChildThreshold);
+            if (issues.Count == 0)
+            {
+                MessageBox.Show(this, I18n.GetText("TagFixNoIssues"), I18n.GetText("TagFixTitle"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (!ConfirmTagConsistencyFix(issues))
+                return;
+
+            List<IGrouping<string, TagConsistencyIssue>> byImage =
+                issues.GroupBy(issue => issue.ImagePath, StringComparer.OrdinalIgnoreCase).ToList();
+            LockEdit(true);
+            try
+            {
+                Program.DataManager.ExecuteBulkMutation(() =>
+                {
+                    foreach (IGrouping<string, TagConsistencyIssue> group in byImage)
+                    {
+                        if (!Program.DataManager.DataSet.TryGetValue(group.Key, out DataItem item))
+                            continue;
+                        // Below-threshold children fold INTO the kept tag
+                        // (ReplaceTag dedups when it already exists); the
+                        // other reasons are plain removals.
+                        foreach (TagConsistencyIssue fold in group.Where(
+                            issue => issue.Reason == TagConsistencyReason.ChildBelowThreshold))
+                        {
+                            item.Tags.ReplaceTag(fold.RemoveTag, fold.KeptTag);
+                        }
+                        List<string> removals = group
+                            .Where(issue => issue.Reason != TagConsistencyReason.ChildBelowThreshold)
+                            .Select(issue => issue.RemoveTag)
+                            .ToList();
+                        if (removals.Count > 0)
+                            item.Tags.RemoveTags(removals, true);
+                    }
+                });
+                LoadSelectedImageToGrid();
+            }
+            finally
+            {
+                LockEdit(false);
+            }
+            SetStatus(string.Format(I18n.GetText("TagFixApplied"), issues.Count, byImage.Count));
+        }
+
+        private string FormatTagFixReason(TagConsistencyIssue issue)
+        {
+            string key = issue.Reason switch
+            {
+                TagConsistencyReason.SubjectCountConflict => "TagFixReasonSubjectCount",
+                TagConsistencyReason.SoloWithMultipleSubjects => "TagFixReasonSolo",
+                TagConsistencyReason.ChildBelowThreshold => "TagFixReasonChildBelowThreshold",
+                _ => "TagFixReasonCharacterVariant"
+            };
+            return string.Format(I18n.GetText(key), issue.KeptTag);
+        }
+
+        private bool ConfirmTagConsistencyFix(IReadOnlyList<TagConsistencyIssue> issues)
+        {
+            using var dialog = new Form
+            {
+                Text = I18n.GetText("TagFixTitle"),
+                FormBorderStyle = FormBorderStyle.Sizable,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.CenterParent,
+                AutoScaleMode = AutoScaleMode.Dpi,
+                AutoScaleDimensions = new SizeF(96F, 96F),
+                ClientSize = new Size(LogicalToDeviceUnits(720), LogicalToDeviceUnits(420)),
+                MinimumSize = new Size(LogicalToDeviceUnits(480), LogicalToDeviceUnits(280))
+            };
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                RowHeadersVisible = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+            };
+            grid.Columns.Add("ImageColumn", I18n.GetText("TagFixColImage"));
+            grid.Columns.Add("RemoveColumn", I18n.GetText("TagFixColRemove"));
+            grid.Columns.Add("KeepColumn", I18n.GetText("TagFixColKeep"));
+            grid.Columns.Add("ReasonColumn", I18n.GetText("TagFixColReason"));
+            grid.Columns["ReasonColumn"].FillWeight = 160;
+            foreach (TagConsistencyIssue issue in issues)
+            {
+                grid.Rows.Add(Path.GetFileName(issue.ImagePath), issue.RemoveTag,
+                    issue.KeptTag, FormatTagFixReason(issue));
+            }
+            var buttons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                FlowDirection = FlowDirection.RightToLeft,
+                AutoSize = true,
+                Padding = new Padding(LogicalToDeviceUnits(6))
+            };
+            var okButton = new Button
+            {
+                Text = "OK",
+                DialogResult = DialogResult.OK,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            var cancelButton = new Button
+            {
+                Text = I18n.GetText("BtnCancel"),
+                DialogResult = DialogResult.Cancel,
+                Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
+            };
+            buttons.Controls.Add(cancelButton);
+            buttons.Controls.Add(okButton);
+            dialog.Controls.Add(grid);
+            dialog.Controls.Add(buttons);
+            dialog.AcceptButton = okButton;
+            dialog.CancelButton = cancelButton;
+            Program.ColorManager.ChangeColorScheme(dialog, Program.ColorManager.SelectedScheme);
+            Program.ColorManager.ChangeColorSchemeInConteiner(dialog.Controls, Program.ColorManager.SelectedScheme);
+            return dialog.ShowDialog(this) == DialogResult.OK;
+        }
 
         private void ApplyAllTagsCategorySort()
         {
@@ -4010,7 +4408,8 @@ namespace BooruDatasetTagManager
                 I18n.GetText("FolderListSearchPlaceholder"));
             datasetBrowserView?.SetFolderButtonTexts(
                 I18n.GetText("FolderExpandAll"),
-                I18n.GetText("FolderCollapseAll"));
+                I18n.GetText("FolderCollapseAll"),
+                I18n.GetText("FolderFlatView"));
             if (toolStripCategorySortBtn != null)
             {
                 toolStripCategorySortBtn.Text = I18n.GetText("TagsSortByCategory");
@@ -4020,6 +4419,16 @@ namespace BooruDatasetTagManager
             {
                 toolStripAllTagsCategorySortBtn.Text = I18n.GetText("TagsSortByCategory");
                 toolStripAllTagsCategorySortBtn.ToolTipText = I18n.GetText("TagsSortByCategory");
+            }
+            if (toolStripAllTagsCategoryFilter != null)
+            {
+                FillCategoryFilterItems(toolStripAllTagsCategoryFilter);
+                toolStripAllTagsCategoryFilter.ToolTipText = I18n.GetText("AllTagsCategoryFilterTip");
+            }
+            if (toolStripImageTagsCategoryFilter != null)
+            {
+                FillCategoryFilterItems(toolStripImageTagsCategoryFilter);
+                toolStripImageTagsCategoryFilter.ToolTipText = I18n.GetText("AllTagsCategoryFilterTip");
             }
             if (menuRenameFolder != null)
                 menuRenameFolder.Text = I18n.GetText("FolderRenameMenu");
@@ -4045,6 +4454,10 @@ namespace BooruDatasetTagManager
                 menuVideoExtract.Text = I18n.GetText("MenuVideoExtract");
             if (menuOnnxTagger != null)
                 menuOnnxTagger.Text = I18n.GetText("MenuOnnxTagger");
+            if (menuReloadDataset != null)
+                menuReloadDataset.Text = I18n.GetText("MenuItemReloadDataset");
+            if (menuSimilarImages != null)
+                menuSimilarImages.Text = I18n.GetText("MenuSimilarImages");
             if (menuTestModule != null)
                 menuTestModule.Text = I18n.GetText("MenuTestModule");
             debugToolStripMenuItem.Text = I18n.GetText("MenuDebug");
@@ -4163,9 +4576,14 @@ namespace BooruDatasetTagManager
 
         private async Task ApplyTagHistoryActionAsync(Action<EditableTagList> historyAction)
         {
-            if (GetTagsDataSourceType() != DataSourceType.Single)
+            DataSourceType sourceType = GetTagsDataSourceType();
+            if (sourceType != DataSourceType.Single)
             {
-                MessageBox.Show(I18n.GetText("TipStateMultiselectNotSupported"));
+                // Nothing bound = no dataset loaded; say that instead of the
+                // misleading "multiselect not supported".
+                MessageBox.Show(I18n.GetText(sourceType == DataSourceType.None
+                    ? "TipDatasetNoLoad"
+                    : "TipStateMultiselectNotSupported"));
                 return;
             }
 
@@ -4335,6 +4753,7 @@ namespace BooruDatasetTagManager
 
             cmds["MenuItemSaveChanges"] = delegate () { saveAllChangesToolStripMenuItem.PerformClick(); };
             cmds["MenuItemShowPreview"] = delegate () { MenuShowPreview.PerformClick(); };
+            cmds["MenuItemReloadDataset"] = delegate () { menuReloadDataset?.PerformClick(); };
             cmds["MenuHideAllTags"] = delegate () { MenuHideAllTags.PerformClick(); };
             cmds["MenuHideTags"] = delegate () { MenuHideTags.PerformClick(); };
             cmds["MenuHideDataset"] = delegate () { MenuHideDataset.PerformClick(); };
@@ -4575,6 +4994,10 @@ namespace BooruDatasetTagManager
             TaggerSettings settings = Program.Settings.OpenAiAutoTagger;
             SetStatus(I18n.GetText("InProgress"));
             StringBuilder sbErrors = new StringBuilder();
+            // Declared before the try: the completion status after finally
+            // reports both counters.
+            int skippedExisting = 0;
+            int currentIndex = 0;
             LockEdit(true);
             try
             {
@@ -4594,7 +5017,20 @@ namespace BooruDatasetTagManager
                     selectedTagsList.Add(item.Value);
                 }
             }
-            int currentIndex = 0;
+            // Skip-existing write mode: drop already-tagged images BEFORE the
+            // paid LLM calls (their results were silently discarded after the
+            // money was spent) and tell the user instead of a no-op "success".
+            if (settings.SetMode == NetworkResultSetMode.SkipExistTagList)
+            {
+                skippedExisting = selectedTagsList.RemoveAll(item => item.Tags.Count > 0);
+                if (selectedTagsList.Count == 0)
+                {
+                    MessageBox.Show(this,
+                        string.Format(I18n.GetText("TaggerAllSkippedExisting"), skippedExisting),
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+            }
             foreach (var item in selectedTagsList)
             {
                 (List<AutoTagItem> data, string errorMessage, bool canceled) taggerResult = (null, null, false);
@@ -4658,7 +5094,9 @@ namespace BooruDatasetTagManager
                 sbErrors.Insert(0, "The following files were not processed:\n");
                 MessageBox.Show(sbErrors.ToString());
             }
-            SetStatus(I18n.GetText("TipProgressComplete"));
+            SetStatus(skippedExisting > 0
+                ? string.Format(I18n.GetText("TaggerCompletedSkippedExisting"), currentIndex, skippedExisting)
+                : I18n.GetText("TipProgressComplete"));
         }
 
         private async Task<bool> RemoveBackgrounds(bool onlySelected)

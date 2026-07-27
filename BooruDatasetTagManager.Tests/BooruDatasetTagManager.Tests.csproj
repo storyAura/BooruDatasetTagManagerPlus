@@ -55,6 +55,9 @@
     <Compile Include="..\BooruDatasetTagManager\OpenAiSpeedTestService.cs" Link="Source\OpenAiSpeedTestService.cs" />
     <Compile Include="..\BooruDatasetTagManager\AiServerSetSettingsMigration.cs" Link="Source\AiServerSetSettingsMigration.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageLoader.cs" Link="Source\ImageLoader.cs" />
+    <Compile Include="..\BooruDatasetTagManager\SimilarImageFinder.cs" Link="Source\SimilarImageFinder.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CliCommands.cs" Link="Source\CliCommands.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagConsistencyPlanner.cs" Link="Source\TagConsistencyPlanner.cs" />
     <Compile Include="..\BooruDatasetTagManager\QuickTagReplaceService.cs" Link="Source\QuickTagReplaceService.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagAudit.cs" Link="Source\CharacterTagAudit.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagAuditMulti.cs" Link="Source\CharacterTagAuditMulti.cs" />
@@ -81,6 +84,7 @@
     <Compile Include="..\BooruDatasetTagManager\ClTaggerOnnxService.cs" Link="Source\ClTaggerOnnxService.cs" />
     <Compile Include="..\BooruDatasetTagManager\FfmpegLocator.cs" Link="Source\FfmpegLocator.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagPostProcessor.cs" Link="Source\TagPostProcessor.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagWriteService.cs" Link="Source\TagWriteService.cs" />
     <Compile Include="..\BooruDatasetTagManager\AppSettings.cs" Link="Source\AppSettings.cs" />
     <Compile Include="..\BooruDatasetTagManager\LlmApiProfiles.cs" Link="Source\LlmApiProfiles.cs" />
     <Compile Include="..\BooruDatasetTagManager\HotkeyData.cs" Link="Source\HotkeyData.cs" />

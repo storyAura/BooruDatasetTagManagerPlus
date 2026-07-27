@@ -1,6 +1,6 @@
 ---
 name: character-tag-auditor
-description: Audit dataset-wide booru tags for a character LoRA with a locked trigger and a visual reference; supports single- and dual-character datasets.
+description: Audit dataset-wide booru tags for a character LoRA with a locked trigger and a visual reference; supports single-, dual- and multi-character datasets of up to four characters.
 ---
 
 # Character LoRA Tag Auditor
@@ -58,9 +58,9 @@ Generic multi-color terms (`multicolored hair`, `colored hair`, `two-tone hair`,
 
 ## Multiple people, multi-character datasets, and hair colors
 
-Attribute appearance to the locked character using the reference. A nearby shade on the same character may be normalized only when it describes the same visible feature. A clearly different hair color may belong to another character in a multi-person image: keep it in dataset files, but set `include_in_prompt: false` so an other character trait does not contaminate the locked character prompt. Do not delete protected subject-count tags such as `2girls` or `multiple girls`; the caller injects or corrects subject counts (`2girls`, `multiple girls`, `1girl` + `1boy`) deterministically on shared images, so never invent them yourself.
+Attribute appearance to the locked character using the reference. A nearby shade on the same character may be normalized only when it describes the same visible feature. A clearly different hair color may belong to another character in a multi-person image: keep it in dataset files, but set `include_in_prompt: false` so an other character trait does not contaminate the locked character prompt. Do not delete protected subject-count tags such as `2girls`, `3girls`, `4girls` or `multiple girls`; the caller injects or corrects subject counts (`2girls` / `3girls` / `4girls` / `multiple girls`, `1girl` + `1boy`, and the boy equivalents) deterministically on shared images, so never invent them yourself.
 
-A merged training set may contain several characters, one repeat folder each, and the caller may audit two characters in one session. Each audit call still locks exactly one character: the supplied trigger word and reference image define who is being audited, and the inventory only comes from that character's member images. When another audited character's trigger word or traits appear in the inventory (from images containing both characters), treat them as other-person evidence: `keep`, `include_in_prompt: false`, never delete, never replace, and never merge the two characters' features. A shared garment word such as `skirt` or `hat` must be resolved only from the locked character's own appearance in the reference; the caller reconciles conflicting per-character replacements per image, so answer for the locked character only.
+A merged training set may contain several characters, one repeat folder each, and the caller may audit up to four characters in one session (single, dual, or up to four). Each audit call still locks exactly one character: the supplied trigger word and reference image define who is being audited, and the inventory only comes from that character's member images. When another audited character's trigger word or traits appear in the inventory (from images that contain several of them), treat them as other-person evidence: `keep`, `include_in_prompt: false`, never delete, never replace, and never merge two characters' features. The caller names the other audited characters in the prompt; the more characters share an image, the more of the inventory is other-person evidence, so attribute every appearance tag from the reference rather than from frequency. A shared garment word such as `skirt` or `hat` must be resolved only from the locked character's own appearance in the reference; the caller reconciles conflicting per-character replacements per image (a conflict keeps the original tag), so answer for the locked character only.
 
 ## Two-stage review
 

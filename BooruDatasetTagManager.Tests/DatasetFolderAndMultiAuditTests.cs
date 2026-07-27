@@ -28,11 +28,11 @@ namespace BooruDatasetTagManager.Tests
             {
                 "FolderListAll", "FolderListRoot", "FolderListImageCount",
                 "CharacterTagAuditSubjectMode", "CharacterTagAuditSubjectSingle", "CharacterTagAuditSubjectDual",
-                "CharacterTagAuditTriggerB", "CharacterTagAuditGenders", "CharacterTagAuditFolderA",
-                "CharacterTagAuditFolderB", "CharacterTagAuditFolderAny", "CharacterTagAuditReferences",
-                "CharacterTagAuditSetReferenceA", "CharacterTagAuditSetReferenceB", "CharacterTagAuditReferenceUnset",
-                "CharacterTagAuditTriggerBRequired", "CharacterTagAuditTriggersMustDiffer",
-                "CharacterTagAuditReferencesRequired", "CharacterTagAuditProfileTab", "CharacterTagAuditDualSummary",
+                "CharacterTagAuditSubjectQuad", "CharacterTagAuditProfileLabel", "CharacterTagAuditTriggerOf",
+                "CharacterTagAuditFolderOf", "CharacterTagAuditFolderAny", "CharacterTagAuditSetReferenceOf",
+                "CharacterTagAuditReferenceUnset", "CharacterTagAuditProfilesRequired",
+                "CharacterTagAuditTriggersMustDiffer", "CharacterTagAuditReferenceRequiredOf",
+                "CharacterTagAuditProfileTab", "CharacterTagAuditMemberCount", "CharacterTagAuditMultiSummary",
                 "CharacterGenderGirl", "CharacterGenderBoy"
             };
             foreach (string language in new[] { "en-US", "zh-CN", "zh-TW", "ru-RU", "pt-BR" })
@@ -65,6 +65,11 @@ namespace BooruDatasetTagManager.Tests
             Assert.Contains("CharacterTagEditableTagInjector.ApplySubjectCount", wizard);
             Assert.Contains("GetScopedItems", wizard);
             Assert.Contains("SwitchResultProfile", wizard);
+            // Four character slots, driven by arrays instead of A/B fields.
+            Assert.Contains("MaxProfileSlots", wizard);
+            Assert.Contains("CreateProfileRow", wizard);
+            Assert.Contains("CharacterTagAuditSubjectMode.Quad", wizard);
+            Assert.DoesNotContain("comboTriggerB", wizard);
         }
 
         [Fact]
@@ -215,6 +220,50 @@ namespace BooruDatasetTagManager.Tests
         }
 
         [Fact]
+        public async Task FourProfilesRunInOrderWithEightAggregatedSteps()
+        {
+            using var temp = new TemporaryDirectory();
+            string reference = Path.Combine(temp.Path, "a.png");
+            File.WriteAllBytes(reference, new byte[] { 1 });
+
+            IReadOnlyList<string> currentTags = null;
+            var service = new CharacterTagDualAuditService(new CharacterTagAuditService((request, _) =>
+            {
+                if (request.Stage == CharacterTagAuditStage.TextScreening)
+                {
+                    string json = request.UserPrompt.Substring(
+                        request.UserPrompt.IndexOf("Tags: ", StringComparison.Ordinal) + "Tags: ".Length);
+                    currentTags = JArray.Parse(json).Select(token => token.Value<string>("Tag")).ToList();
+                }
+                return Task.FromResult(new CharacterTagModelResponse(KeepAllJson(currentTags), string.Empty));
+            }));
+            var updates = new List<CharacterTagAuditProgress>();
+            var progress = new ImmediateProgress<CharacterTagAuditProgress>(updates.Add);
+
+            CharacterTagDualAuditOptions options = Options(temp.Path, reference, reference);
+            options.Images = new[]
+            {
+                Record(Path.Combine(temp.Path, "a", "1.png"), "char_a", "skirt"),
+                Record(Path.Combine(temp.Path, "b", "1.png"), "char_b", "hat"),
+                Record(Path.Combine(temp.Path, "c", "1.png"), "char_c", "boots"),
+                Record(Path.Combine(temp.Path, "mix", "1.png"), "char_a", "char_b", "char_c", "char_d", "beach")
+            };
+            options.Profiles = new[] { "char_a", "char_b", "char_c", "char_d" }
+                .Select(trigger => new CharacterAuditProfile { TriggerWord = trigger, ReferenceImagePath = reference })
+                .ToList();
+
+            CharacterTagDualAuditResult result = await service.ExecuteAsync(options, progress);
+
+            Assert.Equal(4, result.ProfileResults.Count);
+            Assert.Equal(new[] { 2, 2, 2, 1 }, result.MemberImageCounts);
+            Assert.Equal(1, result.SharedImageCount);
+            Assert.Equal(0, result.UnattributedImageCount);
+            Assert.All(updates, update => Assert.Equal(8, update.TotalSteps));
+            Assert.Equal(new[] { 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8 },
+                updates.Select(update => update.CompletedSteps));
+        }
+
+        [Fact]
         public async Task DualAuditRejectsDuplicateTriggersAndProfilesWithoutImages()
         {
             using var temp = new TemporaryDirectory();
@@ -222,6 +271,21 @@ namespace BooruDatasetTagManager.Tests
             File.WriteAllBytes(reference, new byte[] { 1 });
             var service = new CharacterTagDualAuditService(new CharacterTagAuditService(
                 (_, _) => Task.FromResult(new CharacterTagModelResponse("{}", string.Empty))));
+
+            // Fewer than two or more than MaxProfiles characters is rejected
+            // before any paid call.
+            foreach (int count in new[] { 1, CharacterTagDualAuditService.MaxProfiles + 1 })
+            {
+                CharacterTagDualAuditOptions outOfRange = Options(temp.Path, reference, reference);
+                outOfRange.Profiles = Enumerable.Range(0, count)
+                    .Select(index => new CharacterAuditProfile
+                    {
+                        TriggerWord = "char_" + index,
+                        ReferenceImagePath = reference
+                    })
+                    .ToList();
+                await Assert.ThrowsAsync<ArgumentException>(() => service.ExecuteAsync(outOfRange));
+            }
 
             CharacterTagDualAuditOptions duplicate = Options(temp.Path, reference, reference);
             duplicate.Profiles = new[]
@@ -375,7 +439,7 @@ namespace BooruDatasetTagManager.Tests
         public void TwoGirlsInjectCountTagsAfterTriggersAndDropSoloAnd1Girl()
         {
             var tags = new[] { "char_a", "char_b", "1girl", "solo", "skirt" };
-            var result = CharacterSubjectCountPlanner.Apply(tags, Girl("char_a"), Girl("char_b"));
+            var result = CharacterSubjectCountPlanner.Apply(tags, new[] { Girl("char_a"), Girl("char_b") });
             Assert.Equal(new[] { "char_a", "char_b", "2girls", "multiple girls", "skirt" }, result);
         }
 
@@ -383,7 +447,7 @@ namespace BooruDatasetTagManager.Tests
         public void ExistingCountTagsAreNotDuplicated()
         {
             var tags = new[] { "char_a", "2girls", "char_b", "multiple girls", "hat" };
-            var result = CharacterSubjectCountPlanner.Apply(tags, Girl("char_a"), Girl("char_b"));
+            var result = CharacterSubjectCountPlanner.Apply(tags, new[] { Girl("char_a"), Girl("char_b") });
             Assert.Equal(new[] { "char_a", "2girls", "char_b", "multiple girls", "hat" }, result);
         }
 
@@ -391,7 +455,7 @@ namespace BooruDatasetTagManager.Tests
         public void MixedPairKeepsSingularCountsAndDropsSolo()
         {
             var tags = new[] { "char_a", "char_b", "solo", "outdoors" };
-            var result = CharacterSubjectCountPlanner.Apply(tags, Girl("char_a"), Boy("char_b"));
+            var result = CharacterSubjectCountPlanner.Apply(tags, new[] { Girl("char_a"), Boy("char_b") });
             Assert.Equal(new[] { "char_a", "char_b", "1girl", "1boy", "outdoors" }, result);
         }
 
@@ -399,8 +463,42 @@ namespace BooruDatasetTagManager.Tests
         public void NoTriggerInListInsertsAtFront()
         {
             var tags = new[] { "solo", "1girl", "smile" };
-            var result = CharacterSubjectCountPlanner.Apply(tags, Girl("char_a"), Girl("char_b"));
+            var result = CharacterSubjectCountPlanner.Apply(tags, new[] { Girl("char_a"), Girl("char_b") });
             Assert.Equal(new[] { "2girls", "multiple girls", "smile" }, result);
+        }
+
+        [Fact]
+        public void FourGirlsUseTheFourGirlsCountAndDropEveryLowerCount()
+        {
+            var tags = new[] { "char_a", "char_b", "char_c", "char_d", "2girls", "1girl", "solo", "beach" };
+            var result = CharacterSubjectCountPlanner.Apply(
+                tags,
+                new[] { Girl("char_a"), Girl("char_b"), Girl("char_c"), Girl("char_d") });
+            Assert.Equal(
+                new[] { "char_a", "char_b", "char_c", "char_d", "4girls", "multiple girls", "beach" },
+                result);
+        }
+
+        [Fact]
+        public void MixedCastCountsEachGenderSeparately()
+        {
+            var tags = new[] { "char_a", "char_b", "char_c", "solo", "1girl", "indoors" };
+            var result = CharacterSubjectCountPlanner.Apply(
+                tags,
+                new[] { Girl("char_a"), Girl("char_b"), Boy("char_c") });
+            Assert.Equal(
+                new[] { "char_a", "char_b", "char_c", "2girls", "multiple girls", "1boy", "indoors" },
+                result);
+        }
+
+        [Fact]
+        public void AHigherCountSurvivesInsteadOfGettingAContradictingLowerOne()
+        {
+            // An unaudited third girl in the image justifies 3girls: keep it
+            // instead of injecting 2girls right next to it.
+            var tags = new[] { "char_a", "char_b", "3girls", "multiple girls", "park" };
+            var result = CharacterSubjectCountPlanner.Apply(tags, new[] { Girl("char_a"), Girl("char_b") });
+            Assert.Equal(new[] { "char_a", "char_b", "3girls", "multiple girls", "park" }, result);
         }
     }
 

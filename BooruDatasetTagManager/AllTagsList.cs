@@ -179,6 +179,27 @@ namespace BooruDatasetTagManager
         // List-index searches stay 1:1.
         private Func<string, int> categoryRank;
 
+        // Semantic-category filter (null = every category). Independent of the
+        // text/count filters so clearing one never silently drops the other.
+        private Func<string, bool> categoryFilter;
+
+        /// <summary>
+        /// Shows only tags matching <paramref name="predicate"/> (the all-tags
+        /// category dropdown); null shows every category again. Combines with
+        /// the text and count filters (logical AND).
+        /// </summary>
+        public void SetCategoryFilter(Func<string, bool> predicate)
+        {
+            categoryFilter = predicate;
+            if (batchUpdateDepth > 0)
+            {
+                batchDirty = true;
+                return;
+            }
+            RebuildVisibleList();
+            OnListChanged(resetEvent);
+        }
+
         /// <summary>
         /// Turns category-grouped ordering of the default (no header sort)
         /// view on or off; explicit column-header sorts stay untouched.
@@ -244,6 +265,7 @@ namespace BooruDatasetTagManager
         private bool CheckCurrentFilter(AllTagsItem item)
         {
             return (!filterByCount || item.Count == filterTagsCount)
+                && (categoryFilter == null || categoryFilter(item.Tag))
                 && CheckFilterOnTag(item, filterText);
         }
 
@@ -472,9 +494,17 @@ namespace BooruDatasetTagManager
         public void SetFilterByCount(int tagsCount)
         {
             filterTagsCount = tagsCount;
+            filterByCount = true;
+            UpdateFilter();
+        }
+
+        public void UpdateFilter()
+        {
+            // One shared predicate for every filter dimension (count, category,
+            // text) so the visible list always matches what AddTag admits.
             foreach (var item in tagsList)
             {
-                if (item.Count == tagsCount)
+                if (CheckCurrentFilter(item))
                 {
                     if (!List.Contains(item))
                         AddWithSortingInternal(List, item);
@@ -483,31 +513,6 @@ namespace BooruDatasetTagManager
                 {
                     if (List.Contains(item))
                         List.Remove(item);
-                }
-            }
-            filterByCount = true;
-        }
-
-        public void UpdateFilter()
-        {
-            if (filterByCount)
-            {
-                SetFilterByCount(filterTagsCount);
-            }
-            else
-            {
-                foreach (var item in tagsList)
-                {
-                    if (CheckFilterOnTag(item, filterText))
-                    {
-                        if (!List.Contains(item))
-                            AddWithSortingInternal(List, item);
-                    }
-                    else
-                    {
-                        if (List.Contains(item))
-                            List.Remove(item);
-                    }
                 }
             }
         }

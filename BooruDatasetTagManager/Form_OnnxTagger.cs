@@ -952,6 +952,28 @@ namespace BooruDatasetTagManager
                 return;
             }
 
+            // Skip-existing write mode never modifies already-tagged images, so
+            // filter them out BEFORE inference (no wasted compute) and say so —
+            // previously the run inferred everything, silently discarded every
+            // result and still reported plain success, which read as "changing
+            // the threshold/model does nothing".
+            int skippedExisting = 0;
+            if (GetSelectedEnum<NetworkResultSetMode>(comboSetMode) == NetworkResultSetMode.SkipExistTagList)
+            {
+                int beforeFilter = inputs.Count;
+                inputs = inputs
+                    .Where(input => !(TryGetDataItem(input, out DataItem existing) && existing.Tags.Count > 0))
+                    .ToList();
+                skippedExisting = beforeFilter - inputs.Count;
+                if (inputs.Count == 0)
+                {
+                    MessageBox.Show(this,
+                        string.Format(I18n.GetText("TaggerAllSkippedExisting"), skippedExisting),
+                        Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+            }
+
             OnnxTaggerModelEntry entry = GetSelectedModel();
             if (!IsModelReady(entry))
             {
@@ -1050,9 +1072,15 @@ namespace BooruDatasetTagManager
                 {
                     MessageBox.Show(this, string.Join(Environment.NewLine, errors), I18n.GetText("TaggerCompletedWithErrors"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+                else if (wasCanceled)
+                {
+                    UpdateStatus(I18n.GetText("TaggerCancelled"));
+                }
                 else
                 {
-                    UpdateStatus(I18n.GetText(wasCanceled ? "TaggerCancelled" : "TaggerCompleted"));
+                    UpdateStatus(skippedExisting > 0
+                        ? string.Format(I18n.GetText("TaggerCompletedSkippedExisting"), completed, skippedExisting)
+                        : I18n.GetText("TaggerCompleted"));
                 }
             }
             catch (OperationCanceledException)

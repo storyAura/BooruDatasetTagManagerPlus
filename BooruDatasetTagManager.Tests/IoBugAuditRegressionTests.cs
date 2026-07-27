@@ -536,11 +536,21 @@ public sealed class IoAuditSourceWiringTests
     public void Dataset_switch_aborts_on_save_errors_and_on_cancel()
     {
         string source = ReadMainSource("Form1.cs");
-        int method = source.IndexOf("private async Task LoadFromFolderAsync", StringComparison.Ordinal);
+        // The guard moved into the shared ConfirmDatasetSwitch() so both
+        // "load folder" and "reload current dataset" get identical protection.
+        int method = source.IndexOf("private bool ConfirmDatasetSwitch()", StringComparison.Ordinal);
         Assert.True(method >= 0);
-        string body = source.Substring(method, 2000);
+        string body = source.Substring(method, 1200);
         Assert.Contains("if (ReportSaveErrorsIfAny())", body);
         Assert.Contains("else if (result == DialogResult.Cancel)", body);
+
+        // Every dataset-replacing entry point must run the confirmation.
+        int loadMethod = source.IndexOf("private async Task LoadFromFolderAsync", StringComparison.Ordinal);
+        Assert.True(loadMethod >= 0);
+        Assert.Contains("if (!ConfirmDatasetSwitch())", source.Substring(loadMethod, 400));
+        int reloadMethod = source.IndexOf("private async Task ReloadCurrentDatasetAsync", StringComparison.Ordinal);
+        Assert.True(reloadMethod >= 0);
+        Assert.Contains("if (!ConfirmDatasetSwitch())", source.Substring(reloadMethod, 700));
     }
 
     [Fact]

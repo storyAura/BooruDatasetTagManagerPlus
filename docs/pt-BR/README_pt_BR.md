@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.2.1
+# BooruDatasetTagManager+ 1.2.2
 
 [English](../../README_en.md) | [简体中文](../../README.md)
 
@@ -8,7 +8,8 @@ Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork
 
 ## Histórico de versões
 
-- **1.2.1** (atual) — segunda leva de correções da auditoria: reforço de memória e segurança de dados nos pipelines ONNX / rede / imagem, primeiro carregamento mais rápido, acessibilidade e i18n completos; o backend legado AiApiServer em Python foi removido (configurações antigas migram automaticamente); o navegador do dataset filtra o grupo raiz isoladamente e seleções de várias pastas definem o escopo pela união (as contagens de Todas as tags acompanham); a auditoria de dois personagens ganha checkpoints com repetição apenas do personagem que falhou; a pré-visualização flutuante não cobre mais as caixas de confirmação (o app parecia travado) e a lista de tags se auto-repara da dessincronização interna (o erro "List desynchronization detected" que bloqueava novas edições); a janela de configurações LLM não corta mais a dica sob a lista de chaves de API em telas com DPI alto; o menu Debug perde as antigas entradas de teste do desenvolvedor e vira um modo de depuração opcional (desligado por padrão; ativá-lo nas configurações mostra o menu e grava o debug.log); os avisos de atualização no app agora mostram as notas da versão no idioma da interface (versões independentes em chinês e inglês). [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
+- **1.2.2** (atual) — novo **Localizador de imagens semelhantes**: um clique no menu Ferramentas varre o dataset (ou o escopo da pasta ativa) atrás de imagens duplicadas / quase duplicadas com hash perceptual no estilo czkawka — resultados em segundos, revisados grupo a grupo (borda verde = manter, vermelha = excluir, clique direito mostra o original), com "manter o maior arquivo por grupo" em um clique e exclusão transacional; a auditoria de tags de personagem passa de dois para **vários personagens (até 4)**: palavra de ativação / referência / gênero por vaga, vagas vazias são ignoradas, imagens compartilhadas recebem tags de contagem de sujeitos, os checkpoints continuam valendo; novo **Arquivo → Recarregar o dataset atual** (F5, atalho configurável); o modo de gravação "Ignorando listas de tags existentes" dos taggers ONNX / LLM agora pula antes da inferência e informa as contagens (sem resultados descartados em silêncio nem créditos de LLM desperdiçados); toda entrada mostra um aviso amigável sem dataset carregado (várias falhas de referência nula corrigidas); as tags do dataset anterior não permanecem mais após trocar de pasta; a ordenação por categoria das tags da imagem virou um botão de alternância persistente; a caixa de busca do dataset segue o estilo plano do app. [Notas da versão](../RELEASE_NOTES_v1.2.2.md)
+- **1.2.1** — segunda leva de correções da auditoria: reforço de memória e segurança de dados nos pipelines ONNX / rede / imagem, primeiro carregamento mais rápido, acessibilidade e i18n completos; o backend legado AiApiServer em Python foi removido (configurações antigas migram automaticamente); o navegador do dataset filtra o grupo raiz isoladamente e seleções de várias pastas definem o escopo pela união (as contagens de Todas as tags acompanham); a auditoria de dois personagens ganha checkpoints com repetição apenas do personagem que falhou; a pré-visualização flutuante não cobre mais as caixas de confirmação (o app parecia travado) e a lista de tags se auto-repara da dessincronização interna (o erro "List desynchronization detected" que bloqueava novas edições); a janela de configurações LLM não corta mais a dica sob a lista de chaves de API em telas com DPI alto; o menu Debug perde as antigas entradas de teste do desenvolvedor e vira um modo de depuração opcional (desligado por padrão; ativá-lo nas configurações mostra o menu e grava o debug.log); os avisos de atualização no app agora mostram as notas da versão no idioma da interface (versões independentes em chinês e inglês). [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
 - **1.2.0** — painel do dataset reconstruído como navegador unificado por pastas (busca, recolher, renomear em lote, marcação rápida por pasta) com pré-visualização incorporada de várias imagens; cores semânticas de tags e ordenação por categoria; correspondência com o catálogo de personagens do danbooru (cores + nomes traduzidos); diversas correções de tradução, da janela da wiki e do assistente de auditoria; reforço de publicação e segurança de dados após auditoria (reversão de renomeação, token HF restrito ao huggingface.co, empacotamento isolado, trava de salvamento do LLM, proteção contra sobrescrita na conversão de vídeo, inicialização tolerante a falhas de configuração). [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
 - **1.1.3** — reforço de E/S de arquivos e segurança de dados (corrige os 8 riscos confirmados por uma auditoria interna: falhas de salvamento mantêm as edições, exclusão transacional, gravações concorrentes seguras, …); adiciona o editor de imagem, os modelos ONNX da família CL, a busca de tags com dicionário chinês e a ação rápida por clique duplo em Todas as tags. [Notas da versão](../RELEASE_NOTES_v1.1.3.md)
 - **1.1.2** — janela unificada de Marcação LLM (modos Tags / Linguagem natural); remoção de fundo dentro do processo (RMBG-1.4); proteção contra falhas, gravações atômicas, chaves criptografadas e outros reforços de robustez/segurança. [Notas da versão](../RELEASE_NOTES_v1.1.2.md)
@@ -20,10 +21,10 @@ Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork
 
 Baixe `BooruDatasetTagManagerPlus-*-win-x64.zip` em [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases), extraia e execute `BooruDatasetTagManagerPlus.exe` (autocontido; não requer instalação separada do .NET).
 
-1. **Arquivo → Carregar Pasta**; *Carregar Pasta (opções de carregamento)…* permite ainda pular as miniaturas (mais rápido em datasets grandes) ou ler tags iniciais dos metadados das imagens (útil para gerações recentes ainda sem arquivos `.txt`)
+1. **Arquivo → Carregar Pasta**; *Carregar Pasta (opções de carregamento)…* permite ainda pular as miniaturas (mais rápido em datasets grandes) ou ler tags iniciais dos metadados das imagens (útil para gerações recentes ainda sem arquivos `.txt`); *Recarregar o dataset atual* (F5) atualiza a pasta carregada a partir do disco a qualquer momento
 2. Edite as tags diretamente: as caixas de busca de "Todas as tags" e "Tags da imagem" entendem o dicionário chinês (digitar 头发 encontra long hair, black hair, …); o clique duplo em uma linha de "Todas as tags" executa uma ação rápida (abre "Substituir em todas" por padrão, configurável nas Configurações); abra a Wiki do Danbooru para tags desconhecidas
 3. Antes de usar qualquer recurso LLM, configure o endpoint compatível com OpenAI e os modelos em **Configurações LLM**
-4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / ferramentas de vídeo**, ou **Teste → Abrir auditoria de tags**, conforme necessário
+4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / ferramentas de vídeo / Encontrar imagens semelhantes**, ou **Teste → Abrir auditoria de tags**, conforme necessário
 
 ### Compilar a partir do código-fonte
 
@@ -45,10 +46,11 @@ A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settin
 | **Navegador do dataset** | Navegador por grupos de pastas (busca, recolher, renomear / renomear em lote, marcação rápida por pasta); pré-visualização incorporada (lado a lado na seleção múltipla); formato·pixels·tamanho na linha |
 | **Semântica de tags** | Tons claros em 18 categorias e ordenação por categoria; catálogo de personagens do danbooru embutido (correspondência exata + traduções "nome (obra)") |
 | **Marcação LLM** | Modos Tags / Tags→Linguagem natural; endpoint compatível com OpenAI; modelos de prompt; concorrência LLM 1–100 |
-| **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas; um ou dois personagens; salvamento transacional |
+| **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas; um ou vários personagens (até 4); salvamento transacional |
 | **Tagger ONNX** | Catálogo WD14 local + PixAI + família CL; limites memorizados por modelo; download do HuggingFace |
 | **Remoção de fundo** | RMBG-1.4 ONNX embutido, totalmente local — sem serviço externo; fundo transparente ou de cor sólida |
 | **Editor de imagem** | Pincel / borracha / conta-gotas / recorte / rotação e espelhamento com atalhos no estilo Photoshop; diálogo separado de recorte de várias regiões |
+| **Imagens semelhantes** | Busca de duplicadas com hash perceptual no estilo czkawka (4 níveis de similaridade); revisão em grupos manter/excluir; manter uma por grupo; exclusão transacional |
 | **Ferramentas de vídeo** | Conversão de formato; extração de todos os frames / por FPS / frames específicos; FFmpeg incluído |
 | **Edição de tags** | Busca com dicionário chinês, ação rápida por clique duplo em Todas as tags, revisão com seleção múltipla (Shift+T), Wiki do Danbooru |
 
@@ -60,7 +62,7 @@ O painel do dataset é um navegador unificado: a caixa de busca filtra pastas e 
 
 - **Clique direito na pasta**: renomear a pasta (disco + remapeamento em memória, edições não salvas sobrevivem); renomear imagens em lote (prefixo + números / letras / nome original + sufixo, prévia ao vivo, o `.txt` acompanha); marcar a pasta com ONNX / LLM
 - **Pré-visualização incorporada**: painel recolhível sob o navegador (Exibir → Mostrar pré-visualização, estado persistido); a seleção múltipla mostra as quatro primeiras imagens lado a lado, clique duplo em uma célula abre no visualizador flutuante; a janela flutuante tem zoom ancorado no cursor, arrastar para deslocar, clique duplo ajustar ↔ 100 %, Ctrl+0 / Ctrl+1
-- **Cores e ordenação por categoria**: os dois painéis de tags recebem tons claros em 18 categorias semânticas (personagem / obra / cabelo / olhos / roupas …); o botão *Ordenar por categoria* das tags da imagem agrupa por categoria respeitando "não ordenar as primeiras N linhas"; em Todas as tags a ordenação por categoria é opcional (desligada por padrão)
+- **Cores e ordenação por categoria**: os dois painéis de tags recebem tons claros em 18 categorias semânticas (personagem / obra / cabelo / olhos / roupas …); o botão *Ordenar por categoria* das tags da imagem é uma alternância persistente: marcado, cada imagem recém-selecionada é agrupada por categoria automaticamente (respeitando "não ordenar as primeiras N linhas"); em Todas as tags a ordenação por categoria é opcional (desligada por padrão)
 - **Catálogo de personagens**: ~330 mil tags de personagens do danbooru em `Data/danbooru_character_tags.csv` para coloração exata e traduções "nome (obra)"; pode ser desativado em Configurações → Tradução
 
 ### Marcação LLM
@@ -79,7 +81,7 @@ Entrada: **Ferramentas → Marcação LLM…**, o menu de contexto do dataset, o
 
 Entrada: **Teste → Abrir auditoria de tags…**. Defina a palavra de ativação bloqueada (sempre mantida), o estilo de marcação (**enxuto** mantém as características centrais / **completo** mantém todos os detalhes corretos), um limite mínimo de ocorrências e uma imagem de referência; a IA executa uma triagem textual seguida de uma revisão visual (não há como voltar etapas — cancele e reabra para mudar os parâmetros); por fim, revise cada decisão (manter / excluir / substituir / incerto), pré-visualize o prompt final do personagem e **Aplicar e salvar** grava de forma transacional, com reversão em caso de falha.
 
-Há suporte a **datasets com dois personagens**: defina palavra de ativação, imagens de referência e gênero para os personagens A / B; as imagens são atribuídas pela palavra de ativação e depois pela pasta, imagens compartilhadas recebem automaticamente tags de contagem de sujeitos (`2girls` etc.), e a revisão da IA, a revisão tag a tag e a aplicação ocorrem personagem por personagem.
+Há suporte a **datasets com vários personagens** (até 4): escolha o modo de sujeito Duplo ou Múltiplo e defina palavra de ativação, imagem de referência e gênero para cada personagem (linhas vazias são ignoradas, então datasets de três personagens também funcionam); as imagens são atribuídas pela palavra de ativação e depois pela pasta, imagens compartilhadas recebem automaticamente tags de contagem de sujeitos (`2girls`, `multiple girls` etc.), a revisão da IA, a revisão tag a tag e a aplicação ocorrem personagem por personagem, e um personagem que falhou pode ser repetido sozinho (os resultados dos personagens concluídos são mantidos).
 
 ![Revisão da auditoria](../images/character-tag-audit-review.png)
 
@@ -91,7 +93,7 @@ Entrada: **Ferramentas → Tagger ONNX…**, ou clique com o botão direito em *
 
 - Modelos: catálogo WD14 completo (12 modelos) + PixAI 0.9 + família CL (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); limites e configurações memorizados por modelo; download do HuggingFace oficial ou do espelho
 - O cl_tagger_v2 é um **repositório restrito (gated)** cuja licença do autor proíbe redistribuição e distribuição em pacotes — o aplicativo não o inclui; um aviso de licença aparece antes do download, e é preciso solicitar acesso no HuggingFace e informar o seu próprio Access Token (armazenado com criptografia DPAPI), ou colocar manualmente os arquivos baixados na pasta `Models`
-- Modo de gravação (substituir / acrescentar / ignorar existentes), ordenação opcional, sublinhado→espaço, tags de prefixo/sufixo; barra de progresso para execuções em lote
+- Modo de gravação (substituir / acrescentar / ignorar existentes), ordenação opcional, sublinhado→espaço, tags de prefixo/sufixo; barra de progresso para execuções em lote; o modo "Ignorando listas de tags existentes" pula imagens já marcadas antes da inferência e informa as contagens de gravadas / puladas ao concluir
 
 ### Remoção de fundo
 
@@ -125,6 +127,14 @@ Entrada: menu de contexto do dataset → **Editar imagem**. Layout no estilo Pho
 Selecione várias imagens e pressione **Shift+T**: a lista de tags à esquerda (com contagem de ocorrências, ordenada por frequência) troca a tag em revisão; **borda verde = tem a tag, vermelha = não tem** — clique em Y/N em uma miniatura para alternar; as edições em várias tags são aplicadas em um único salvamento.
 
 ![Editor de tags com seleção múltipla](../images/multi-select-tag-editor.png)
+
+### Localizador de imagens semelhantes
+
+Entrada: **Ferramentas → Encontrar imagens semelhantes…**. Hash perceptual no espírito do [czkawka](https://github.com/qarmin/czkawka) (dHash + distância de Hamming), calculado direto das miniaturas em memória — milhares de imagens terminam em segundos; com uma pasta em escopo, apenas ela é varrida, e vídeos são ignorados.
+
+- Quatro níveis de similaridade (muito alta / alta / média / baixa); resultados agrupados; **borda verde = manter, vermelha = excluir** — clique esquerdo alterna, clique direito abre o original em tamanho completo, dicas mostram nome e tamanho do arquivo, e um controle deslizante ajusta o tamanho das miniaturas
+- **Manter uma por grupo (maior arquivo)** marca o restante para exclusão em um clique (heurística padrão do czkawka); cada marca ainda pode ser ajustada manualmente
+- **Excluir imagens marcadas em vermelho** usa a mesma exclusão transacional da janela principal (imagem e arquivo de tags são apagados juntos, com restauração em caso de falha) e depois varre novamente de forma automática
 
 ### Dados e privacidade
 

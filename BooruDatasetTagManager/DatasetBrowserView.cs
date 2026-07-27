@@ -46,6 +46,9 @@ namespace BooruDatasetTagManager
         public event Action<IReadOnlyList<string>, Point> FolderContextRequested;
         /// <summary>Raw key events from the list (Delete, Ctrl+V, ... handled by the form).</summary>
         public event KeyEventHandler BrowserKeyDown;
+        /// <summary>User toggled the flat view (ignore folders, one image list).
+        /// The owner persists the state and widens the scope to all folders.</summary>
+        public event Action<bool> FlatViewChanged;
 
         private readonly BrowserListBox list;
         private readonly BufferedPanel searchHost;
@@ -77,6 +80,11 @@ namespace BooruDatasetTagManager
         private bool defaultCollapsePending = true;
         private readonly GlyphButton expandAllButton;
         private readonly GlyphButton collapseAllButton;
+        private readonly FlatListButton flatViewButton;
+        // Flat view: ignore folder grouping entirely and render every item of
+        // the current (scope+filter) list as one image list, like a
+        // single-folder dataset. Only meaningful for multi-folder datasets.
+        private bool flatView;
         // Debounces search typing: a full row rebuild per keystroke made
         // typing lag on large datasets.
         private readonly Timer searchDebounce = new Timer { Interval = 200 };
@@ -102,6 +110,12 @@ namespace BooruDatasetTagManager
             expandAllButton.Click += (_, _) => ExpandAllFolders();
             collapseAllButton = new GlyphButton(expanded: false) { Visible = false, Cursor = Cursors.Hand };
             collapseAllButton.Click += (_, _) => CollapseAllFolders();
+            flatViewButton = new FlatListButton { Visible = false, Cursor = Cursors.Hand };
+            flatViewButton.Click += (_, _) =>
+            {
+                SetFlatView(!flatView);
+                FlatViewChanged?.Invoke(flatView);
+            };
 
             searchHost = new BufferedPanel { Dock = DockStyle.Top };
             searchHost.Paint += SearchHost_Paint;
@@ -109,6 +123,7 @@ namespace BooruDatasetTagManager
             searchHost.Controls.Add(searchBox);
             searchHost.Controls.Add(expandAllButton);
             searchHost.Controls.Add(collapseAllButton);
+            searchHost.Controls.Add(flatViewButton);
             searchBox.BackColorChanged += (_, _) => searchHost.Invalidate();
             list.BackColorChanged += (_, _) => { searchHost.Invalidate(); list.Invalidate(); };
             list.ForeColorChanged += (_, _) => { searchHost.Invalidate(); list.Invalidate(); };
@@ -117,7 +132,7 @@ namespace BooruDatasetTagManager
             // top edge before the list fills the remainder.
             Controls.Add(list);
             Controls.Add(searchHost);
-            searchHost.Height = LogicalToDeviceUnits(46);
+            searchHost.Height = LogicalToDeviceUnits(32);
             LayoutSearchBox();
         }
 
@@ -224,11 +239,33 @@ namespace BooruDatasetTagManager
             }
         }
 
-        /// <summary>Localized tooltips for the expand-all / collapse-all buttons.</summary>
-        public void SetFolderButtonTexts(string expandAll, string collapseAll)
+        /// <summary>Localized tooltips for the expand-all / collapse-all /
+        /// flat-view buttons.</summary>
+        public void SetFolderButtonTexts(string expandAll, string collapseAll, string flatViewText)
         {
             rowToolTip.SetToolTip(expandAllButton, expandAll ?? string.Empty);
             rowToolTip.SetToolTip(collapseAllButton, collapseAll ?? string.Empty);
+            rowToolTip.SetToolTip(flatViewButton, flatViewText ?? string.Empty);
+        }
+
+        /// <summary>True while the flat (folder-ignoring) view is active.</summary>
+        public bool FlatView => flatView;
+
+        /// <summary>
+        /// Switches between the grouped view and the flat one (all images of
+        /// the current list as a single sequence, no folder headers). Raises
+        /// no event — the click handler does, so startup init stays silent.
+        /// </summary>
+        public void SetFlatView(bool value)
+        {
+            if (flatView == value)
+                return;
+            flatView = value;
+            flatViewButton.Active = value;
+            Rebuild();
+            // Grouped→flat only reveals rows, but flat→grouped re-hides the
+            // images of collapsed folders and their selection with them.
+            PruneHiddenSelection();
         }
 
         public IReadOnlyList<string> GetSelectedImagePaths()
@@ -287,15 +324,19 @@ namespace BooruDatasetTagManager
             public bool HasChildren { get; }
         }
 
-        private bool Grouped => folders.Count > 1;
+        private bool Grouped => folders.Count > 1 && !flatView;
 
         private void Rebuild()
         {
             bool grouped = Grouped;
-            if (expandAllButton.Visible != grouped)
+            // Expand/collapse only make sense with visible groups; the flat
+            // toggle stays as long as the dataset has several folders at all.
+            bool multiFolder = folders.Count > 1;
+            if (expandAllButton.Visible != grouped || flatViewButton.Visible != multiFolder)
             {
                 expandAllButton.Visible = grouped;
                 collapseAllButton.Visible = grouped;
+                flatViewButton.Visible = multiFolder;
                 LayoutSearchBox();
                 searchHost.Invalidate();
             }
@@ -947,59 +988,62 @@ namespace BooruDatasetTagManager
             Rectangle box = SearchBoxBounds();
             if (box.Width <= 0 || box.Height <= 0)
                 return;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (GraphicsPath path = RoundedRect(box, LogicalToDeviceUnits(8)))
-            {
-                using (var fill = new SolidBrush(searchBox.BackColor))
-                    g.FillPath(fill, path);
-                using var border = new Pen(Blend(fg, surface, 0.25f), Math.Max(1f, DeviceDpi / 96f));
-                g.DrawPath(border, path);
-            }
-            Color iconColor = Blend(fg, surface, 0.45f);
-            int glyph = LogicalToDeviceUnits(13);
-            int lens = LogicalToDeviceUnits(9);
-            int ix = box.X + LogicalToDeviceUnits(10);
-            int iy = box.Y + (box.Height - glyph) / 2;
-            using var iconPen = new Pen(iconColor, Math.Max(1.6f, LogicalToDeviceUnits(16) / 10f))
-            {
-                StartCap = LineCap.Round,
-                EndCap = LineCap.Round
-            };
-            g.DrawEllipse(iconPen, new Rectangle(ix, iy, lens, lens));
-            g.DrawLine(iconPen, ix + lens - 1, iy + lens - 1, ix + glyph, iy + glyph);
+            // Flat, square field in the scheme's colors — the old rounded
+            // web-style pill (with a drawn magnifier icon) stood out from
+            // every other classic WinForms control in the app.
+            using (var fill = new SolidBrush(searchBox.BackColor))
+                g.FillRectangle(fill, box);
+            using (var border = new Pen(Blend(fg, surface, 0.35f), Math.Max(1f, DeviceDpi / 96f)))
+                g.DrawRectangle(border, box.X, box.Y, box.Width - 1, box.Height - 1);
         }
 
         private Rectangle SearchBoxBounds()
         {
-            int marginX = LogicalToDeviceUnits(10);
-            int marginTop = LogicalToDeviceUnits(10);
-            int marginBottom = LogicalToDeviceUnits(6);
-            int buttonArea = expandAllButton != null && expandAllButton.Visible
-                ? (LogicalToDeviceUnits(26) + LogicalToDeviceUnits(4)) * 2
-                : 0;
+            int marginX = LogicalToDeviceUnits(6);
+            int marginTop = LogicalToDeviceUnits(4);
+            int marginBottom = LogicalToDeviceUnits(4);
+            int slot = LogicalToDeviceUnits(22) + LogicalToDeviceUnits(4);
+            int buttonArea = slot * CountVisibleHeaderButtons();
             return new Rectangle(
                 marginX, marginTop,
                 searchHost.ClientSize.Width - marginX * 2 - buttonArea,
                 searchHost.ClientSize.Height - marginTop - marginBottom);
         }
 
+        private int CountVisibleHeaderButtons()
+        {
+            int count = 0;
+            if (expandAllButton != null && expandAllButton.Visible)
+                count += 2;
+            if (flatViewButton != null && flatViewButton.Visible)
+                count++;
+            return count;
+        }
+
         private void LayoutSearchBox()
         {
             Rectangle box = SearchBoxBounds();
-            int left = box.X + LogicalToDeviceUnits(30);
-            int right = box.Right - LogicalToDeviceUnits(10);
+            int left = box.X + LogicalToDeviceUnits(6);
+            int right = box.Right - LogicalToDeviceUnits(6);
             int height = searchBox.PreferredHeight;
             searchBox.SetBounds(
                 left,
                 box.Y + Math.Max(0, (box.Height - height + 1) / 2),
                 Math.Max(LogicalToDeviceUnits(20), right - left),
                 height);
-            int size = LogicalToDeviceUnits(26);
+            int size = LogicalToDeviceUnits(22);
             int gap = LogicalToDeviceUnits(4);
             int buttonY = box.Y + (box.Height - size) / 2;
-            collapseAllButton.SetBounds(
-                searchHost.ClientSize.Width - LogicalToDeviceUnits(10) - size, buttonY, size, size);
-            expandAllButton.SetBounds(collapseAllButton.Left - gap - size, buttonY, size, size);
+            // Right-to-left over the visible buttons only, so whichever set is
+            // shown hugs the strip's right edge without gaps.
+            int x = searchHost.ClientSize.Width - LogicalToDeviceUnits(6) - size;
+            foreach (Control button in new Control[] { collapseAllButton, expandAllButton, flatViewButton })
+            {
+                if (button == null || !button.Visible)
+                    continue;
+                button.SetBounds(x, buttonY, size, size);
+                x -= gap + size;
+            }
         }
 
         private static Color Blend(Color over, Color under, float amount)
@@ -1026,7 +1070,7 @@ namespace BooruDatasetTagManager
         protected override void OnFontChanged(EventArgs e)
         {
             base.OnFontChanged(e);
-            searchHost.Height = LogicalToDeviceUnits(46);
+            searchHost.Height = LogicalToDeviceUnits(32);
             LayoutSearchBox();
             Rebuild();
         }
@@ -1125,6 +1169,75 @@ namespace BooruDatasetTagManager
                             new Point(half + span, y + rise)
                         });
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Flat-view toggle: three list lines, filled with the highlight tint
+        /// while the flat (folder-ignoring) view is active.
+        /// </summary>
+        private sealed class FlatListButton : BufferedPanel
+        {
+            private bool hover;
+            private bool active;
+
+            public bool Active
+            {
+                get => active;
+                set
+                {
+                    if (active == value)
+                        return;
+                    active = value;
+                    Invalidate();
+                }
+            }
+
+            protected override void OnMouseEnter(EventArgs e)
+            {
+                base.OnMouseEnter(e);
+                hover = true;
+                Invalidate();
+            }
+
+            protected override void OnMouseLeave(EventArgs e)
+            {
+                base.OnMouseLeave(e);
+                hover = false;
+                Invalidate();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                var view = Parent?.Parent as DatasetBrowserView;
+                Color bg = view?.list.BackColor ?? BackColor;
+                Color fg = view?.list.ForeColor ?? ForeColor;
+                Graphics g = e.Graphics;
+                g.Clear(bg);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                if (active || hover)
+                {
+                    using GraphicsPath rounded = RoundedRect(
+                        new RectangleF(0, 0, Width - 1, Height - 1), Width * 0.2f);
+                    using var fill = new SolidBrush(active
+                        ? Blend(SystemColors.Highlight, bg, 0.22f)
+                        : Blend(fg, bg, 0.08f));
+                    g.FillPath(fill, rounded);
+                }
+                using var pen = new Pen(Blend(fg, bg, active ? 0.75f : 0.55f), Math.Max(1.6f, Width / 16f))
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                };
+                int inset = Math.Max(4, Width * 5 / 16);
+                int step = Math.Max(3, Height / 5);
+                int y = Height / 2 - step;
+                for (int i = 0; i < 3; i++)
+                {
+                    g.DrawLine(pen, inset, y, Width - inset, y);
+                    y += step;
                 }
             }
         }

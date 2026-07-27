@@ -67,6 +67,17 @@ namespace BooruDatasetTagManager
         public bool MatchCharacterTags { get; set; } = true;
         // Category-grouped ordering of the all-tags list (off = alphabetical).
         public bool AllTagsCategorySort { get; set; } = false;
+        // Dataset browser flat view: ignore folder grouping and show every
+        // image of the current list as one flat sequence.
+        public bool DatasetBrowserFlatView { get; set; } = false;
+        // Tag-consistency fixer: minimum dataset-wide count a child character
+        // variant needs to be trusted; rarer children fold into their parent
+        // tag (0 disables the rule).
+        public int TagFixChildThreshold { get; set; } = 30;
+        // Sticky category sort for the image-tags pane: while on, every newly
+        // selected image's tags are re-sorted on load (mutates tag order, so
+        // visited images whose order changes become modified).
+        public bool ImageTagsCategorySort { get; set; } = false;
         // Shows the Debug menu and enables DebugLog output (debug.log).
         public bool DebugMode { get; set; } = false;
         // Dataset grid columns hidden by default; the header right-click menu
@@ -97,11 +108,20 @@ namespace BooruDatasetTagManager
         public CharacterTagAuditStyle CharacterTagAuditStyle { get; set; } = CharacterTagAuditStyle.Sparse;
         public CharacterTagAuditExecutionMode CharacterTagAuditExecutionMode { get; set; } = CharacterTagAuditExecutionMode.Review;
         public int CharacterTagAuditMinimumCount { get; set; } = 10;
-        // Single- vs dual-character audit and the genders used by the dual
-        // mode's subject-count tags (2girls / multiple girls, ...).
+        // Single- vs multi-character audit and the per-slot genders used by
+        // the multi mode's subject-count tags (2girls / multiple girls, ...).
         public CharacterTagAuditSubjectMode CharacterTagAuditSubjectMode { get; set; } = CharacterTagAuditSubjectMode.Single;
-        public CharacterGender CharacterTagAuditGenderA { get; set; } = CharacterGender.Girl;
-        public CharacterGender CharacterTagAuditGenderB { get; set; } = CharacterGender.Girl;
+        public CharacterGender[] CharacterTagAuditGenders { get; set; } = NormalizeAuditGenders(null);
+
+        // A hand-edited or older config can carry a missing/short/oversized
+        // array; the wizard indexes it by slot, so pad and trim it on load.
+        public static CharacterGender[] NormalizeAuditGenders(CharacterGender[] stored)
+        {
+            var genders = new CharacterGender[CharacterTagDualAuditService.MaxProfiles];
+            for (int i = 0; stored != null && i < Math.Min(stored.Length, genders.Length); i++)
+                genders[i] = stored[i];
+            return genders;
+        }
         public string AutoTagProviderId { get; set; } = "openai-compatible";
         public string FfmpegPath { get; set; } = string.Empty;
         public Wd14TaggerSettings Wd14Tagger { get; set; } = new Wd14TaggerSettings();
@@ -252,6 +272,9 @@ namespace BooruDatasetTagManager
                 DatasetPreviewExpanded = tempSettings.DatasetPreviewExpanded;
                 MatchCharacterTags = tempSettings.MatchCharacterTags;
                 AllTagsCategorySort = tempSettings.AllTagsCategorySort;
+                DatasetBrowserFlatView = tempSettings.DatasetBrowserFlatView;
+                TagFixChildThreshold = Math.Max(0, tempSettings.TagFixChildThreshold);
+                ImageTagsCategorySort = tempSettings.ImageTagsCategorySort;
                 DebugMode = tempSettings.DebugMode;
                 DatasetHiddenColumns = tempSettings.DatasetHiddenColumns ?? GetDefaultDatasetHiddenColumns();
                 LoadSettingsLoadPreviewImages = tempSettings.LoadSettingsLoadPreviewImages;
@@ -269,8 +292,7 @@ namespace BooruDatasetTagManager
                 CharacterTagAuditExecutionMode = tempSettings.CharacterTagAuditExecutionMode;
                 CharacterTagAuditMinimumCount = tempSettings.CharacterTagAuditMinimumCount <= 0 ? 10 : tempSettings.CharacterTagAuditMinimumCount;
                 CharacterTagAuditSubjectMode = tempSettings.CharacterTagAuditSubjectMode;
-                CharacterTagAuditGenderA = tempSettings.CharacterTagAuditGenderA;
-                CharacterTagAuditGenderB = tempSettings.CharacterTagAuditGenderB;
+                CharacterTagAuditGenders = NormalizeAuditGenders(tempSettings.CharacterTagAuditGenders);
                 ImageEditorSaveMode = tempSettings.ImageEditorSaveMode;
                 AutoTagProviderId = string.IsNullOrWhiteSpace(tempSettings.AutoTagProviderId)
                     ? "openai-compatible"

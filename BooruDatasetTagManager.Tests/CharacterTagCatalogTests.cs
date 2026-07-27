@@ -51,6 +51,28 @@ public sealed class CharacterTagCatalogTests
     }
 
     [Fact]
+    public void ParsesParentRelationsFromTheFiveColumnFormat()
+    {
+        CharacterTagCatalog catalog = Load(
+            "hatsune_miku,\"初音ミク, 初音未来\",vocaloid,,142418",
+            "racing_miku,レーシングミク,goodsmile_racing,hatsune_miku,1734",
+            "self_parent,,x,self_parent,1");
+
+        // The two extra columns change nothing for the existing consumers.
+        Assert.True(catalog.Contains("racing miku"));
+        Assert.Equal("初音ミク (vocaloid)", catalog.GetDisplayTranslation("hatsune miku"));
+
+        // Parent lookup normalizes both spellings and both directions.
+        Assert.Equal("hatsune miku", catalog.GetParentTag("racing_miku"));
+        Assert.Equal("hatsune miku", catalog.GetParentTag("Racing Miku"));
+        Assert.Null(catalog.GetParentTag("hatsune miku"));
+        // A self-referencing row must not create a loop entry.
+        Assert.Null(catalog.GetParentTag("self parent"));
+        // The old 3-column format keeps loading with no parents at all.
+        Assert.Null(Load("plain_tag,,series").GetParentTag("plain tag"));
+    }
+
+    [Fact]
     public void ParsesQuotedQuotesAndMissingFileGracefully()
     {
         CharacterTagCatalog catalog = Load("\"\"\"a-z\"\"\",,");

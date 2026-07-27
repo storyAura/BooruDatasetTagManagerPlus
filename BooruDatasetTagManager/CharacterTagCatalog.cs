@@ -9,25 +9,41 @@ namespace BooruDatasetTagManager
     /// <summary>
     /// Danbooru character-tag catalog loaded from
     /// Data/danbooru_character_tags.csv (columns: character_tag,
-    /// other_names, copyright; RFC-4180 quoting; other_names is a
-    /// comma-separated alternative-name list whose first entry is the
-    /// primary translated name). Keys are normalized — lowercase, '_'→' ',
-    /// dataset-style escaped parens unescaped — so raw danbooru tags and
-    /// FixTags-style tags both match. Backs the Character bucket of the tag
-    /// classifier and the "译名 (作品)" translation hit; a settings toggle
-    /// (<c>MatchCharacterTags</c>) controls whether it is loaded at all.
-    /// Pure data class: linked into the test project.
+    /// other_names, copyright, parent_tag, post_count; RFC-4180 quoting;
+    /// other_names is a comma-separated alternative-name list whose first
+    /// entry is the primary translated name; the last two columns are
+    /// optional — the pre-2026-07 3-column file still loads). Keys are
+    /// normalized — lowercase, '_'→' ', dataset-style escaped parens
+    /// unescaped — so raw danbooru tags and FixTags-style tags both match.
+    /// Backs the Character bucket of the tag classifier, the "译名 (作品)"
+    /// translation hit, and the tag-consistency fixer's parent/child
+    /// relations; a settings toggle (<c>MatchCharacterTags</c>) controls
+    /// whether it is loaded at all. Pure data class: linked into the test
+    /// project.
     /// </summary>
     public sealed class CharacterTagCatalog
     {
         private readonly Dictionary<string, (string PrimaryName, string Copyright)> entries =
             new Dictionary<string, (string, string)>(StringComparer.Ordinal);
+        // child → parent, both normalized; only rows with a recorded parent.
+        private readonly Dictionary<string, string> parents =
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         public int Count => entries.Count;
 
         public bool Contains(string tag)
         {
             return entries.ContainsKey(Normalize(tag));
+        }
+
+        /// <summary>
+        /// Normalized parent character tag from the danbooru relation column
+        /// (e.g. "racing miku" → "hatsune miku"), or null when the tag has no
+        /// recorded parent. Feeds the tag-consistency fixer's family grouping.
+        /// </summary>
+        public string GetParentTag(string tag)
+        {
+            return parents.TryGetValue(Normalize(tag), out string parent) ? parent : null;
         }
 
         /// <summary>
@@ -180,6 +196,9 @@ namespace BooruDatasetTagManager
                 }
             }
             entries[key] = (primaryName, pooledCopyright);
+            string parent = fields.Count > 3 ? Normalize(fields[3]) : string.Empty;
+            if (parent.Length > 0 && parent != key)
+                parents[key] = parent;
         }
 
         /// <summary>First entry of the comma-separated alternative-name list.</summary>
