@@ -51,6 +51,7 @@ namespace BooruDatasetTagManager
             set
             {
                 string newTag = value == null ? "" : value;
+                CaptureBackupOutsideTransaction();
                 if (tagData.tag != newTag)
                     tagData.translation = "";
                 tagData.tag = newTag;
@@ -79,6 +80,7 @@ namespace BooruDatasetTagManager
             }
             set
             {
+                CaptureBackupOutsideTransaction();
                 tagData.manualEdited = value;
                 OnEditableTagChanged();
             }
@@ -92,6 +94,7 @@ namespace BooruDatasetTagManager
             }
             set
             {
+                CaptureBackupOutsideTransaction();
                 tagData.weight = value;
                 OnEditableTagChanged();
             }
@@ -105,6 +108,7 @@ namespace BooruDatasetTagManager
             }
             set
             {
+                CaptureBackupOutsideTransaction();
                 tagData.order = value;
                 OnEditableTagChanged();
             }
@@ -143,7 +147,7 @@ namespace BooruDatasetTagManager
         public EditableTag(int id, string tag)
         {
             tagData.id = id;
-            tagData.tag = tag;
+            tagData.tag = tag ?? "";
             tagData.weight = 1;
             tagData.translation = "";
             tagData.order = 0;
@@ -153,7 +157,7 @@ namespace BooruDatasetTagManager
         public EditableTag(int id, string tag, int orderIndex)
         {
             tagData.id = id;
-            tagData.tag = tag;
+            tagData.tag = tag ?? "";
             tagData.weight = 1;
             tagData.translation = "";
             tagData.order = orderIndex;
@@ -166,6 +170,18 @@ namespace BooruDatasetTagManager
             tagData.weight = 1;
             tagData.tag = "";
             tagData.manualEdited = false;
+        }
+
+        // EditableTagChanged stores backupData as the undo value of a Modify
+        // history entry. Grid cell edits fill it via BeginEdit, but programmatic
+        // setter calls (ReplaceTag, weight buttons, multi-select edits) have no
+        // transaction — without this snapshot the backup stays uninitialized and
+        // Ctrl+Z restores a null-text tag that crashes AllTagsList key lookups
+        // and EditableTag.ToString on save.
+        private void CaptureBackupOutsideTransaction()
+        {
+            if (!inTxn)
+                backupData = tagData;
         }
 
         public void BeginEdit()

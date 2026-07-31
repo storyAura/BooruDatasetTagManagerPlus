@@ -71,6 +71,7 @@
 ## 稳定性与界面修复
 
 - **未加载数据集防护**：排查全部按钮 / 菜单入口，修复 6 处在未加载数据集时会空引用崩溃或提示误导的入口（全部/共有标签切换、清除全部标签过滤、退出图片过滤、在全部标签中定位当前标签、标签撤销/重做、全部替换），统一改为「未加载数据集」提示。
+- **Ctrl+Z 撤销连环崩溃修复**:「替换标签」、权重调整、多选校对等程序直改标签的操作,此前在撤销历史里记下的"旧值"是一份从未初始化的空备份(文字为 null);按 Ctrl+Z 会把这个空标签塞回列表,随后删标签、保存全部连环报错。现在所有直改入口都会在改动前先快照当前值,撤销恢复真正的旧值(表格内手动编辑的撤销行为不变)。
 - **换文件夹残留旧标签**：加载新文件夹后，图片标签面板不再显示上一个数据集的标签（旧列表甚至属于已销毁的数据集）；数据集网格无选中行时标签面板一律清空。
 - **图片标签「类别排序」变为记忆开关**：勾选后切换图片自动按类别排序，状态持久保存；再点一次关闭。
 - **数据集搜索框样式统一**：去掉圆角胶囊和放大镜图标，改为贴合当前配色方案的扁平方角输入框，搜索栏更紧凑。
@@ -79,7 +80,7 @@
 
 - 缩略图审查控件的右键预览支持按原始文件解码显示（相似图片窗口用它看原图；多选标签编辑器行为不变）。
 - 五个语言文件（简中 / 繁中 / 英 / 俄 / 葡）同步补齐相似图片筛选、多角色审查、类别筛选、平铺视图与错误标签修复的全部界面文本。
-- 测试套件从 481 增长到 **528**（新增：dHash 哈希稳定性 / 缩放与亮度不变性 / 分组边界、多角色归属与合并、性别数组规范化、打标写入模式语义、类别筛选叠加、错误标签规划器的人数 / 父子 / 阈值场景、CLI 全命令回归等）。
+- 测试套件从 481 增长到 **530**（新增：dHash 哈希稳定性 / 缩放与亮度不变性 / 分组边界、多角色归属与合并、性别数组规范化、打标写入模式语义、类别筛选叠加、错误标签规划器的人数 / 父子 / 阈值场景、程序直改标签后的撤销恢复、CLI 全命令回归等）。
 
 <!-- lang:en -->
 # BooruDatasetTagManager+ v1.2.2 (English)
@@ -154,6 +155,7 @@ The Test module gains a **tag consistency fixer**: it scans the current scope, l
 ## Stability & UI fixes
 
 - **No-dataset guards**: a sweep across every button / menu entry fixed six spots that crashed (null reference) or showed misleading messages with no dataset loaded (all/common tags switch, clear all-tags filter, exit image filter, locate-tag-in-all-tags, tag undo/redo, replace-all); they now show the friendly "no dataset loaded" prompt.
+- **Ctrl+Z crash cascade fixed**: programmatic tag edits (Replace tag, the weight controls, multi-select review) used to record an uninitialized backup (null text) as the undo history's old value; pressing Ctrl+Z put that null tag back into the list, and deleting tags or saving then kept crashing. Every programmatic edit now snapshots the current value before changing it, so undo restores the real previous state (in-grid cell editing is unaffected).
 - **Stale tags after switching folders**: the image-tags pane no longer keeps showing the previous dataset's tags (a list that even belonged to an already-disposed dataset) after loading a new folder; the pane clears whenever the dataset grid has no selected rows.
 - **Image-tags "Category sort" became a sticky toggle**: while checked, every newly selected image is sorted by category automatically; the state persists across sessions.
 - **Dataset search box restyled**: the rounded web-style pill (and its magnifier icon) became a flat, square, theme-following field on a more compact strip.
@@ -162,4 +164,4 @@ The Test module gains a **tag consistency fixer**: it scans the current scope, l
 
 - The thumbnail review control's right-click preview can decode the original file for display (used by the similar-images window; the multi-select tag editor's behavior is unchanged).
 - All five language files (Simplified / Traditional Chinese, English, Russian, Portuguese) gained the complete UI text for the similar image finder, the multi-character audit, the category filters, the flat view and the tag consistency fixer.
-- The test suite grows from 481 to **528** (new regressions: dHash stability / resize & brightness invariance / grouping edge cases, multi-character attribution and merging, gender-array normalization, tagging write-mode semantics, category-filter stacking, the consistency planner's subject-count / parent-child / threshold scenarios, and the full CLI command set).
+- The test suite grows from 481 to **530** (new regressions: dHash stability / resize & brightness invariance / grouping edge cases, multi-character attribution and merging, gender-array normalization, tagging write-mode semantics, category-filter stacking, the consistency planner's subject-count / parent-child / threshold scenarios, undo after programmatic tag edits, and the full CLI command set).

@@ -96,6 +96,37 @@ public class EditableTagHistoryTests
     }
 
     [Fact]
+    public void UndoAfterProgrammaticReplaceRestoresRealOldValueInsteadOfNull()
+    {
+        var tags = new EditableTagList(new[] { "white hair", "smile" });
+
+        // ReplaceTag mutates the tag object directly, with no grid
+        // BeginEdit/EndEdit transaction. The history's old value used to be
+        // read from the uninitialized backup (null text), so Ctrl+Z put a
+        // null tag back into the list and every downstream consumer
+        // (AllTagsList key lookups, SaveAll's ToString) crashed.
+        tags.ReplaceTag("white hair", "silver hair");
+
+        tags.PrevState(); // undo the Weight reset entry
+        Assert.DoesNotContain(null, tags.TextTags);
+        tags.PrevState(); // undo the text change entry
+        Assert.Equal(new[] { "white hair", "smile" }, tags.TextTags);
+        Assert.True(tags.CheckSyncLists());
+    }
+
+    [Fact]
+    public void UndoAfterProgrammaticWeightChangeRestoresOldWeight()
+    {
+        var tags = new EditableTagList(new[] { "smile" });
+
+        tags[0].Weight = 1.2f;
+        tags.PrevState();
+
+        Assert.Equal(new[] { "smile" }, tags.TextTags);
+        Assert.Equal(1f, tags[0].Weight);
+    }
+
+    [Fact]
     public void NextStateRestoresChangeAfterUndo()
     {
         var tags = new EditableTagList(new[] { "holding food", "smile" });
