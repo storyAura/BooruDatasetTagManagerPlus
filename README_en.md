@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.2.2
+# BooruDatasetTagManager+ 1.2.3
 
 [简体中文](README.md) | [Português do Brasil](docs/pt-BR/README_pt_BR.md)
 
@@ -8,7 +8,8 @@ Windows tool for LoRA and character dataset tagging, forked from **[starik222/Bo
 
 ## Changelog
 
-- **1.2.2** (current) — New: similar image finder (group-based duplicate cleanup), multi-character tag audit (up to 4), tag-pane category filters, dataset flat view, tag consistency fixer, full headless CLI, Reload current dataset (F5). Fixed: the "Skipping existing tag lists" mode no longer silently discards results and burns LLM credits (P0), the Ctrl+Z undo crash cascade, no-dataset null-reference crashes, stale tags after switching folders, and more. [Release notes](docs/RELEASE_NOTES_v1.2.2.md)
+- **1.2.3** (current) — New: corrupted image scanner (Tools menu; keep/delete review wall), current-folder / all-images batch runs for transparent background replacement (folder context menu). Fixed: replacing a transparent background on WebP files failed with an out-of-memory error (now ImageSharp decode + extension-keyed encode), tag filter "click NOT, get OR" (explicit AND/OR/NOT/XOR dropdown), re-filters immediately when picking another tag, re-clicking the active mode cancels the filter. Security/I/O hardening: DPAPI encrypt failure no longer persists plaintext keys, LLM image GDI leak, folder-rename path traversal, model-download races, update-asset filename sanitization, local classifier for audit delete gating, Caption/ffmpeg/theme atomic writes, and more. [Release notes](docs/RELEASE_NOTES_v1.2.3.md)
+- **1.2.2** — New: similar image finder (group-based duplicate cleanup), multi-character tag audit (up to 4), tag-pane category filters, dataset flat view, tag consistency fixer, full headless CLI, Reload current dataset (F5). Fixed: the "Skipping existing tag lists" mode no longer silently discards results and burns LLM credits (P0), the Ctrl+Z undo crash cascade, no-dataset null-reference crashes, stale tags after switching folders, and more. [Release notes](docs/RELEASE_NOTES_v1.2.2.md)
 - **1.2.1** — second audit-fix wave: memory and data-safety hardening, faster first load, accessibility and i18n completion; legacy Python backend removed (old configs migrate automatically); dataset browser root-group scoping and multi-folder unions; dual-audit checkpoints; opt-in debug mode; fixes for the floating preview covering dialogs, tag-list desynchronization, high-DPI clipping and more. [Release notes](docs/RELEASE_NOTES_v1.2.1.md)
 - **1.2.0** — dataset panel rebuilt: folder-group browser with an embedded multi-image preview; semantic tag colors and category sort; danbooru character-catalog matching (colors + translated names); audit-driven release and data-safety hardening. [Release notes](docs/RELEASE_NOTES_v1.2.0.md)
 - **1.1.3** — file-I/O and data-safety hardening (fixes the 8 risks confirmed by an internal audit: failed saves keep edits, transactional deletion, safe concurrent writes, …); adds the image editor, CL-family ONNX models, Chinese-dictionary tag search, and the All Tags double-click quick action. [Release notes](docs/RELEASE_NOTES_v1.1.3.md)
@@ -24,7 +25,7 @@ Download `BooruDatasetTagManagerPlus-*-win-x64.zip` from [Releases](https://gith
 1. **File → Load Folder**; *Load Folder (Custom Options)…* can additionally skip thumbnails (faster for large datasets) or read initial tags from image metadata (handy for fresh generations without `.txt` files yet); *Reload current dataset* (F5) refreshes the loaded folder from disk at any time
 2. Edit tags directly: the All Tags and Image Tags search boxes understand the Chinese dictionary (typing 头发 finds long hair, black hair, …); double-clicking an All Tags row runs a quick action (opens "Replace all" by default, configurable in Settings); open the Danbooru Wiki for unfamiliar tags
 3. Before using any LLM feature, configure your OpenAI-compatible endpoint and models in **LLM Settings**
-4. Run **Tools → LLM tagging / ONNX tagger / Remove background / video tools / Find similar images**, or **Test → Open character tag audit** (the character tag audit and the tag consistency fixer both live there), as needed
+4. Run **Tools → LLM tagging / ONNX tagger / Remove background / Replace transparent background / video tools / Find similar images / Scan corrupted images**, or **Test → Open character tag audit** (the character tag audit and the tag consistency fixer both live there), as needed
 5. Automation scripts can drive the very same exe from the command line: `BooruDatasetTagManagerPlus.exe help` lists every verb (stats / bulk tag edits / export / fix-tags / onnx-tag / audit)
 
 ### Build from source
@@ -50,11 +51,13 @@ Running locally creates **Models/** (downloaded ONNX weights), **Cache/**, and *
 | **Character tag audit** | Trigger word + reference image + dataset inventory; two-stage AI review; single / multi-character (up to 4); transactional save |
 | **ONNX tagger** | Local WD14 catalog + PixAI + CL family; per-model threshold memory; HuggingFace download |
 | **Background removal** | Built-in RMBG-1.4 ONNX, fully local — no external service; transparent or solid background |
+| **Transparent background replacement** | Fill transparent areas with a solid color, a random color, or a random pick from your color list; a pre-scan keeps only PNG / WebP files that really carry transparency; Tools menu runs on the selection, the folder context menu adds that-folder / all-images batches; WebP and friends read/write through ImageSharp |
 | **Image editor** | Brush / eraser / eyedropper / crop / rotate & flip with Photoshop-style shortcuts; separate multi-region crop dialog |
 | **Similar image finder** | czkawka-style perceptual-hash duplicate search (4 similarity levels); grouped keep/delete review; keep one per group; transactional deletion |
+| **Corrupted image scanner** | Decode failures / empty / missing files on a review wall; keep/delete; transactional deletion |
 | **Tag consistency fixer** | Subject-count conflicts / solo on multi-subject images / character parent-child duplicates cleaned in one pass; child trust threshold (default 30); preview + undo |
 | **Video tools** | Format conversion; all frames / by FPS / specific frames extraction; bundled FFmpeg |
-| **Tag editing** | Chinese-dictionary search, All Tags double-click quick action, multi-select review (Shift+T), Danbooru Wiki |
+| **Tag editing** | Chinese-dictionary search, All Tags double-click quick action, multi-select review (Shift+T), filter the dataset by tags (explicit AND / OR / NOT / XOR dropdown), Danbooru Wiki |
 | **Headless CLI** | The same exe, windowless: stats / bulk tag edits / export / fix-tags / ONNX tagging / LLM audit for automation |
 
 ## Feature guide
@@ -107,6 +110,15 @@ Entry: **Tools → Remove background**, or the dataset context menu. Built-in RM
 - Scope: all images or selected only; background: **transparent** or **solid color** (white by default, with a color picker); "Removing test" previews a single image first
 - Output: **overwrite the original** or **save a `_nobg.png` copy** (choices remembered); thumbnails refresh or copies import automatically afterwards
 
+### Transparent background replacement
+
+Entry: **Tools → Replace transparent background** (selection); folder group header context menu in the dataset browser → **Replace transparent background (current folder)** / **Replace transparent background (all images)**. Fills transparent areas with a chosen solid color, a random color, or a random pick from a color list you build in the dialog.
+
+- **Scans first**: alpha-capable formats (PNG / WebP / GIF) are picked by extension, then each is decoded to confirm it really has transparent pixels — alpha-less formats (JPG, …) and fully opaque PNG / WebP files are skipped rather than re-encoded
+- Decoding goes through ImageSharp (`ImageLoader`) and encoding through `ImageEditorSaveService` keyed on the target extension, so **WebP / TIFF / GIF work** (older builds failed on WebP with "Out of Memory")
+- The folder entry processes the folder you right-clicked (the union, when several folders are multi-selected); "all images" covers the whole dataset. The confirmation states how many will be replaced out of how many were checked, and both the scan and the replacement report progress in the status bar; videos are skipped
+- Overwrites use a temp file plus atomic replace, so a mid-write failure cannot destroy the original; a single failed image is reported in a summary instead of aborting the batch
+
 ### Image editor
 
 Entry: dataset context menu → **Edit image**. Photoshop-style layout: compact tool box on the left, options bar on top, status bar at the bottom.
@@ -138,6 +150,13 @@ Entry: **Tools → Find similar images…**. Perceptual hashing in the spirit of
 - Four similarity levels (very high / high / medium / low); results are grouped; **green frame = keep, red frame = delete** — left-click toggles, right-click opens the full-size original, tooltips show file name and size, and a slider adjusts thumbnail size
 - **Keep one per group (largest file)** marks everything else for deletion in one click (czkawka's default heuristic); every mark can still be adjusted by hand
 - **Delete red-marked images** uses the same transactional deletion as the main window (image and tag file staged and removed together, restored on failure), then rescans automatically
+
+### Corrupted image scanner
+
+Entry: **Tools → Scan corrupted images…**. Walks the loaded dataset (honoring folder scope) and tries to decode each image — reports damaged, empty, or missing files; videos are skipped.
+
+- Results show on a review wall; **green = keep, red = delete** (defaults to all marked for delete); left-click toggles; tooltips show file name and reason; a slider adjusts thumbnail size
+- **Delete red-marked images** uses the same transactional deletion as the main window, then rescans
 
 ### Tag consistency fixer
 

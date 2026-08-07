@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.2.2
+# BooruDatasetTagManager+ 1.2.3
 
 [English](../../README_en.md) | [简体中文](../../README.md)
 
@@ -8,7 +8,8 @@ Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork
 
 ## Histórico de versões
 
-- **1.2.2** (atual) — Novidades: localizador de imagens semelhantes (limpeza de duplicatas por grupo), auditoria de tags multi-personagem (até 4), filtros por categoria nos painéis de tags, visão plana do dataset, corretor de tags inconsistentes, CLI completa, Recarregar o dataset atual (F5). Correções: o modo "Ignorando listas de tags existentes" não descarta mais resultados em silêncio nem desperdiça créditos de LLM (P0), a cascata de falhas do Ctrl+Z ao desfazer, falhas de referência nula sem dataset carregado, tags residuais ao trocar de pasta, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.2.md)
+- **1.2.3** (atual) — Novidades: verificador de imagens corrompidas (menu Ferramentas; parede manter/excluir) e substituição de fundo transparente em lote (pasta atual / todas as imagens, no menu de contexto da pasta). Correções: substituir fundo transparente falhava com erro de memória em arquivos WebP (agora decodifica com ImageSharp e codifica pela extensão de destino), filtro de tags "clicar NOT, aplicar OR" (dropdown explícito AND/OR/NOT/XOR), refiltra na hora ao escolher outra tag, clicar de novo no modo ativo cancela o filtro. Segurança/I/O: falha do DPAPI não grava mais chaves em texto simples, vazamento GDI de imagens LLM, path traversal na renomeação de pastas, corridas de download de modelos, sanitização do nome do zip de atualização, classificação local na exclusão da auditoria, gravações atômicas Caption/ffmpeg/tema, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.3.md)
+- **1.2.2** — Novidades: localizador de imagens semelhantes (limpeza de duplicatas por grupo), auditoria de tags multi-personagem (até 4), filtros por categoria nos painéis de tags, visão plana do dataset, corretor de tags inconsistentes, CLI completa, Recarregar o dataset atual (F5). Correções: o modo "Ignorando listas de tags existentes" não descarta mais resultados em silêncio nem desperdiça créditos de LLM (P0), a cascata de falhas do Ctrl+Z ao desfazer, falhas de referência nula sem dataset carregado, tags residuais ao trocar de pasta, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.2.md)
 - **1.2.1** — segunda leva de correções da auditoria: reforço de memória e segurança de dados, primeiro carregamento mais rápido, acessibilidade e i18n completos; backend Python legado removido (configurações antigas migram automaticamente); escopo do grupo raiz e união de várias pastas no navegador do dataset; checkpoints na auditoria de dois personagens; modo de depuração opcional; correções para a pré-visualização cobrindo diálogos, dessincronização da lista de tags, cortes em DPI alto e mais. [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
 - **1.2.0** — painel do dataset reconstruído: navegador por grupos de pastas com pré-visualização incorporada; cores semânticas de tags e ordenação por categoria; correspondência com o catálogo de personagens do danbooru (cores + nomes traduzidos); reforço de publicação e segurança de dados pós-auditoria. [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
 - **1.1.3** — reforço de E/S de arquivos e segurança de dados (corrige os 8 riscos confirmados por uma auditoria interna: falhas de salvamento mantêm as edições, exclusão transacional, gravações concorrentes seguras, …); adiciona o editor de imagem, os modelos ONNX da família CL, a busca de tags com dicionário chinês e a ação rápida por clique duplo em Todas as tags. [Notas da versão](../RELEASE_NOTES_v1.1.3.md)
@@ -24,7 +25,7 @@ Baixe `BooruDatasetTagManagerPlus-*-win-x64.zip` em [Releases](https://github.co
 1. **Arquivo → Carregar Pasta**; *Carregar Pasta (opções de carregamento)…* permite ainda pular as miniaturas (mais rápido em datasets grandes) ou ler tags iniciais dos metadados das imagens (útil para gerações recentes ainda sem arquivos `.txt`); *Recarregar o dataset atual* (F5) atualiza a pasta carregada a partir do disco a qualquer momento
 2. Edite as tags diretamente: as caixas de busca de "Todas as tags" e "Tags da imagem" entendem o dicionário chinês (digitar 头发 encontra long hair, black hair, …); o clique duplo em uma linha de "Todas as tags" executa uma ação rápida (abre "Substituir em todas" por padrão, configurável nas Configurações); abra a Wiki do Danbooru para tags desconhecidas
 3. Antes de usar qualquer recurso LLM, configure o endpoint compatível com OpenAI e os modelos em **Configurações LLM**
-4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / ferramentas de vídeo / Encontrar imagens semelhantes**, ou **Teste → Abrir auditoria de tags** (a auditoria e o corretor de tags inconsistentes moram lá), conforme necessário
+4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / Substituir fundo transparente / ferramentas de vídeo / Encontrar imagens semelhantes / Verificar imagens corrompidas**, ou **Teste → Abrir auditoria de tags** (a auditoria e o corretor de tags inconsistentes moram lá), conforme necessário
 5. Scripts de automação podem usar o mesmo exe pela linha de comando: `BooruDatasetTagManagerPlus.exe help` lista todos os comandos (estatísticas / edições em lote / exportação / fix-tags / onnx-tag / audit)
 
 ### Compilar a partir do código-fonte
@@ -50,11 +51,13 @@ A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settin
 | **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas; um ou vários personagens (até 4); salvamento transacional |
 | **Tagger ONNX** | Catálogo WD14 local + PixAI + família CL; limites memorizados por modelo; download do HuggingFace |
 | **Remoção de fundo** | RMBG-1.4 ONNX embutido, totalmente local — sem serviço externo; fundo transparente ou de cor sólida |
+| **Substituir fundo transparente** | Preenche áreas transparentes com cor sólida, cor aleatória ou sorteio da sua lista de cores; uma pré-verificação mantém só os PNG / WebP que realmente têm transparência; o menu Ferramentas atua na seleção e o menu de contexto da pasta adiciona os lotes daquela pasta / todas as imagens; WebP e afins são lidos/gravados via ImageSharp |
 | **Editor de imagem** | Pincel / borracha / conta-gotas / recorte / rotação e espelhamento com atalhos no estilo Photoshop; diálogo separado de recorte de várias regiões |
 | **Imagens semelhantes** | Busca de duplicadas com hash perceptual no estilo czkawka (4 níveis de similaridade); revisão em grupos manter/excluir; manter uma por grupo; exclusão transacional |
+| **Imagens corrompidas** | Falhas de decode / vazios / ausentes numa parede de revisão; manter/excluir; exclusão transacional |
 | **Correção de tags** | Conflitos de contagem de pessoas / solo com várias pessoas / duplicatas pai-filho de personagens limpas de uma vez; limite de confiança (padrão 30); prévia + desfazer |
 | **Ferramentas de vídeo** | Conversão de formato; extração de todos os frames / por FPS / frames específicos; FFmpeg incluído |
-| **Edição de tags** | Busca com dicionário chinês, ação rápida por clique duplo em Todas as tags, revisão com seleção múltipla (Shift+T), Wiki do Danbooru |
+| **Edição de tags** | Busca com dicionário chinês, ação rápida por clique duplo em Todas as tags, revisão com seleção múltipla (Shift+T), filtrar o dataset por tags (dropdown explícito AND / OR / NOT / XOR), Wiki do Danbooru |
 | **CLI** | O mesmo exe, sem janela: estatísticas / edições em lote / exportação / fix-tags / marcação ONNX / auditoria LLM para automação |
 
 ## Guia de funcionalidades
@@ -138,6 +141,13 @@ Entrada: **Ferramentas → Encontrar imagens semelhantes…**. Hash perceptual n
 - Quatro níveis de similaridade (muito alta / alta / média / baixa); resultados agrupados; **borda verde = manter, vermelha = excluir** — clique esquerdo alterna, clique direito abre o original em tamanho completo, dicas mostram nome e tamanho do arquivo, e um controle deslizante ajusta o tamanho das miniaturas
 - **Manter uma por grupo (maior arquivo)** marca o restante para exclusão em um clique (heurística padrão do czkawka); cada marca ainda pode ser ajustada manualmente
 - **Excluir imagens marcadas em vermelho** usa a mesma exclusão transacional da janela principal (imagem e arquivo de tags são apagados juntos, com restauração em caso de falha) e depois varre novamente de forma automática
+
+### Verificador de imagens corrompidas
+
+Entrada: **Ferramentas → Verificar imagens corrompidas…**. Percorre o dataset carregado (respeitando o escopo de pastas) e tenta decodificar cada imagem — aponta arquivos danificados, vazios ou ausentes; vídeos são ignorados.
+
+- Resultados numa parede de revisão; **verde = manter, vermelho = excluir** (por padrão todos marcados para excluir); clique esquerdo alterna; dicas mostram nome e motivo; controle deslizante ajusta o tamanho das miniaturas
+- **Excluir imagens marcadas em vermelho** usa a mesma exclusão transacional da janela principal e depois varre novamente
 
 ### Corretor de tags inconsistentes
 

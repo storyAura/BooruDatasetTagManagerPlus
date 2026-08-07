@@ -97,7 +97,7 @@ namespace UmaMusumeDBBrowser
 
         public void Save(string savePath)
         {
-            File.WriteAllText(savePath, JsonConvert.SerializeObject(this));
+            SafeFile.WriteAllText(savePath, JsonConvert.SerializeObject(this));
         }
 
         public void ChangeColorScheme(Control ctrl, ColorScheme scheme)

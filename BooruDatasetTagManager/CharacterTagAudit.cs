@@ -162,6 +162,47 @@ namespace BooruDatasetTagManager
         {
             return IsGenericHairColorTag(replacementTag) && !IsGenericHairColorTag(sourceTag);
         }
+
+        /// <summary>
+        /// Maps a tag to a <see cref="CharacterTagCategory"/> using the local
+        /// semantic classifier so AI-supplied categories cannot silently promote
+        /// a protected tag (e.g. sitting → clothing) into a deletable bucket.
+        /// </summary>
+        public static CharacterTagCategory ClassifyLocally(string tag, int danbooruType = -1)
+        {
+            return TagSemanticClassifier.Classify(tag, danbooruType) switch
+            {
+                TagSemanticCategory.Character or TagSemanticCategory.Copyright
+                    or TagSemanticCategory.Artist or TagSemanticCategory.SubjectCount
+                    => CharacterTagCategory.Identity,
+                TagSemanticCategory.Hair => CharacterTagCategory.Hair,
+                TagSemanticCategory.Eyes => CharacterTagCategory.Eyes,
+                TagSemanticCategory.Body => CharacterTagCategory.Body,
+                TagSemanticCategory.Expression => CharacterTagCategory.Expression,
+                TagSemanticCategory.Clothing => CharacterTagCategory.Clothing,
+                TagSemanticCategory.Accessory => CharacterTagCategory.WearableAccessory,
+                TagSemanticCategory.Object or TagSemanticCategory.Animal
+                    or TagSemanticCategory.Food => CharacterTagCategory.Object,
+                TagSemanticCategory.Action => CharacterTagCategory.Action,
+                TagSemanticCategory.Composition => CharacterTagCategory.Composition,
+                TagSemanticCategory.Background => CharacterTagCategory.Scene,
+                TagSemanticCategory.Meta or TagSemanticCategory.Style => CharacterTagCategory.Quality,
+                _ => CharacterTagCategory.Other
+            };
+        }
+
+        /// <summary>
+        /// Prefer the local classification when it is protected, so a model that
+        /// mislabels a protected tag as deletable cannot bypass <see cref="CanDelete"/>.
+        /// </summary>
+        public static CharacterTagCategory ResolveCategoryForPolicy(
+            string tag, CharacterTagCategory modelCategory, int danbooruType = -1)
+        {
+            CharacterTagCategory local = ClassifyLocally(tag, danbooruType);
+            if (!CanDelete(local))
+                return local;
+            return modelCategory;
+        }
     }
 
     public sealed class CharacterTagAuditItem
@@ -802,7 +843,11 @@ namespace BooruDatasetTagManager
                         throw new CharacterTagAuditResponseException("Response contains a duplicate tag: " + tag);
                     if (!TryParseDecision(token.Value<string>("decision"), out CharacterTagDecision decision))
                         throw new CharacterTagAuditResponseException("Response contains an invalid decision for: " + tag);
-                    CharacterTagCategory category = ParseCategory(token.Value<string>("category"));
+                    CharacterTagCategory modelCategory = ParseCategory(token.Value<string>("category"));
+                    // Never trust the model alone to mark a tag deletable: derive a
+                    // local category and keep the protected one when they disagree.
+                    CharacterTagCategory category = CharacterTagAuditPolicy.ResolveCategoryForPolicy(
+                        tag, modelCategory);
                     string replacementTag = token.Value<string>("replacement_tag")?.Trim() ?? string.Empty;
                     if (decision == CharacterTagDecision.Replace
                         && string.Equals(tag, replacementTag, StringComparison.Ordinal))

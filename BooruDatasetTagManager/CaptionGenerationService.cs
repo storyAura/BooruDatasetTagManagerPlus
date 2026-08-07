@@ -323,7 +323,26 @@ namespace BooruDatasetTagManager
             string fullImage = Path.GetFullPath(imagePath);
             string outputRoot = GetOutputRoot(fullRoot, outputSuffix);
             string relative = Path.GetRelativePath(fullRoot, fullImage);
-            return Path.Combine(outputRoot, relative);
+            if (string.IsNullOrEmpty(relative)
+                || Path.IsPathRooted(relative)
+                || relative == ".."
+                || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Image path must be inside the source root: " + imagePath, nameof(imagePath));
+            }
+            string combined = Path.GetFullPath(Path.Combine(outputRoot, relative));
+            string outputRootFull = Path.GetFullPath(outputRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string prefix = outputRootFull + Path.DirectorySeparatorChar;
+            if (!combined.Equals(outputRootFull, StringComparison.OrdinalIgnoreCase)
+                && !combined.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Resolved caption output path escapes the output root: " + combined);
+            }
+            return combined;
         }
 
         private static void ReportProgress(

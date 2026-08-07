@@ -25,11 +25,17 @@ namespace BooruDatasetTagManager
         public static bool UnprotectFailureOccurred { get; private set; }
 
         /// <summary>
-        /// True when at least one secret could not be encrypted this session
-        /// and was stored as plaintext instead. The UI warns the user so the
-        /// silent-plaintext fallback never goes unnoticed.
+        /// True when at least one secret could not be encrypted this session.
+        /// Callers must abort the settings write so plaintext is never persisted;
+        /// the UI warns the user to fix DPAPI / re-enter keys.
         /// </summary>
         public static bool ProtectFailureOccurred { get; private set; }
+
+        /// <summary>
+        /// Test-only hook that replaces <see cref="ProtectedData.Protect"/>.
+        /// Null in production.
+        /// </summary>
+        internal static Func<byte[], byte[]> ProtectCoreForTests { get; set; }
 
         /// <summary>
         /// True when a legacy plaintext secret was read this session. Startup
@@ -40,9 +46,9 @@ namespace BooruDatasetTagManager
 
         /// <summary>
         /// Returns a storable representation of <paramref name="plainText"/>.
-        /// On Windows the value is DPAPI-encrypted and prefixed; if encryption
-        /// is unavailable the original text is returned unchanged so the
-        /// feature never blocks saving settings.
+        /// On Windows the value is DPAPI-encrypted and prefixed. Encryption
+        /// failures throw after setting <see cref="ProtectFailureOccurred"/> so
+        /// callers abort the write and never persist plaintext secrets.
         /// </summary>
         public static string Protect(string plainText)
         {
@@ -54,19 +60,26 @@ namespace BooruDatasetTagManager
                 return plainText;
 
             if (!OperatingSystem.IsWindows())
-                return plainText;
+            {
+                ProtectFailureOccurred = true;
+                throw new PlatformNotSupportedException(
+                    "Secret encryption requires Windows DPAPI.");
+            }
 
             try
             {
                 byte[] data = Encoding.UTF8.GetBytes(plainText);
-                byte[] encrypted = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
+                byte[] encrypted = ProtectCoreForTests != null
+                    ? ProtectCoreForTests(data)
+                    : ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
                 return ProtectedPrefix + Convert.ToBase64String(encrypted);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not PlatformNotSupportedException)
             {
                 Trace.WriteLine($"SecretProtector.Protect failed: {ex}");
                 ProtectFailureOccurred = true;
-                return plainText;
+                throw new CryptographicException(
+                    "Failed to encrypt secret for storage.", ex);
             }
         }
 

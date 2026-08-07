@@ -42,6 +42,7 @@ namespace BooruDatasetTagManager
             InitializeAllTagsSearch();
             InitializeImageTagsSearch();
             InitializeTagCategoryUi();
+            InitializeFilterModeMenu();
             switchLanguage();
         }
 
@@ -81,6 +82,7 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuVideoExtract;
         private ToolStripMenuItem menuOnnxTagger;
         private ToolStripMenuItem menuSimilarImages;
+        private ToolStripMenuItem menuCorruptedImages;
         private ToolStripMenuItem menuReloadDataset;
         private ToolStripMenuItem menuContextDSVideoTools;
         private ToolStripMenuItem menuContextDSRetagOnnx;
@@ -96,6 +98,8 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuBatchRenameImages;
         private ToolStripMenuItem menuFolderTagOnnx;
         private ToolStripMenuItem menuFolderTagLlm;
+        private ToolStripMenuItem menuFolderReplaceTransp;
+        private ToolStripMenuItem menuFolderReplaceTranspAll;
         // Folder(s) the browser context menu was opened on: null = the pinned
         // "All" row (whole dataset), otherwise 1..n folder keys in display order.
         private List<string> folderContextKeys;
@@ -223,6 +227,16 @@ namespace BooruDatasetTagManager
             menuFolderTagLlm = new ToolStripMenuItem { Name = "menuFolderTagLlm" };
             menuFolderTagLlm.Click += (_, _) => TagContextFolder(useOnnx: false);
             folderContextMenu.Items.Add(menuFolderTagLlm);
+            folderContextMenu.Items.Add(new ToolStripSeparator());
+            // Transparent-background batches are folder-scope actions, so they
+            // belong on the folder header menu (the image menu keeps the
+            // per-image verbs, Tools keeps the "selected images" variant).
+            menuFolderReplaceTransp = new ToolStripMenuItem { Name = "menuFolderReplaceTransp" };
+            menuFolderReplaceTransp.Click += menuFolderReplaceTransp_Click;
+            folderContextMenu.Items.Add(menuFolderReplaceTransp);
+            menuFolderReplaceTranspAll = new ToolStripMenuItem { Name = "menuFolderReplaceTranspAll" };
+            menuFolderReplaceTranspAll.Click += menuFolderReplaceTranspAll_Click;
+            folderContextMenu.Items.Add(menuFolderReplaceTranspAll);
             datasetBrowserView.FolderContextRequested += (folderKeys, screenPoint) =>
             {
                 folderContextKeys = folderKeys?.ToList();
@@ -234,6 +248,9 @@ namespace BooruDatasetTagManager
                     && SingleFolderContextKey.Length > 0
                     && SingleFolderContextKey != DatasetFolderIndex.RootFolderKey;
                 menuBatchRenameImages.Enabled = single;
+                // On the pinned "All" row there is no folder to scope to, so
+                // only the whole-dataset variant stays available.
+                menuFolderReplaceTransp.Enabled = folderContextKeys is { Count: > 0 };
                 folderContextMenu.Show(screenPoint);
             };
 
@@ -899,6 +916,18 @@ namespace BooruDatasetTagManager
                 form.ShowDialog(this);
             };
 
+            menuCorruptedImages = new ToolStripMenuItem { Name = "menuCorruptedImages", Text = "Scan corrupted images" };
+            menuCorruptedImages.Click += (_, _) =>
+            {
+                if (Program.DataManager == null || Program.DataManager.DataSet.Count == 0)
+                {
+                    MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                    return;
+                }
+                using Form_CorruptedImages form = new Form_CorruptedImages(this);
+                form.ShowDialog(this);
+            };
+
             menuContextDSVideoTools = new ToolStripMenuItem { Name = "menuContextDSVideoTools", Text = "Video tools..." };
             menuContextDSVideoTools.Click += (_, _) =>
             {
@@ -935,6 +964,7 @@ namespace BooruDatasetTagManager
             toolsToolStripMenuItem.DropDownItems.Add(backgroundRemovalWithRMBG20ToolStripMenuItem);
             toolsToolStripMenuItem.DropDownItems.Add(menuLlmTagger);
             toolsToolStripMenuItem.DropDownItems.Add(menuSimilarImages);
+            toolsToolStripMenuItem.DropDownItems.Add(menuCorruptedImages);
 
             int insertIndex = menuStrip1.Items.IndexOf(toolsToolStripMenuItem) + 1;
             if (insertIndex <= 0 || insertIndex > menuStrip1.Items.Count)
@@ -2611,25 +2641,36 @@ namespace BooruDatasetTagManager
 
         private void SetFilter()
         {
-            if (gridViewAllTags.SelectedCells.Count > 0)
+            // The trailing status line dereferences DataManager, same guard as ResetFilter.
+            if (Program.DataManager == null)
             {
-                SaveSelectedInViewDs();
-                if (isFiltered)
-                {
-                    ResetFilter();
-                }
-
-                gridViewDS.DataSource = Program.DataManager.GetDataSource(DatasetManager.OrderType.Name, filterAnd, GetSelectedTags());
-                ApplyDataSetGridStyle();
-                if (gridViewDS.RowCount == 0)
-                    gridViewTags.DataSource = null;
-                isFiltered = true;
-                LoadSelectedInViewDs();
-                // The visible dataset browser mirrors the hidden grid; without
-                // this rebuild the filter only changed the hidden rows.
-                RefreshDatasetFolderList();
-                BtnImageExitFilter.Enabled = true;
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
             }
+            if (gridViewAllTags.SelectedCells.Count == 0)
+            {
+                // A filter click with nothing selected used to silently do nothing.
+                SetStatus(I18n.GetText("TipFilterTagNotSelected"));
+                if (isFiltered)
+                    ResetFilter();
+                else
+                    SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
+                return;
+            }
+
+            SaveSelectedInViewDs();
+            // Rebinding GetDataSource replaces the list — no need to ResetFilter first
+            // (that flashed the full set and delayed reaction when switching tags).
+            gridViewDS.DataSource = Program.DataManager.GetDataSource(DatasetManager.OrderType.Name, filterAnd, GetSelectedTags());
+            ApplyDataSetGridStyle();
+            if (gridViewDS.RowCount == 0)
+                gridViewTags.DataSource = null;
+            isFiltered = true;
+            LoadSelectedInViewDs();
+            // The visible dataset browser mirrors the hidden grid; without
+            // this rebuild the filter only changed the hidden rows.
+            RefreshDatasetFolderList();
+            BtnImageExitFilter.Enabled = true;
             SetDSCountStatus(string.Format(I18n.GetText("LabelShownDsImages"), gridViewDS.RowCount, Program.DataManager.GetActiveScopeCount()));
         }
 
@@ -3034,30 +3075,46 @@ namespace BooruDatasetTagManager
             }
         }
 
-        private void toolStripButton18_Click(object sender, EventArgs e)
+        // The old cycle-on-click button applied the NEXT mode while its icon showed
+        // the CURRENT one — clicking the icon that read "NOT" actually applied OR.
+        // The button is now a dropdown: picking a mode applies exactly that mode.
+        private void InitializeFilterModeMenu()
         {
-            switch (filterAnd)
+            foreach (FilterType mode in new[] { FilterType.And, FilterType.Or, FilterType.Not, FilterType.Xor })
             {
-                case FilterType.Not:
-                    filterAnd = FilterType.Or;
-                    BtnTagMultiModeSwitch.Image = Properties.Resources.ORIcon;
-                    break;
-                case FilterType.Or:
-                    filterAnd = FilterType.Xor;
-                    BtnTagMultiModeSwitch.Image = Properties.Resources.XORIcon;
-                    break;
-                case FilterType.Xor:
-                    filterAnd = FilterType.And;
-                    BtnTagMultiModeSwitch.Image = Properties.Resources.ANDIcon;
-                    break;
-                case FilterType.And:
-                    filterAnd = FilterType.Not;
-                    BtnTagMultiModeSwitch.Image = Properties.Resources.NOTIcon;
-                    break;
-                default:
-                    throw new ArgumentException($"Invalid filter type: {filterAnd}");
+                var item = new ToolStripMenuItem { Tag = mode };
+                item.Click += FilterModeItem_Click;
+                BtnTagMultiModeSwitch.DropDownItems.Add(item);
             }
+            UpdateFilterModeButton();
+        }
+
+        private void FilterModeItem_Click(object sender, EventArgs e)
+        {
+            FilterType mode = (FilterType)((ToolStripMenuItem)sender).Tag;
+            // Re-clicking the active mode while a filter is on cancels it
+            // (e.g. NOT → NOT = exit inverse filter).
+            if (mode == filterAnd && isFiltered)
+            {
+                ResetFilter();
+                return;
+            }
+            filterAnd = mode;
+            UpdateFilterModeButton();
             SetFilter();
+        }
+
+        private void UpdateFilterModeButton()
+        {
+            BtnTagMultiModeSwitch.Image = filterAnd switch
+            {
+                FilterType.And => Properties.Resources.ANDIcon,
+                FilterType.Not => Properties.Resources.NOTIcon,
+                FilterType.Xor => Properties.Resources.XORIcon,
+                _ => Properties.Resources.ORIcon,
+            };
+            foreach (ToolStripMenuItem item in BtnTagMultiModeSwitch.DropDownItems)
+                item.Checked = (FilterType)item.Tag == filterAnd;
         }
 
         private async void gridViewTags_CellEndEdit(object sender, DataGridViewCellEventArgs e)
@@ -3618,6 +3675,11 @@ namespace BooruDatasetTagManager
             if (restoringAllTagsSelection || !gridViewAllTags.Focused)
                 return;
             CaptureAllTagsSelectionAnchor();
+            // While a dataset tag-filter is active, picking a different All Tags
+            // row must re-apply immediately — waiting for another mode/filter
+            // click made NOT/AND feel unresponsive.
+            if (isFiltered)
+                SetFilter();
         }
 
         private AllTagsList anchoredAllTags;
@@ -4438,6 +4500,10 @@ namespace BooruDatasetTagManager
                 menuFolderTagOnnx.Text = I18n.GetText("FolderTagOnnxMenu");
             if (menuFolderTagLlm != null)
                 menuFolderTagLlm.Text = I18n.GetText("FolderTagLlmMenu");
+            if (menuFolderReplaceTransp != null)
+                menuFolderReplaceTransp.Text = I18n.GetText("FolderReplaceTranspMenu");
+            if (menuFolderReplaceTranspAll != null)
+                menuFolderReplaceTranspAll.Text = I18n.GetText("FolderReplaceTranspAllMenu");
             datasetPreviewPanel?.SetTitle(I18n.GetText("DatasetPreviewTitle"));
             MenuLanguage.Text = I18n.GetText("MenuMenuLanguage");
             MenuSetting.Text = I18n.GetText("MenuLabelOptions");
@@ -4458,6 +4524,8 @@ namespace BooruDatasetTagManager
                 menuReloadDataset.Text = I18n.GetText("MenuItemReloadDataset");
             if (menuSimilarImages != null)
                 menuSimilarImages.Text = I18n.GetText("MenuSimilarImages");
+            if (menuCorruptedImages != null)
+                menuCorruptedImages.Text = I18n.GetText("MenuCorruptedImages");
             if (menuTestModule != null)
                 menuTestModule.Text = I18n.GetText("MenuTestModule");
             debugToolStripMenuItem.Text = I18n.GetText("MenuDebug");
@@ -4514,6 +4582,8 @@ namespace BooruDatasetTagManager
             BtnTagAddToFiltered.Text = I18n.GetText("BtnTagAddToFiltered");
             BtnTagDeleteForFiltered.Text = I18n.GetText("BtnTagDeleteForFiltered");
             BtnTagMultiModeSwitch.Text = I18n.GetText("BtnTagMultiModeSwitch");
+            foreach (ToolStripMenuItem item in BtnTagMultiModeSwitch.DropDownItems)
+                item.Text = I18n.GetText("FilterMode" + item.Tag);
             BtnImageFilter.Text = I18n.GetText("BtnImageFilter");
             BtnImageExitFilter.Text = I18n.GetText("BtnImageExitFilter");
             BtnTagFilter.Text = I18n.GetText("BtnTagFilter");
@@ -4661,8 +4731,128 @@ namespace BooruDatasetTagManager
 
         private async void replaceTransparentBackgroundToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (gridViewDS.SelectedRows.Count == 0)
+            if (gridViewDS.SelectedRows.Count == 0 || Program.DataManager == null)
                 return;
+            List<DataItem> selectedItems = new List<DataItem>();
+            for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
+            {
+                if (Program.DataManager.DataSet.TryGetValue((string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value, out DataItem selectedItem))
+                    selectedItems.Add(selectedItem);
+            }
+            await ReplaceTransparentBackgroundAsync(selectedItems, confirmBulk: false);
+        }
+
+        private async void menuFolderReplaceTransp_Click(object sender, EventArgs e)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+            // The folder(s) actually right-clicked, not the active scope: the
+            // browser retargets its selection on right-click like Explorer.
+            await ReplaceTransparentBackgroundAsync(GetItemsInFolders(folderContextKeys), confirmBulk: true);
+        }
+
+        private async void menuFolderReplaceTranspAll_Click(object sender, EventArgs e)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+            await ReplaceTransparentBackgroundAsync(Program.DataManager.DataSet.Values.ToList(), confirmBulk: true);
+        }
+
+        /// <summary>
+        /// Images that belong directly to the given browser folder keys (the
+        /// same non-recursive grouping the browser shows). A null/empty key
+        /// list means the pinned "All" row, i.e. the whole dataset.
+        /// </summary>
+        private List<DataItem> GetItemsInFolders(IReadOnlyList<string> folderKeys)
+        {
+            if (Program.DataManager == null)
+                return new List<DataItem>();
+            if (folderKeys == null || folderKeys.Count == 0)
+                return Program.DataManager.DataSet.Values.ToList();
+            var wanted = new HashSet<string>(
+                folderKeys.Select(key =>
+                {
+                    // GetRelativeFolder reports root images as "": translate
+                    // the explicit root sentinel back for the set lookup.
+                    string normalized = DatasetFolderIndex.NormalizeRelative(key);
+                    return normalized == DatasetFolderIndex.RootFolderKey ? string.Empty : normalized;
+                }),
+                StringComparer.OrdinalIgnoreCase);
+            return Program.DataManager.DataSet.Values
+                .Where(item => wanted.Contains(
+                    DatasetFolderIndex.GetRelativeFolder(item.ImageFilePath, Program.DataManager.DatasetRoot)))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Shared implementation of the three "replace transparent background"
+        /// entries (selection / folder / whole dataset). A pre-pass first keeps
+        /// only alpha-capable files (png / webp / gif) that really contain
+        /// transparent pixels, so opaque or alpha-less images are never
+        /// rewritten. Decoding goes through <see cref="ImageLoader"/> and
+        /// encoding through <see cref="ImageEditorSaveService"/>, so webp -
+        /// which GDI+ can neither decode (it threw OutOfMemoryException) nor
+        /// encode - is handled like every other format.
+        /// </summary>
+        private async Task ReplaceTransparentBackgroundAsync(List<DataItem> items, bool confirmBulk)
+        {
+            // Extension pre-filter: videos and alpha-less formats (jpg, bmp, …)
+            // cannot have a transparent background, so they never get decoded.
+            List<DataItem> candidates = (items ?? new List<DataItem>())
+                .Where(item => item != null
+                    && !string.IsNullOrEmpty(item.ImageFilePath)
+                    && TransparentImageScanner.SupportsAlpha(item.ImageFilePath))
+                .ToList();
+            if (candidates.Count == 0)
+            {
+                SetStatus(I18n.GetText("TipBackgrRepNoImages"));
+                return;
+            }
+            // Decode pass: a png/webp with an alpha channel is still usually
+            // fully opaque, and rewriting those would be a pointless (and for
+            // the user invisible) mass overwrite.
+            List<DataItem> targets;
+            LockEdit(true);
+            try
+            {
+                IProgress<int> scanProgress = new Progress<int>(done =>
+                    SetStatus(string.Format(I18n.GetText("TipBackgrRepScanning"), done, candidates.Count)));
+                targets = await Task.Run(() =>
+                {
+                    var found = new List<DataItem>();
+                    int done = 0;
+                    foreach (DataItem item in candidates)
+                    {
+                        if (TransparentImageScanner.HasTransparentPixels(item.ImageFilePath))
+                            found.Add(item);
+                        scanProgress.Report(++done);
+                    }
+                    return found;
+                });
+            }
+            finally
+            {
+                LockEdit(false);
+            }
+            if (targets.Count == 0)
+            {
+                SetStatus(string.Format(I18n.GetText("TipBackgrRepNoTransparent"), candidates.Count));
+                return;
+            }
+            if (confirmBulk)
+            {
+                // The batch overwrites the source files in place: make the scope
+                // explicit before touching a whole folder or dataset.
+                string question = string.Format(I18n.GetText("TipBackgrRepConfirm"), targets.Count, candidates.Count);
+                if (MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+            }
             using Form_backgroundReplace backgroundReplace = new Form_backgroundReplace();
             if (backgroundReplace.ShowDialog() != DialogResult.OK)
                 return;
@@ -4678,41 +4868,49 @@ namespace BooruDatasetTagManager
                 List<Color> selectedColors = new List<Color>();
                 foreach (ListViewItem lvItem in backgroundReplace.listView1.Items)
                     selectedColors.Add(lvItem.BackColor);
-                List<DataItem> selectedTagsList = new List<DataItem>();
-                Random r = new Random();
-                for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
-                {
-                    if (Program.DataManager.DataSet.TryGetValue((string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value, out DataItem selectedItem))
-                        selectedTagsList.Add(selectedItem);
-                }
                 // Old thumbnails are collected and disposed on the UI thread after the
                 // background work: the grid may still paint them while the loop runs.
                 List<Image> replacedThumbs = new List<Image>();
                 List<string> errors = new List<string>();
+                IProgress<int> progress = new Progress<int>(done =>
+                    SetStatus(string.Format(I18n.GetText("InProgressCount"), done, targets.Count)));
+                Random r = new Random();
                 await Task.Run(() =>
                 {
-                    foreach (var item in selectedTagsList)
+                    int processed = 0;
+                    foreach (var item in targets)
                     {
                         try
                         {
-                            System.Drawing.Imaging.ImageFormat format;
-                            string tmpPath = item.ImageFilePath + ".tmp";
-                            using (Bitmap bmp = (Bitmap)Bitmap.FromFile(item.ImageFilePath))
+                            if (randomColor)
                             {
-                                format = bmp.RawFormat;
-                                if (randomColor)
-                                {
-                                    replColor = Color.FromArgb(r.Next(255), r.Next(255), r.Next(255));
-                                }
-                                else if (randomSelectedColor && selectedColors.Count > 0)
-                                {
-                                    replColor = selectedColors[r.Next(selectedColors.Count)];
-                                }
-                                using Bitmap bmpRes = Extensions.Transparent2Color(bmp, replColor);
-                                bmpRes.Save(tmpPath, format);
+                                replColor = Color.FromArgb(r.Next(255), r.Next(255), r.Next(255));
                             }
-                            // Source handle released above; swap the finished file in.
-                            SafeFile.ReplaceOrMove(tmpPath, item.ImageFilePath, null);
+                            else if (randomSelectedColor && selectedColors.Count > 0)
+                            {
+                                replColor = selectedColors[r.Next(selectedColors.Count)];
+                            }
+                            // ImageSharp-based load: keeps webp/tiff/exif-rotated
+                            // files working where Bitmap.FromFile fails.
+                            using Bitmap bmp = ImageLoader.GetImageFromFile(item.ImageFilePath) as Bitmap;
+                            if (bmp == null)
+                            {
+                                errors.Add($"{item.ImageFilePath}: {I18n.GetText("TipImgLoadError")}");
+                                continue;
+                            }
+                            byte[] encoded;
+                            using (Bitmap bmpRes = Extensions.Transparent2Color(bmp, replColor))
+                            {
+                                // Encode by target extension instead of GDI+
+                                // RawFormat, which cannot write webp at all.
+                                encoded = ImageEditorSaveService.Encode(bmpRes, Path.GetExtension(item.ImageFilePath));
+                            }
+                            // Write-to-temp + atomic replace: a failure mid-write
+                            // must not destroy the original image.
+                            SafeFile.WriteAllBytes(item.ImageFilePath, encoded);
+                            // The full-size preview cache still holds the old
+                            // pixels; drop it before rebuilding the thumbnail.
+                            Program.DataManager.RemoveFromCache(item.ImageFilePath);
                             if (item.Img != null)
                                 replacedThumbs.Add(item.Img);
                             item.Img = Extensions.MakeThumb(item.ImageFilePath, Program.Settings.PreviewSize);
@@ -4723,14 +4921,32 @@ namespace BooruDatasetTagManager
                             // pre-fix, crash the app via this unprotected async void).
                             errors.Add($"{item.ImageFilePath}: {ex.Message}");
                         }
+                        finally
+                        {
+                            progress.Report(++processed);
+                        }
                     }
                 });
                 gridViewDS.Refresh();
                 foreach (Image oldThumb in replacedThumbs)
                     oldThumb.Dispose();
+                RefreshEmbeddedPreviewFromSelection();
                 if (errors.Count > 0)
-                    MessageBox.Show(string.Join("\n", errors));
-                SetStatus(I18n.GetText("TipBackgrRepComplete"));
+                {
+                    // A dataset-wide run can fail on hundreds of files; keep the
+                    // dialog readable instead of building a screen-high string.
+                    const int maxShownErrors = 20;
+                    string message = string.Join("\n", errors.Take(maxShownErrors));
+                    if (errors.Count > maxShownErrors)
+                        message += $"\n... (+{errors.Count - maxShownErrors})";
+                    MessageBox.Show(message);
+                }
+                // Say how many files the scan filtered out: with a folder full of
+                // opaque images "complete" alone looks like nothing happened.
+                int skipped = Math.Max(0, (items?.Count ?? candidates.Count) - targets.Count);
+                SetStatus(skipped > 0
+                    ? string.Format(I18n.GetText("TipBackgrRepCompleteCount"), targets.Count, skipped)
+                    : I18n.GetText("TipBackgrRepComplete"));
             }
             finally
             {
@@ -4775,7 +4991,7 @@ namespace BooruDatasetTagManager
             cmds["BtnTagReplace"] = delegate () { BtnTagReplace.PerformClick(); };
             cmds["BtnImageFilter"] = delegate () { BtnImageFilter.PerformClick(); };
             cmds["BtnImageExitFilter"] = delegate () { BtnImageExitFilter.PerformClick(); };
-            cmds["BtnTagMultiModeSwitch"] = delegate () { BtnTagMultiModeSwitch.PerformClick(); };
+            cmds["BtnTagMultiModeSwitch"] = delegate () { BtnTagMultiModeSwitch.ShowDropDown(); };
             cmds["BtnTagFilter"] = delegate () { BtnTagFilter.PerformClick(); };
             cmds["BtnTagExitFilter"] = delegate () { BtnTagExitFilter.PerformClick(); };
             cmds["BtnMenuGenTagsWithCurrentSettings"] = delegate () { BtnMenuGenTagsWithCurrentSettings.PerformClick(); };

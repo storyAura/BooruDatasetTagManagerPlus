@@ -334,8 +334,14 @@ namespace BooruDatasetTagManager
         public string RenameFolder(string relativeFolder, string newLeafName)
         {
             string normalized = DatasetFolderIndex.NormalizeRelative(relativeFolder);
-            if (normalized.Length == 0 || string.IsNullOrEmpty(DatasetRoot))
+            if (normalized.Length == 0
+                || normalized == DatasetFolderIndex.RootFolderKey
+                || string.IsNullOrEmpty(DatasetRoot))
+            {
                 throw new ArgumentException("No folder selected.", nameof(relativeFolder));
+            }
+            if (!DatasetFolderIndex.IsSafeRelativeFolder(normalized))
+                throw new ArgumentException("Invalid folder path.", nameof(relativeFolder));
             newLeafName = (newLeafName ?? string.Empty).Trim();
             if (newLeafName.Length == 0
                 || newLeafName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
@@ -346,6 +352,8 @@ namespace BooruDatasetTagManager
             int slash = normalized.LastIndexOf('/');
             string parent = slash < 0 ? string.Empty : normalized.Substring(0, slash);
             string newRelative = parent.Length == 0 ? newLeafName : parent + "/" + newLeafName;
+            if (!DatasetFolderIndex.IsSafeRelativeFolder(newRelative))
+                throw new ArgumentException("Invalid folder name.", nameof(newLeafName));
             if (string.Equals(newRelative, normalized, StringComparison.Ordinal))
                 return normalized;
 
@@ -353,6 +361,11 @@ namespace BooruDatasetTagManager
                 DatasetRoot, normalized.Replace('/', Path.DirectorySeparatorChar)));
             string newAbsolute = Path.GetFullPath(Path.Combine(
                 DatasetRoot, newRelative.Replace('/', Path.DirectorySeparatorChar)));
+            if (!DatasetFolderIndex.IsUnderRoot(DatasetRoot, oldAbsolute)
+                || !DatasetFolderIndex.IsUnderRoot(DatasetRoot, newAbsolute))
+            {
+                throw new ArgumentException("Folder path escapes the dataset root.", nameof(relativeFolder));
+            }
             if (!Directory.Exists(oldAbsolute))
                 throw new DirectoryNotFoundException(oldAbsolute);
             bool caseOnlyRename = string.Equals(oldAbsolute, newAbsolute, StringComparison.OrdinalIgnoreCase);

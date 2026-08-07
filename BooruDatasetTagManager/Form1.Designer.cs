@@ -106,7 +106,7 @@ namespace BooruDatasetTagManager
             BtnTagAddToFiltered = new System.Windows.Forms.ToolStripButton();
             BtnTagDeleteForFiltered = new System.Windows.Forms.ToolStripButton();
             toolStripSeparator6 = new System.Windows.Forms.ToolStripSeparator();
-            BtnTagMultiModeSwitch = new System.Windows.Forms.ToolStripButton();
+            BtnTagMultiModeSwitch = new System.Windows.Forms.ToolStripDropDownButton();
             BtnImageFilter = new System.Windows.Forms.ToolStripButton();
             BtnImageExitFilter = new System.Windows.Forms.ToolStripButton();
             toolStripSeparator8 = new System.Windows.Forms.ToolStripSeparator();
@@ -867,9 +867,9 @@ namespace BooruDatasetTagManager
             BtnTagMultiModeSwitch.Image = Properties.Resources.ORIcon;
             BtnTagMultiModeSwitch.ImageTransparentColor = System.Drawing.Color.Magenta;
             BtnTagMultiModeSwitch.Name = "BtnTagMultiModeSwitch";
+            BtnTagMultiModeSwitch.ShowDropDownArrow = false;
             BtnTagMultiModeSwitch.Size = new System.Drawing.Size(35, 36);
             BtnTagMultiModeSwitch.Text = "Multi-tag filtering mode";
-            BtnTagMultiModeSwitch.Click += toolStripButton18_Click;
             // 
             // BtnImageFilter
             // 
@@ -1619,7 +1619,7 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ToolStripButton BtnTagShow;
         private System.Windows.Forms.ToolStripButton BtnTagSetToAll;
         private System.Windows.Forms.DataGridView gridViewDS;
-        private System.Windows.Forms.ToolStripButton BtnTagMultiModeSwitch;
+        private System.Windows.Forms.ToolStripDropDownButton BtnTagMultiModeSwitch;
         private System.Windows.Forms.ToolStripButton BtnTagAddToSelected;
         private System.Windows.Forms.ToolStripButton BtnTagDeleteForSelected;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;

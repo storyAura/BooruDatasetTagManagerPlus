@@ -6,6 +6,7 @@ using System;
 using System.ClientModel;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -250,15 +251,29 @@ namespace BooruDatasetTagManager.AiApi
             string imgExt = Path.GetExtension(imagePath).ToLower();
             if (imgExt == ".webp")
             {
-                request.ImageData.Add(Extensions.ImageToByteArray(Extensions.GetImageFromFile(imagePath)));
+                using (Image webpImage = Extensions.GetImageFromFile(imagePath))
+                {
+                    if (webpImage != null)
+                        request.ImageData.Add(Extensions.ImageToByteArray(webpImage));
+                }
                 request.ContentType = "image/png";
             }
             else if (Extensions.VideoExtensions.Contains(imgExt))
             {
-                var images = Extensions.GetImagesFromVideo(imagePath, Program.Settings.OpenAiAutoTagger.VideoFrameCount, Program.Settings.OpenAiAutoTagger.VideoFrameScale);
-                foreach (var item in images)
+                var images = Extensions.GetImagesFromVideo(imagePath, Program.Settings.OpenAiAutoTagger.VideoFrameCount, Program.Settings.OpenAiAutoTagger.VideoFrameScale)
+                    ?? new List<KeyValuePair<TimeSpan, Image>>();
+                try
                 {
-                    request.ImageData.Add(Extensions.ImageToByteArray(item.Value));
+                    foreach (var item in images)
+                    {
+                        if (item.Value != null)
+                            request.ImageData.Add(Extensions.ImageToByteArray(item.Value));
+                    }
+                }
+                finally
+                {
+                    foreach (var item in images)
+                        item.Value?.Dispose();
                 }
                 request.ContentType = "image/png";
             }

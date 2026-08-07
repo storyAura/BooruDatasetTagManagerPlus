@@ -201,7 +201,7 @@ namespace BooruDatasetTagManager
         public static async Task<string> DownloadReleaseAssetAsync(string url, string fileName, IProgress<int> progress, string expectedDigest = null)
         {
             string targetDir = GetWritableDownloadDirectory();
-            string target = Path.Combine(targetDir, fileName);
+            string target = DatasetFolderIndex.ResolveFileUnderDirectory(targetDir, fileName);
             string partial = target + ".partial";
 
             using HttpResponseMessage response = await Client.Value

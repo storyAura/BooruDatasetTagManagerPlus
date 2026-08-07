@@ -116,6 +116,70 @@ namespace BooruDatasetTagManager
                 .Trim('/');
         }
 
+        /// <summary>
+        /// True when <paramref name="relativeFolder"/> is safe to combine under
+        /// a dataset root: no rooted paths, empty segments, or '.' / '..'.
+        /// <see cref="RootFolderKey"/> is allowed as the explicit root sentinel.
+        /// </summary>
+        public static bool IsSafeRelativeFolder(string relativeFolder)
+        {
+            string normalized = NormalizeRelative(relativeFolder);
+            if (normalized.Length == 0 || normalized == RootFolderKey)
+                return true;
+            if (normalized.Contains(':')
+                || Path.IsPathRooted(normalized.Replace('/', Path.DirectorySeparatorChar)))
+            {
+                return false;
+            }
+            foreach (string part in normalized.Split('/'))
+            {
+                if (part.Length == 0 || part == "." || part == "..")
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// True when <paramref name="candidate"/> equals <paramref name="root"/>
+        /// or is a descendant of it after full-path normalization.
+        /// </summary>
+        public static bool IsUnderRoot(string root, string candidate)
+        {
+            if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(candidate))
+                return false;
+            string normalizedRoot = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedCandidate = Path.GetFullPath(candidate)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string prefix = normalizedRoot + Path.DirectorySeparatorChar;
+            return normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)
+                || normalizedCandidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Resolves <paramref name="fileName"/> to a file path strictly inside
+        /// <paramref name="directory"/>, stripping any directory segments from
+        /// the name (defense against remote asset-name traversal).
+        /// </summary>
+        public static string ResolveFileUnderDirectory(string directory, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+                throw new ArgumentException("Directory is required.", nameof(directory));
+            string safeName = Path.GetFileName(fileName ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(safeName) || safeName == "." || safeName == "..")
+                throw new ArgumentException("Invalid file name.", nameof(fileName));
+            string root = Path.GetFullPath(directory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string target = Path.GetFullPath(Path.Combine(root, safeName));
+            string prefix = root + Path.DirectorySeparatorChar;
+            if (!target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Resolved path '{target}' escapes the directory '{root}'.");
+            }
+            return target;
+        }
+
         private static string NormalizeAbsolute(string path)
         {
             return Path.GetFullPath(path)

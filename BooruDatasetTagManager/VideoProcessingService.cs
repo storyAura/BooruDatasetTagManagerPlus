@@ -48,6 +48,7 @@ namespace BooruDatasetTagManager
         private static readonly Regex FrameProgressRegex = new Regex(@"frame=\s*(?<frame>\d+)", RegexOptions.Compiled);
         private static readonly Regex TimeProgressRegex = new Regex(@"time=(?<time>[\d:.]+)", RegexOptions.Compiled);
         private static readonly string[] SupportedVideoExtensions = { ".mp4", ".flv", ".mkv", ".ts", ".avi", ".webm", ".mov" };
+        internal const int MaxCapturedProcessLogChars = 64 * 1024;
 
         private readonly FfmpegLocator locator;
 
@@ -717,8 +718,9 @@ namespace BooruDatasetTagManager
                 psi.ArgumentList.Add(arg ?? string.Empty);
 
             using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-            var stderr = new StringBuilder();
-            var stdout = new StringBuilder();
+            // Cap captured logs so a pathological ffmpeg run cannot balloon memory.
+            var stderr = new BoundedStringLog(MaxCapturedProcessLogChars);
+            var stdout = new BoundedStringLog(MaxCapturedProcessLogChars);
 
             process.OutputDataReceived += (_, e) =>
             {
@@ -827,6 +829,30 @@ namespace BooruDatasetTagManager
 
                 return lines.Last();
             }
+        }
+
+        /// <summary>
+        /// Keeps only the trailing <paramref name="maxChars"/> of appended text
+        /// so ffmpeg's verbose logs cannot grow without bound.
+        /// </summary>
+        internal sealed class BoundedStringLog
+        {
+            private readonly StringBuilder builder = new StringBuilder();
+            private readonly int maxChars;
+
+            public BoundedStringLog(int maxChars)
+            {
+                this.maxChars = Math.Max(1, maxChars);
+            }
+
+            public void AppendLine(string line)
+            {
+                builder.AppendLine(line);
+                if (builder.Length > maxChars)
+                    builder.Remove(0, builder.Length - maxChars);
+            }
+
+            public override string ToString() => builder.ToString();
         }
     }
 

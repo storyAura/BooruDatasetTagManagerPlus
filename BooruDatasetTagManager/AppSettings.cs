@@ -375,13 +375,17 @@ namespace BooruDatasetTagManager
         {
             try
             {
+                // Serialize first: SecretProtector.Protect throws on DPAPI failure
+                // so we never overwrite settings.json with plaintext API keys.
+                string json = JsonConvert.SerializeObject(this);
                 // Atomic write + .bak: a crash/power loss mid-write used to truncate
                 // settings.json, and the next startup silently reset all settings.
-                SafeFile.WriteAllTextWithBackup(settingsFile, JsonConvert.SerializeObject(this));
+                SafeFile.WriteAllTextWithBackup(settingsFile, json);
             }
             catch (Exception ex)
             {
-                // Read-only dir / locked file: keep running with in-memory settings.
+                // Read-only dir / locked file / encrypt failure: keep running with
+                // in-memory settings and leave the previous file untouched.
                 Trace.WriteLine($"AppSettings.SaveSettings failed: {ex}");
             }
         }

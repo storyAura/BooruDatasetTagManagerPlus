@@ -751,13 +751,16 @@ public sealed class CharacterTagAuditTests
         using var temp = new TemporaryDirectory();
         string referenceImage = Path.Combine(temp.Path, "reference.png");
         File.WriteAllBytes(referenceImage, new byte[] { 1 });
-        CharacterTagInventory inventory = CharacterTagInventory.Create(new[] { new[] { "trigger", "smile" } });
+        // Use a locally deletable appearance tag: ValidJson labels every tag as
+        // "hair", and protected tags (e.g. smile/expression) are now forced to
+        // Keep by the local classifier regardless of the model category.
+        CharacterTagInventory inventory = CharacterTagInventory.Create(new[] { new[] { "trigger", "blue hair" } });
         var requests = new List<CharacterTagModelRequest>();
         var responses = new Queue<string>(new[]
         {
             "not json",
-            ValidJson(("trigger", "keep"), ("smile", "delete")),
-            ValidJson(("trigger", "keep"), ("smile", "uncertain"))
+            ValidJson(("trigger", "keep"), ("blue hair", "delete")),
+            ValidJson(("trigger", "keep"), ("blue hair", "uncertain"))
         });
         var service = new CharacterTagAuditService((request, _) =>
         {

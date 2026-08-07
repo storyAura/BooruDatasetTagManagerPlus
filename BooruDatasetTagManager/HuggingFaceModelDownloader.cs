@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -16,6 +17,10 @@ namespace BooruDatasetTagManager
         {
             Timeout = TimeSpan.FromHours(6)
         };
+
+        // Same-target downloads must not share one mutable .partial file.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> DownloadGates =
+            new ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
 
         public static string BuildDownloadUrl(HuggingFaceDownloadSource source, string repo, string filename)
         {
@@ -162,9 +167,37 @@ namespace BooruDatasetTagManager
             CancellationToken cancellationToken)
         {
             string localPath = GetLocalPath(repo, filename);
+            string gateKey;
+            try { gateKey = Path.GetFullPath(localPath); }
+            catch (Exception) { gateKey = localPath; }
+            SemaphoreSlim gate = DownloadGates.GetOrAdd(gateKey, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await DownloadFileCoreAsync(
+                    source, repo, filename, authToken, localPath, progress, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        private async Task<string> DownloadFileCoreAsync(
+            HuggingFaceDownloadSource source,
+            string repo,
+            string filename,
+            string authToken,
+            string localPath,
+            IProgress<(string file, long downloaded, long? total)> progress,
+            CancellationToken cancellationToken)
+        {
             // Download into a .partial sidecar and rename only after the content is
             // complete and validated. An interrupted download previously left a
             // truncated model.onnx that passed the ">= 1MB" cache check forever.
+            // Per-path gating above serializes writers so two callers never append
+            // the same partial concurrently.
             string partialPath = localPath + ".partial";
             Directory.CreateDirectory(Path.GetDirectoryName(localPath) ?? Program.AppPath);
 

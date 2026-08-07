@@ -255,8 +255,8 @@ namespace BooruDatasetTagManager
             Program.Settings.SaveSettings();
             if (SecretProtector.ProtectFailureOccurred)
             {
-                // The key was stored, but as plaintext: the user must know the
-                // encryption fallback kicked in rather than assume it's secure.
+                // SaveSettings aborted before writing: previous encrypted settings
+                // remain on disk and plaintext keys were never persisted.
                 MessageBox.Show(this, I18n.GetText("TipApiKeyEncryptFailed"), Text,
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }

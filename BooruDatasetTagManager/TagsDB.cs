@@ -357,7 +357,7 @@ namespace BooruDatasetTagManager
             try
             {
                 string json = JsonConvert.SerializeObject(this);
-                File.WriteAllText(fPath, json, Encoding.UTF8);
+                SafeFile.WriteAllText(fPath, json, Encoding.UTF8);
             }
             catch (Exception ex)
             {

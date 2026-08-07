@@ -56,6 +56,8 @@
     <Compile Include="..\BooruDatasetTagManager\AiServerSetSettingsMigration.cs" Link="Source\AiServerSetSettingsMigration.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageLoader.cs" Link="Source\ImageLoader.cs" />
     <Compile Include="..\BooruDatasetTagManager\SimilarImageFinder.cs" Link="Source\SimilarImageFinder.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CorruptedImageScanner.cs" Link="Source\CorruptedImageScanner.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TransparentImageScanner.cs" Link="Source\TransparentImageScanner.cs" />
     <Compile Include="..\BooruDatasetTagManager\CliCommands.cs" Link="Source\CliCommands.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagConsistencyPlanner.cs" Link="Source\TagConsistencyPlanner.cs" />
     <Compile Include="..\BooruDatasetTagManager\QuickTagReplaceService.cs" Link="Source\QuickTagReplaceService.cs" />
