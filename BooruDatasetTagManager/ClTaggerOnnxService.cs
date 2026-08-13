@@ -246,7 +246,7 @@ namespace BooruDatasetTagManager
                     items.Add(new AutoTagProviderItem { Tag = name, Confidence = (float)probability });
             }
 
-            return items;
+            return TagWriteService.OrderByConfidenceDescending(items);
         }
 
         internal static double Sigmoid(double x)

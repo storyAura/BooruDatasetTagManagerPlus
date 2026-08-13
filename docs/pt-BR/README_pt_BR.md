@@ -1,4 +1,4 @@
-# BooruDatasetTagManager+ 1.2.3
+# BooruDatasetTagManager+ 1.2.4
 
 [English](../../README_en.md) | [简体中文](../../README.md)
 
@@ -8,7 +8,8 @@ Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork
 
 ## Histórico de versões
 
-- **1.2.3** (atual) — Novidades: verificador de imagens corrompidas (menu Ferramentas; parede manter/excluir) e substituição de fundo transparente em lote (pasta atual / todas as imagens, no menu de contexto da pasta). Correções: substituir fundo transparente falhava com erro de memória em arquivos WebP (agora decodifica com ImageSharp e codifica pela extensão de destino), filtro de tags "clicar NOT, aplicar OR" (dropdown explícito AND/OR/NOT/XOR), refiltra na hora ao escolher outra tag, clicar de novo no modo ativo cancela o filtro. Segurança/I/O: falha do DPAPI não grava mais chaves em texto simples, vazamento GDI de imagens LLM, path traversal na renomeação de pastas, corridas de download de modelos, sanitização do nome do zip de atualização, classificação local na exclusão da auditoria, gravações atômicas Caption/ffmpeg/tema, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.3.md)
+- **1.2.4** (atual) — Correções: o seletor de personagem na auditoria multi não avançava após Aplicar; tags de cor erradas no WD14 ONNX (ordem de canais); falha ao salvar nomes de arquivo muito longos (temp atômico longo demais); confirmação ao marcar LLM com mais de 200 imagens; a mesclagem de tags filhas raras fica desligada por padrão (caixa no módulo Teste, prévia por linha); marcação ONNX ordena por confiança em vez da ordem alfabética do CSV; nomes que terminam com `_` deixam de falhar ao marcar/salvar captions. Novidade: extração aleatória por porcentagem (distribuída ou regional, padrão 10%); ordenação do dataset por tipo (jpg / png / vídeo). [Notas da versão](../RELEASE_NOTES_v1.2.4.md)
+- **1.2.3** — Novidades: verificador de imagens corrompidas (menu Ferramentas; parede manter/excluir) e substituição de fundo transparente em lote (pasta atual / todas as imagens, no menu de contexto da pasta). Correções: substituir fundo transparente falhava com erro de memória em arquivos WebP (agora decodifica com ImageSharp e codifica pela extensão de destino), filtro de tags "clicar NOT, aplicar OR" (dropdown explícito AND/OR/NOT/XOR), refiltra na hora ao escolher outra tag, clicar de novo no modo ativo cancela o filtro. Segurança/I/O: falha do DPAPI não grava mais chaves em texto simples, vazamento GDI de imagens LLM, path traversal na renomeação de pastas, corridas de download de modelos, sanitização do nome do zip de atualização, classificação local na exclusão da auditoria, gravações atômicas Caption/ffmpeg/tema, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.3.md)
 - **1.2.2** — Novidades: localizador de imagens semelhantes (limpeza de duplicatas por grupo), auditoria de tags multi-personagem (até 4), filtros por categoria nos painéis de tags, visão plana do dataset, corretor de tags inconsistentes, CLI completa, Recarregar o dataset atual (F5). Correções: o modo "Ignorando listas de tags existentes" não descarta mais resultados em silêncio nem desperdiça créditos de LLM (P0), a cascata de falhas do Ctrl+Z ao desfazer, falhas de referência nula sem dataset carregado, tags residuais ao trocar de pasta, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.2.md)
 - **1.2.1** — segunda leva de correções da auditoria: reforço de memória e segurança de dados, primeiro carregamento mais rápido, acessibilidade e i18n completos; backend Python legado removido (configurações antigas migram automaticamente); escopo do grupo raiz e união de várias pastas no navegador do dataset; checkpoints na auditoria de dois personagens; modo de depuração opcional; correções para a pré-visualização cobrindo diálogos, dessincronização da lista de tags, cortes em DPI alto e mais. [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
 - **1.2.0** — painel do dataset reconstruído: navegador por grupos de pastas com pré-visualização incorporada; cores semânticas de tags e ordenação por categoria; correspondência com o catálogo de personagens do danbooru (cores + nomes traduzidos); reforço de publicação e segurança de dados pós-auditoria. [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
@@ -45,7 +46,7 @@ A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settin
 
 | Módulo | Descrição |
 | --- | --- |
-| **Navegador do dataset** | Navegador por grupos de pastas (busca, recolher, renomear / renomear em lote, marcação rápida por pasta); visão plana (ignora pastas, lista única); pré-visualização incorporada (lado a lado na seleção múltipla); formato·pixels·tamanho na linha |
+| **Navegador do dataset** | Navegador por grupos de pastas (busca, recolher, renomear / renomear em lote, marcação rápida por pasta); visão plana; ordenar por tipo / nome / data; pré-visualização incorporada (lado a lado na seleção múltipla); formato·pixels·tamanho na linha |
 | **Semântica de tags** | Tons claros em 18 categorias, ordenação e filtro por categoria; catálogo de personagens do danbooru embutido (correspondência exata + traduções "nome (obra)" + relações pai-filho) |
 | **Marcação LLM** | Modos Tags / Tags→Linguagem natural; endpoint compatível com OpenAI; modelos de prompt; concorrência LLM 1–100 |
 | **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas; um ou vários personagens (até 4); salvamento transacional |
@@ -55,8 +56,8 @@ A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settin
 | **Editor de imagem** | Pincel / borracha / conta-gotas / recorte / rotação e espelhamento com atalhos no estilo Photoshop; diálogo separado de recorte de várias regiões |
 | **Imagens semelhantes** | Busca de duplicadas com hash perceptual no estilo czkawka (4 níveis de similaridade); revisão em grupos manter/excluir; manter uma por grupo; exclusão transacional |
 | **Imagens corrompidas** | Falhas de decode / vazios / ausentes numa parede de revisão; manter/excluir; exclusão transacional |
-| **Correção de tags** | Conflitos de contagem de pessoas / solo com várias pessoas / duplicatas pai-filho de personagens limpas de uma vez; limite de confiança (padrão 30); prévia + desfazer |
-| **Ferramentas de vídeo** | Conversão de formato; extração de todos os frames / por FPS / frames específicos; FFmpeg incluído |
+| **Correção de tags** | Conflitos de contagem de pessoas / solo com várias pessoas / duplicatas pai-filho de personagens limpas de uma vez; mesclagem de filhas raras desligada por padrão (opcional no Teste); prévia por linha + desfazer |
+| **Ferramentas de vídeo** | Conversão de formato; extração de todos os frames / por FPS / frames específicos / porcentagem aleatória (distribuída ou regional); FFmpeg incluído |
 | **Edição de tags** | Busca com dicionário chinês, ação rápida por clique duplo em Todas as tags, revisão com seleção múltipla (Shift+T), filtrar o dataset por tags (dropdown explícito AND / OR / NOT / XOR), Wiki do Danbooru |
 | **CLI** | O mesmo exe, sem janela: estatísticas / edições em lote / exportação / fix-tags / marcação ONNX / auditoria LLM para automação |
 
@@ -64,8 +65,9 @@ A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settin
 
 ### Navegador do dataset e pré-visualização
 
-O painel do dataset é um navegador unificado: a caixa de busca filtra pastas e nomes de arquivo juntos; as pastas de repetição do kohya aparecem como grupos recolhíveis (datasets com várias pastas abrem totalmente recolhidos; botões de expandir/recolher tudo e de visão plana ficam ao lado da busca — a visão plana ignora os grupos de pastas e mostra o escopo + filtro atual como uma lista única, com estado persistido), e clicar no cabeçalho de uma pasta limita o dataset a ela (contagens de Todas as tags, operações em lote e o assistente de auditoria acompanham); as linhas de imagem mostram miniatura, nome e `formato · pixels · tamanho`, com seleção no estilo gerenciador de arquivos (Ctrl / Shift / Ctrl+A / setas / menu de contexto / Delete).
+O painel do dataset é um navegador unificado: a caixa de busca filtra pastas e nomes de arquivo juntos; as pastas de repetição do kohya aparecem como grupos recolhíveis (datasets com várias pastas abrem totalmente recolhidos; botões de expandir/recolher tudo, visão plana e ordenação ficam ao lado da busca; a visão plana ignora os grupos de pastas e mostra o escopo + filtro atual como uma lista única), e clicar no cabeçalho de uma pasta limita o dataset a ela (contagens de Todas as tags, operações em lote e o assistente de auditoria acompanham); as linhas de imagem mostram miniatura, nome e `formato · pixels · tamanho`, com seleção no estilo gerenciador de arquivos (Ctrl / Shift / Ctrl+A / setas / menu de contexto / Delete).
 
+- **Ordenação**: o botão ao lado da busca ordena por nome, tipo ou data de alteração. O tipo agrupa por extensão (jpg / jpeg juntos; png, webp, mp4, webm, … cada um no seu grupo — imagens e vídeos seguem a mesma regra), depois por nome dentro do grupo; a escolha é lembrada
 - **Clique direito na pasta**: renomear a pasta (disco + remapeamento em memória, edições não salvas sobrevivem); renomear imagens em lote (prefixo + números / letras / nome original + sufixo, prévia ao vivo, o `.txt` acompanha); marcar a pasta com ONNX / LLM
 - **Pré-visualização incorporada**: painel recolhível sob o navegador (Exibir → Mostrar pré-visualização, estado persistido); a seleção múltipla mostra as quatro primeiras imagens lado a lado, clique duplo em uma célula abre no visualizador flutuante; a janela flutuante tem zoom ancorado no cursor, arrastar para deslocar, clique duplo ajustar ↔ 100 %, Ctrl+0 / Ctrl+1
 - **Cores e ordenação por categoria**: os dois painéis de tags recebem tons claros em 18 categorias semânticas (personagem / obra / cabelo / olhos / roupas …); o botão *Ordenar por categoria* das tags da imagem é uma alternância persistente: marcado, cada imagem recém-selecionada é agrupada por categoria automaticamente (respeitando "não ordenar as primeiras N linhas"); em Todas as tags a ordenação por categoria é opcional (desligada por padrão); as duas barras de ferramentas também trazem um menu de **filtro por categoria**: escolha uma categoria semântica (cabelo / roupas / …) para mostrar só as tags dela — somando-se à busca e ao filtro de contagem — e "Todas as categorias" restaura tudo
@@ -124,7 +126,7 @@ Entrada: menu de contexto do dataset → **Editar imagem**. Layout no estilo Pho
 
 ### Ferramentas de vídeo
 
-**Ferramentas → Conversão de vídeo… / Extração de frames…**. Converta entre mp4 / mkv / avi / webm / mov / flv (com opção de substituir o original); extraia todos os frames, por FPS, no FPS nativo ou por números de frame específicos, com pré-visualização e fluxo de bloqueio de frames; os resultados são importados para o dataset. O FFmpeg vem incluído nos builds de Release.
+**Ferramentas → Conversão de vídeo… / Extração de frames…**. Converta entre mp4 / mkv / avi / webm / mov / flv (com opção de substituir o original); extraia todos os frames, por FPS, no FPS nativo, por números de frame específicos ou uma porcentagem aleatória (distribuída pelo clipe ou um bloco regional contínuo; controle padrão 10%), com pré-visualização e fluxo de bloqueio de frames; os resultados são importados para o dataset. O FFmpeg vem incluído nos builds de Release.
 
 ![Extração de frames de vídeo](../images/video-frame-extraction.png)
 
@@ -155,14 +157,14 @@ Entrada: a janela do menu **Teste** (a mesma da auditoria de tags), grupo "Corre
 
 - **Conflitos de contagem de pessoas**: `1boy` ao lado de `2boys` remove a contagem menor (a maior por gênero sobrevive); `solo` em imagens com várias pessoas também é removido, enquanto o semanticamente diferente `solo focus` nunca é tocado
 - **Duplicatas pai-filho de personagens**: quando várias tags da mesma família de personagem aparecem na mesma imagem, as contagens do dataset votam no sobrevivente; as famílias vêm das relações pai-filho reais do catálogo (variantes renomeadas como `racing miku` ↔ `hatsune miku` são pareadas, e personagens diferentes que só compartilham o nome-base nunca são mesclados)
-- **Limite de confiança da tag filha** (ao lado do botão de execução; padrão 30, 0 desativa): uma variante filha com menos ocorrências no dataset do que o limite não é confiável e é incorporada ao ancestral confiável mais próximo — variantes raras e dispersas se consolidam na tag principal para um treinamento mais focado
+- **Mesclar tags filhas raras** (caixa no módulo Teste; desligada por padrão): quando ativada, uma variante filha com menos ocorrências no dataset do que o limite (padrão 30) não é confiável e é incorporada ao ancestral confiável mais próximo — variantes raras e dispersas se consolidam na tag principal para um treinamento mais focado. A tabela de prévia permite marcar quais linhas aplicar.
 
 ### Linha de comando (CLI)
 
 O próprio `BooruDatasetTagManagerPlus.exe` é uma ferramenta de linha de comando: um primeiro argumento conhecido executa sem janela (saída redirecionável; códigos de saída 0/1/2 = ok / erro / uso), qualquer outra coisa abre a interface como sempre. `help` mostra o uso completo:
 
 - **Operações de dataset**: `stats`; consultas `list-images` / `list-tags` / `classify-tags` (filtro por tags, categoria semântica, contagem); edições em lote `add-tags` / `remove-tags` / `replace-tag` (alvo condicional, `--dry-run`); `export` para JSON
-- **`fix-tags`**: o gêmeo em CLI do corretor — `--child-threshold` define o limite de confiança, `--catalog` aponta para um CSV de relações personalizado
+- **`fix-tags`**: o gêmeo em CLI do corretor — `--child-threshold` define o limite de confiança (padrão 0 = desligado), `--catalog` aponta para um CSV de relações personalizado
 - **`onnx-models` / `onnx-tag`**: marcação ONNX local — lista / baixa modelos automaticamente (`--hf-token` para repositórios restritos), limites e modos de gravação com a mesma semântica da interface, "ignorar existentes" filtra antes da inferência
 - **`audit`**: a auditoria LLM de tags de personagem — reutiliza a configuração de API e os prompts salvos na interface, executa a revisão em duas etapas e grava de forma transacional; `--report` emite um relatório JSON, `--dry-run` só mostra as decisões
 - Toda gravação é uma substituição atômica; o formato de tags (separadas por vírgula, minúsculas, sem duplicatas) é o mesmo da interface, então CLI e edições manuais se misturam livremente

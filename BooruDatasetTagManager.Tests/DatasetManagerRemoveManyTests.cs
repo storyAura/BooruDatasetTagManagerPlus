@@ -92,3 +92,33 @@ public sealed class DatasetManagerRemoveManyTests
         throw new InvalidOperationException("Repository root not found.");
     }
 }
+
+public sealed class DatasetFileTypeSortTests
+{
+    [Theory]
+    [InlineData(@"C:\a.JPEG", "jpg")]
+    [InlineData(@"C:\a.jpg", "jpg")]
+    [InlineData(@"C:\a.PNG", "png")]
+    [InlineData(@"C:\clip.mp4", "mp4")]
+    [InlineData(@"C:\clip.webm", "webm")]
+    public void GetFileTypeKey_uses_lowercase_extension_and_folds_jpeg(string path, string expected)
+    {
+        Assert.Equal(expected, DatasetManager.GetFileTypeKey(path));
+    }
+
+    [Fact]
+    public void CompareByFileType_groups_by_extension_then_name()
+    {
+        var items = new List<DatasetManager.DataItem>
+        {
+            new DatasetManager.DataItem { Name = "b", ImageFilePath = @"C:\b.png" },
+            new DatasetManager.DataItem { Name = "a", ImageFilePath = @"C:\a.jpg" },
+            new DatasetManager.DataItem { Name = "c", ImageFilePath = @"C:\c.mp4" },
+            new DatasetManager.DataItem { Name = "d", ImageFilePath = @"C:\d.JPEG" },
+        };
+
+        items.Sort(DatasetManager.CompareByFileType);
+
+        Assert.Equal(new[] { "a", "d", "c", "b" }, items.Select(item => item.Name));
+    }
+}

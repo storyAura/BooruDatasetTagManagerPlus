@@ -212,7 +212,9 @@ namespace BooruDatasetTagManager
             datasetBrowserView.ImageContextRequested += screenPoint => contextMenuStrip1.Show(screenPoint);
             datasetBrowserView.BrowserKeyDown += Browser_KeyDown;
             datasetBrowserView.SetFlatView(Program.Settings.DatasetBrowserFlatView);
+            datasetBrowserView.SetSortOrder(Program.Settings.DatasetOrderType);
             datasetBrowserView.FlatViewChanged += Browser_FlatViewChanged;
+            datasetBrowserView.SortRequested += Browser_SortRequested;
             folderContextMenu = new ContextMenuStrip();
             menuRenameFolder = new ToolStripMenuItem { Name = "menuRenameFolder" };
             menuRenameFolder.Click += (_, _) => RenameDatasetFolder();
@@ -616,6 +618,23 @@ namespace BooruDatasetTagManager
                 Program.DataManager.SetActiveFolder(null);
                 RefreshDatasetGrid();
             }
+        }
+
+        private void Browser_SortRequested(DatasetManager.OrderType order)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            Program.Settings.DatasetOrderType = order;
+            Program.Settings.SaveSettings();
+            SaveSelectedInViewDs();
+            gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter(order);
+            ApplyDataSetGridStyle();
+            LoadSelectedInViewDs();
+            RefreshDatasetFolderList();
         }
 
         /// <summary>
@@ -1632,7 +1651,8 @@ namespace BooruDatasetTagManager
                     datasetBrowserView.Clear();
                     oldDataManager.Dispose();
                 }
-                gridViewDS.DataSource = Program.DataManager.GetDataSource();
+                gridViewDS.DataSource = Program.DataManager.GetDataSource(Program.Settings.DatasetOrderType);
+                datasetBrowserView.SetSortOrder(Program.Settings.DatasetOrderType);
                 RefreshDatasetFolderList();
                 // The rebind above raised SelectionChanged while the sidebar
                 // preview was still hidden; now that the layout ran, fill it.
@@ -2661,7 +2681,7 @@ namespace BooruDatasetTagManager
             SaveSelectedInViewDs();
             // Rebinding GetDataSource replaces the list — no need to ResetFilter first
             // (that flashed the full set and delayed reaction when switching tags).
-            gridViewDS.DataSource = Program.DataManager.GetDataSource(DatasetManager.OrderType.Name, filterAnd, GetSelectedTags());
+            gridViewDS.DataSource = Program.DataManager.GetDataSource(Program.DataManager.LastOrderType, filterAnd, GetSelectedTags());
             ApplyDataSetGridStyle();
             if (gridViewDS.RowCount == 0)
                 gridViewTags.DataSource = null;
@@ -2686,7 +2706,7 @@ namespace BooruDatasetTagManager
             if (isFiltered)
             {
                 SaveSelectedInViewDs();
-                gridViewDS.DataSource = Program.DataManager.GetDataSource();
+                gridViewDS.DataSource = Program.DataManager.GetDataSource(Program.DataManager.LastOrderType);
                 ApplyDataSetGridStyle();
                 isFiltered = false;
                 BtnImageExitFilter.Enabled = false;
@@ -3006,6 +3026,8 @@ namespace BooruDatasetTagManager
                 gridViewDS.Columns["ImageModifyTime"].HeaderText = I18n.GetText("GridImageModifyTime");
             if (gridViewDS.Columns.Contains("TagsModifyTime"))
                 gridViewDS.Columns["TagsModifyTime"].HeaderText = I18n.GetText("GridTagsModifyTime");
+            if (gridViewDS.Columns.Contains("FileType"))
+                gridViewDS.Columns["FileType"].HeaderText = I18n.GetText("GridFileType");
         }
 
         private void dataGridView3_SelectionChanged(object sender, EventArgs e)
@@ -3297,8 +3319,15 @@ namespace BooruDatasetTagManager
             {
                 if (Enum.IsDefined(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name))
                 {
-                    gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter((DatasetManager.OrderType)Enum.Parse(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name));
+                    var order = (DatasetManager.OrderType)Enum.Parse(typeof(DatasetManager.OrderType), gridViewDS.Columns[e.ColumnIndex].Name);
+                    Program.Settings.DatasetOrderType = order;
+                    Program.Settings.SaveSettings();
+                    SaveSelectedInViewDs();
+                    gridViewDS.DataSource = Program.DataManager.GetDataSourceWithLastFilter(order);
                     ApplyDataSetGridStyle();
+                    LoadSelectedInViewDs();
+                    RefreshDatasetFolderList();
+                    datasetBrowserView?.SetSortOrder(order);
                 }
             }
         }
@@ -4197,25 +4226,29 @@ namespace BooruDatasetTagManager
             }
             // With the character catalog loaded, families follow the real
             // danbooru parent/child relations; otherwise the textual
-            // base-name heuristic still applies. The threshold (测试模块,
-            // persisted) folds child variants rarer than N into their parent.
+            // base-name heuristic still applies. Folding rare children into
+            // the parent is opt-in (测试模块 checkbox; default off).
+            int childThreshold = Program.Settings.TagFixFoldRareChildren
+                ? Program.Settings.TagFixChildThreshold
+                : 0;
             IReadOnlyList<TagConsistencyIssue> issues = TagConsistencyPlanner.Plan(
                 items.Select(item => (item.ImageFilePath, (IReadOnlyList<string>)item.Tags.TextTags)),
                 tag => ClassifyTagCached(tag) == TagSemanticCategory.Character,
                 datasetCounts,
                 Program.CharacterTagLookup == null ? null : Program.CharacterTagLookup.GetParentTag,
-                Program.Settings.TagFixChildThreshold);
+                childThreshold);
             if (issues.Count == 0)
             {
                 MessageBox.Show(this, I18n.GetText("TagFixNoIssues"), I18n.GetText("TagFixTitle"),
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            if (!ConfirmTagConsistencyFix(issues))
+            IReadOnlyList<TagConsistencyIssue> selected = ConfirmTagConsistencyFix(issues);
+            if (selected == null || selected.Count == 0)
                 return;
 
             List<IGrouping<string, TagConsistencyIssue>> byImage =
-                issues.GroupBy(issue => issue.ImagePath, StringComparer.OrdinalIgnoreCase).ToList();
+                selected.GroupBy(issue => issue.ImagePath, StringComparer.OrdinalIgnoreCase).ToList();
             LockEdit(true);
             try
             {
@@ -4247,7 +4280,7 @@ namespace BooruDatasetTagManager
             {
                 LockEdit(false);
             }
-            SetStatus(string.Format(I18n.GetText("TagFixApplied"), issues.Count, byImage.Count));
+            SetStatus(string.Format(I18n.GetText("TagFixApplied"), selected.Count, byImage.Count));
         }
 
         private string FormatTagFixReason(TagConsistencyIssue issue)
@@ -4262,7 +4295,8 @@ namespace BooruDatasetTagManager
             return string.Format(I18n.GetText(key), issue.KeptTag);
         }
 
-        private bool ConfirmTagConsistencyFix(IReadOnlyList<TagConsistencyIssue> issues)
+        /// <summary>Preview dialog: null on cancel, only the checked rows on OK.</summary>
+        private IReadOnlyList<TagConsistencyIssue> ConfirmTagConsistencyFix(IReadOnlyList<TagConsistencyIssue> issues)
         {
             using var dialog = new Form
             {
@@ -4274,13 +4308,13 @@ namespace BooruDatasetTagManager
                 StartPosition = FormStartPosition.CenterParent,
                 AutoScaleMode = AutoScaleMode.Dpi,
                 AutoScaleDimensions = new SizeF(96F, 96F),
-                ClientSize = new Size(LogicalToDeviceUnits(720), LogicalToDeviceUnits(420)),
-                MinimumSize = new Size(LogicalToDeviceUnits(480), LogicalToDeviceUnits(280))
+                ClientSize = new Size(LogicalToDeviceUnits(780), LogicalToDeviceUnits(420)),
+                MinimumSize = new Size(LogicalToDeviceUnits(520), LogicalToDeviceUnits(280))
             };
             var grid = new DataGridView
             {
                 Dock = DockStyle.Fill,
-                ReadOnly = true,
+                ReadOnly = false,
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 AllowUserToResizeRows = false,
@@ -4288,15 +4322,35 @@ namespace BooruDatasetTagManager
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             };
+            var applyColumn = new DataGridViewCheckBoxColumn
+            {
+                Name = "ApplyColumn",
+                HeaderText = I18n.GetText("TagFixColApply"),
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                Width = LogicalToDeviceUnits(48),
+                TrueValue = true,
+                FalseValue = false
+            };
+            grid.Columns.Add(applyColumn);
             grid.Columns.Add("ImageColumn", I18n.GetText("TagFixColImage"));
             grid.Columns.Add("RemoveColumn", I18n.GetText("TagFixColRemove"));
             grid.Columns.Add("KeepColumn", I18n.GetText("TagFixColKeep"));
             grid.Columns.Add("ReasonColumn", I18n.GetText("TagFixColReason"));
+            grid.Columns["ImageColumn"].ReadOnly = true;
+            grid.Columns["RemoveColumn"].ReadOnly = true;
+            grid.Columns["KeepColumn"].ReadOnly = true;
+            grid.Columns["ReasonColumn"].ReadOnly = true;
             grid.Columns["ReasonColumn"].FillWeight = 160;
+            grid.CurrentCellDirtyStateChanged += (_, _) =>
+            {
+                if (grid.IsCurrentCellDirty && grid.CurrentCell is DataGridViewCheckBoxCell)
+                    grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            };
             foreach (TagConsistencyIssue issue in issues)
             {
-                grid.Rows.Add(Path.GetFileName(issue.ImagePath), issue.RemoveTag,
+                int rowIndex = grid.Rows.Add(true, Path.GetFileName(issue.ImagePath), issue.RemoveTag,
                     issue.KeptTag, FormatTagFixReason(issue));
+                grid.Rows[rowIndex].Tag = issue;
             }
             var buttons = new FlowLayoutPanel
             {
@@ -4317,15 +4371,51 @@ namespace BooruDatasetTagManager
                 DialogResult = DialogResult.Cancel,
                 Size = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28))
             };
+            Size selectSize = new Size(LogicalToDeviceUnits(88), LogicalToDeviceUnits(28));
+            var selectNoneButton = new Button
+            {
+                Text = I18n.GetText("TagFixSelectNone"),
+                Size = selectSize,
+                AutoSize = true
+            };
+            var selectAllButton = new Button
+            {
+                Text = I18n.GetText("TagFixSelectAll"),
+                Size = selectSize,
+                AutoSize = true
+            };
+            selectAllButton.Click += (_, _) => SetTagFixApplyChecked(grid, true);
+            selectNoneButton.Click += (_, _) => SetTagFixApplyChecked(grid, false);
             buttons.Controls.Add(cancelButton);
             buttons.Controls.Add(okButton);
+            buttons.Controls.Add(selectNoneButton);
+            buttons.Controls.Add(selectAllButton);
             dialog.Controls.Add(grid);
             dialog.Controls.Add(buttons);
             dialog.AcceptButton = okButton;
             dialog.CancelButton = cancelButton;
             Program.ColorManager.ChangeColorScheme(dialog, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(dialog.Controls, Program.ColorManager.SelectedScheme);
-            return dialog.ShowDialog(this) == DialogResult.OK;
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+                return null;
+            var selected = new List<TagConsistencyIssue>();
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                if (row.IsNewRow || !true.Equals(row.Cells["ApplyColumn"].Value))
+                    continue;
+                if (row.Tag is TagConsistencyIssue issue)
+                    selected.Add(issue);
+            }
+            return selected;
+        }
+
+        private static void SetTagFixApplyChecked(DataGridView grid, bool value)
+        {
+            foreach (DataGridViewRow row in grid.Rows)
+            {
+                if (!row.IsNewRow)
+                    row.Cells["ApplyColumn"].Value = value;
+            }
         }
 
         private void ApplyAllTagsCategorySort()
@@ -4472,6 +4562,12 @@ namespace BooruDatasetTagManager
                 I18n.GetText("FolderExpandAll"),
                 I18n.GetText("FolderCollapseAll"),
                 I18n.GetText("FolderFlatView"));
+            datasetBrowserView?.SetSortButtonTexts(
+                I18n.GetText("DatasetSortTip"),
+                I18n.GetText("DatasetSortByName"),
+                I18n.GetText("DatasetSortByType"),
+                I18n.GetText("DatasetSortByImageTime"),
+                I18n.GetText("DatasetSortByTagsTime"));
             if (toolStripCategorySortBtn != null)
             {
                 toolStripCategorySortBtn.Text = I18n.GetText("TagsSortByCategory");

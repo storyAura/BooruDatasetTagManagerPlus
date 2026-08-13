@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -105,6 +106,41 @@ namespace BooruDatasetTagManager
             if (string.IsNullOrWhiteSpace(id) || !providers.TryGetValue(id, out IAutoTagProvider provider))
                 throw new KeyNotFoundException("Auto-tag provider was not registered: " + id);
             return provider;
+        }
+    }
+
+    /// <summary>
+    /// MIME type for a vision request from the image file extension. Stems
+    /// that end with '_' (e.g. foo_.png / foo_.jpeg) must still map; .jpeg
+    /// is accepted as image/jpeg so the API does not reject the payload.
+    /// </summary>
+    public static class ImageMediaType
+    {
+        public static string FromPath(string path)
+        {
+            return FromExtension(Path.GetExtension(path ?? string.Empty));
+        }
+
+        public static string FromExtension(string ext)
+        {
+            if (string.IsNullOrEmpty(ext))
+                return "application/octet-stream";
+            switch (ext.ToLowerInvariant())
+            {
+                case ".jpg":
+                case ".jpeg":
+                    return "image/jpeg";
+                case ".png":
+                    return "image/png";
+                case ".bmp":
+                    return "image/bmp";
+                case ".gif":
+                    return "image/gif";
+                case ".webp":
+                    return "image/webp";
+                default:
+                    return "application/octet-stream";
+            }
         }
     }
 }

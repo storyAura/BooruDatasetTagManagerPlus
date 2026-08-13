@@ -128,7 +128,7 @@ namespace BooruDatasetTagManager.AiApi
                 foreach (var item in request.ImagePath)
                 {
                     BinaryData bd = new BinaryData(await File.ReadAllBytesAsync(item, cancellationToken));
-                    string contentType = GetContentTypeFromExtention(Path.GetExtension(item));
+                    string contentType = ImageMediaType.FromPath(item);
                     ChatMessageContentPart partImage = ChatMessageContentPart.CreateImagePart(bd, contentType);
                     userMessage.Content.Add(partImage);
                 }
@@ -183,37 +183,6 @@ namespace BooruDatasetTagManager.AiApi
             }
         }
 
-        private string GetContentTypeFromExtention(string ext)
-        {
-            switch (ext.ToLower())
-            {
-                case ".jpg":
-                    {
-                        return "image/jpeg";
-                    }
-                case ".bmp":
-                    {
-                        return "image/bmp";
-                    }
-                case ".png":
-                    {
-                        return "image/png";
-                    }
-                case ".gif":
-                    {
-                        return "image/gif";
-                    }
-                case ".webp":
-                    {
-                        return "image/webp";
-                    }
-                default:
-                    {
-                        return "application/octet-stream";
-                    }
-            }
-        }
-
         public async Task<(List<AutoTagItem> data, string errorMessage, bool canceled)> GetTagsWithAutoTagger(
             string imagePath,
             bool defSettings,
@@ -248,7 +217,7 @@ namespace BooruDatasetTagManager.AiApi
             request.SystemPrompt = promptLibrary.SelectedTemplate.SystemPrompt;
             request.Model = Program.Settings.OpenAiAutoTagger.ResolveVisionModel();
             request.RepeatPenalty = Program.Settings.OpenAiAutoTagger.RepeatPenalty;
-            string imgExt = Path.GetExtension(imagePath).ToLower();
+            string imgExt = Path.GetExtension(imagePath).ToLowerInvariant();
             if (imgExt == ".webp")
             {
                 using (Image webpImage = Extensions.GetImageFromFile(imagePath))

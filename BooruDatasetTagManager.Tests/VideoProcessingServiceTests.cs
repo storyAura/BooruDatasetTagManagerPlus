@@ -1,3 +1,4 @@
+using System.Linq;
 using BooruDatasetTagManager;
 using Xunit;
 
@@ -160,5 +161,104 @@ public sealed class VideoProcessingServiceTests
         service.FinalizeReplaceOriginal(crossInput, crossTemp, crossFinal);
         Assert.Equal("conv", File.ReadAllText(crossFinal));
         Assert.False(File.Exists(crossInput));
+    }
+
+    [Theory]
+    [InlineData(100, 10, 10)]
+    [InlineData(5, 10, 1)]
+    [InlineData(50, 100, 50)]
+    [InlineData(0, 10, 0)]
+    [InlineData(100, 0, 1)]
+    [InlineData(100, 200, 100)]
+    [InlineData(1, 10, 1)]
+    public void CountRandomFrames_clamps_percent_and_count(int frameCount, int percent, int expected)
+    {
+        Assert.Equal(expected, VideoProcessingService.CountRandomFrames(frameCount, percent));
+    }
+
+    [Fact]
+    public void PlanRandomFrameIndices_distributed_picks_one_frame_per_equal_bin()
+    {
+        IReadOnlyList<int> indices = VideoProcessingService.PlanRandomFrameIndices(
+            100,
+            10,
+            RandomFrameSampleMode.Distributed,
+            new Random(1));
+
+        Assert.Equal(10, indices.Count);
+        Assert.Equal(indices.Distinct().Count(), indices.Count);
+        for (int i = 0; i < indices.Count; i++)
+        {
+            Assert.InRange(indices[i], i * 10, (i + 1) * 10 - 1);
+        }
+    }
+
+    [Fact]
+    public void PlanRandomFrameIndices_regional_picks_a_contiguous_window()
+    {
+        IReadOnlyList<int> indices = VideoProcessingService.PlanRandomFrameIndices(
+            100,
+            10,
+            RandomFrameSampleMode.Regional,
+            new Random(1));
+
+        Assert.Equal(10, indices.Count);
+        Assert.InRange(indices[0], 0, 90);
+        for (int i = 0; i < indices.Count; i++)
+            Assert.Equal(indices[0] + i, indices[i]);
+        Assert.True(indices[indices.Count - 1] < 100);
+    }
+
+    [Theory]
+    [InlineData(RandomFrameSampleMode.Distributed)]
+    [InlineData(RandomFrameSampleMode.Regional)]
+    public void PlanRandomFrameIndices_full_percent_returns_every_frame_in_order(RandomFrameSampleMode mode)
+    {
+        IReadOnlyList<int> indices = VideoProcessingService.PlanRandomFrameIndices(
+            7,
+            100,
+            mode,
+            new Random(99));
+
+        Assert.Equal(Enumerable.Range(0, 7), indices);
+    }
+
+    [Fact]
+    public void PlanRandomFrameIndices_returns_empty_when_frame_count_is_zero()
+    {
+        IReadOnlyList<int> indices = VideoProcessingService.PlanRandomFrameIndices(
+            0,
+            10,
+            RandomFrameSampleMode.Distributed,
+            new Random(1));
+
+        Assert.Empty(indices);
+    }
+
+    [Fact]
+    public void FormatExtractItemProgress_includes_current_total_and_item()
+    {
+        Assert.Equal("3/12  frame 145", VideoProcessingService.FormatExtractItemProgress(3, 12, "frame 145"));
+    }
+
+    [Theory]
+    [InlineData("3/12  frame 145", 3, 12)]
+    [InlineData("clip.mp4  3/12  frame 145", 3, 12)]
+    [InlineData("3/12  clip.mp4  第 145 帧", 3, 12)]
+    public void TryParseExtractItemProgress_reads_current_and_total(string line, int current, int total)
+    {
+        Assert.True(VideoProcessingService.TryParseExtractItemProgress(line, out int parsedCurrent, out int parsedTotal));
+        Assert.Equal(current, parsedCurrent);
+        Assert.Equal(total, parsedTotal);
+    }
+
+    [Theory]
+    [InlineData("frame=1")]
+    [InlineData("frame=0")]
+    [InlineData("clip.mp4")]
+    [InlineData("")]
+    public void TryParseExtractItemProgress_ignores_ffmpeg_frame_counters(string line)
+    {
+        Assert.False(VideoProcessingService.TryParseExtractItemProgress(line, out _, out _));
     }
 }

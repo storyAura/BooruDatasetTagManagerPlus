@@ -132,7 +132,7 @@ namespace BooruDatasetTagManager
             output.WriteLine("  fix-tags <folder>                   fix inconsistent tags (subject-count");
             output.WriteLine("      conflicts, solo on multi-subject images, character parent/child dupes;");
             output.WriteLine("      child variants rarer than the threshold fold into their parent)");
-            output.WriteLine("      [--child-threshold N (default 30, 0 disables)] [--catalog FILE]");
+            output.WriteLine("      [--child-threshold N (default 0 = off; e.g. 30 to enable)] [--catalog FILE]");
             output.WriteLine("  export <folder> [--out FILE]        JSON {image: [tags]} to file or stdout");
             output.WriteLine("  onnx-models                         local ONNX tagger models and their status");
             output.WriteLine("  onnx-tag <folder>                   auto-tag images with a local ONNX model");
@@ -294,7 +294,7 @@ namespace BooruDatasetTagManager
         /// </summary>
         private static int RunFixTags(CliDataset dataset, CliOptions options, TextWriter output)
         {
-            int childThreshold = options.GetInt("child-threshold", 30);
+            int childThreshold = options.GetInt("child-threshold", 0);
             if (childThreshold < 0)
                 throw new CliUsageException("--child-threshold must be zero or positive.");
             string catalogPath = options.GetValue("catalog")

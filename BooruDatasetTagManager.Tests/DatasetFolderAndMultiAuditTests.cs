@@ -65,6 +65,7 @@ namespace BooruDatasetTagManager.Tests
             Assert.Contains("CharacterTagEditableTagInjector.ApplySubjectCount", wizard);
             Assert.Contains("GetScopedItems", wizard);
             Assert.Contains("SwitchResultProfile", wizard);
+            Assert.Contains("comboResultProfile.SelectedIndex", wizard);
             // Four character slots, driven by arrays instead of A/B fields.
             Assert.Contains("MaxProfileSlots", wizard);
             Assert.Contains("CreateProfileRow", wizard);

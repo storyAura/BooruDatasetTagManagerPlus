@@ -46,9 +46,10 @@ namespace BooruDatasetTagManager
         public event Action<IReadOnlyList<string>, Point> FolderContextRequested;
         /// <summary>Raw key events from the list (Delete, Ctrl+V, ... handled by the form).</summary>
         public event KeyEventHandler BrowserKeyDown;
-        /// <summary>User toggled the flat view (ignore folders, one image list).
-        /// The owner persists the state and widens the scope to all folders.</summary>
+        /// <summary>The user toggled the flat (headerless) image list.</summary>
         public event Action<bool> FlatViewChanged;
+        /// <summary>The user picked a dataset sort (name / type / dates).</summary>
+        public event Action<OrderType> SortRequested;
 
         private readonly BrowserListBox list;
         private readonly BufferedPanel searchHost;
@@ -81,6 +82,13 @@ namespace BooruDatasetTagManager
         private readonly GlyphButton expandAllButton;
         private readonly GlyphButton collapseAllButton;
         private readonly FlatListButton flatViewButton;
+        private readonly SortButton sortButton;
+        private readonly ContextMenuStrip sortMenu = new ContextMenuStrip();
+        private readonly ToolStripMenuItem sortByNameItem = new ToolStripMenuItem();
+        private readonly ToolStripMenuItem sortByTypeItem = new ToolStripMenuItem();
+        private readonly ToolStripMenuItem sortByImageTimeItem = new ToolStripMenuItem();
+        private readonly ToolStripMenuItem sortByTagsTimeItem = new ToolStripMenuItem();
+        private OrderType currentSort = OrderType.Name;
         // Flat view: ignore folder grouping entirely and render every item of
         // the current (scope+filter) list as one image list, like a
         // single-folder dataset. Only meaningful for multi-folder datasets.
@@ -117,6 +125,21 @@ namespace BooruDatasetTagManager
                 FlatViewChanged?.Invoke(flatView);
             };
 
+            sortButton = new SortButton { Cursor = Cursors.Hand };
+            sortByNameItem.Click += (_, _) => RequestSort(OrderType.Name);
+            sortByTypeItem.Click += (_, _) => RequestSort(OrderType.FileType);
+            sortByImageTimeItem.Click += (_, _) => RequestSort(OrderType.ImageModifyTime);
+            sortByTagsTimeItem.Click += (_, _) => RequestSort(OrderType.TagsModifyTime);
+            sortMenu.Items.AddRange(new ToolStripItem[]
+            {
+                sortByNameItem, sortByTypeItem, sortByImageTimeItem, sortByTagsTimeItem
+            });
+            sortButton.Click += (_, _) =>
+            {
+                Point screen = sortButton.PointToScreen(new Point(0, sortButton.Height));
+                sortMenu.Show(screen);
+            };
+
             searchHost = new BufferedPanel { Dock = DockStyle.Top };
             searchHost.Paint += SearchHost_Paint;
             searchHost.Resize += (_, _) => LayoutSearchBox();
@@ -124,6 +147,7 @@ namespace BooruDatasetTagManager
             searchHost.Controls.Add(expandAllButton);
             searchHost.Controls.Add(collapseAllButton);
             searchHost.Controls.Add(flatViewButton);
+            searchHost.Controls.Add(sortButton);
             searchBox.BackColorChanged += (_, _) => searchHost.Invalidate();
             list.BackColorChanged += (_, _) => { searchHost.Invalidate(); list.Invalidate(); };
             list.ForeColorChanged += (_, _) => { searchHost.Invalidate(); list.Invalidate(); };
@@ -246,6 +270,36 @@ namespace BooruDatasetTagManager
             rowToolTip.SetToolTip(expandAllButton, expandAll ?? string.Empty);
             rowToolTip.SetToolTip(collapseAllButton, collapseAll ?? string.Empty);
             rowToolTip.SetToolTip(flatViewButton, flatViewText ?? string.Empty);
+        }
+
+        public void SetSortButtonTexts(
+            string tip,
+            string byName,
+            string byType,
+            string byImageTime,
+            string byTagsTime)
+        {
+            rowToolTip.SetToolTip(sortButton, tip ?? string.Empty);
+            sortByNameItem.Text = byName ?? string.Empty;
+            sortByTypeItem.Text = byType ?? string.Empty;
+            sortByImageTimeItem.Text = byImageTime ?? string.Empty;
+            sortByTagsTimeItem.Text = byTagsTime ?? string.Empty;
+        }
+
+        public void SetSortOrder(OrderType order)
+        {
+            currentSort = order;
+            sortByNameItem.Checked = order == OrderType.Name;
+            sortByTypeItem.Checked = order == OrderType.FileType;
+            sortByImageTimeItem.Checked = order == OrderType.ImageModifyTime;
+            sortByTagsTimeItem.Checked = order == OrderType.TagsModifyTime;
+            sortButton.Active = order != OrderType.Name;
+        }
+
+        private void RequestSort(OrderType order)
+        {
+            SetSortOrder(order);
+            SortRequested?.Invoke(order);
         }
 
         /// <summary>True while the flat (folder-ignoring) view is active.</summary>
@@ -1017,6 +1071,8 @@ namespace BooruDatasetTagManager
                 count += 2;
             if (flatViewButton != null && flatViewButton.Visible)
                 count++;
+            if (sortButton != null && sortButton.Visible)
+                count++;
             return count;
         }
 
@@ -1037,7 +1093,7 @@ namespace BooruDatasetTagManager
             // Right-to-left over the visible buttons only, so whichever set is
             // shown hugs the strip's right edge without gaps.
             int x = searchHost.ClientSize.Width - LogicalToDeviceUnits(6) - size;
-            foreach (Control button in new Control[] { collapseAllButton, expandAllButton, flatViewButton })
+            foreach (Control button in new Control[] { collapseAllButton, expandAllButton, flatViewButton, sortButton })
             {
                 if (button == null || !button.Visible)
                     continue;
@@ -1078,7 +1134,10 @@ namespace BooruDatasetTagManager
         protected override void Dispose(bool disposing)
         {
             if (disposing)
+            {
                 rowToolTip.Dispose();
+                sortMenu.Dispose();
+            }
             base.Dispose(disposing);
         }
 
@@ -1239,6 +1298,85 @@ namespace BooruDatasetTagManager
                     g.DrawLine(pen, inset, y, Width - inset, y);
                     y += step;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Sort dropdown: up/down carets; filled while a non-name sort is active.
+        /// </summary>
+        private sealed class SortButton : BufferedPanel
+        {
+            private bool hover;
+            private bool active;
+
+            public bool Active
+            {
+                get => active;
+                set
+                {
+                    if (active == value)
+                        return;
+                    active = value;
+                    Invalidate();
+                }
+            }
+
+            protected override void OnMouseEnter(EventArgs e)
+            {
+                base.OnMouseEnter(e);
+                hover = true;
+                Invalidate();
+            }
+
+            protected override void OnMouseLeave(EventArgs e)
+            {
+                base.OnMouseLeave(e);
+                hover = false;
+                Invalidate();
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                var view = Parent?.Parent as DatasetBrowserView;
+                Color bg = view?.list.BackColor ?? BackColor;
+                Color fg = view?.list.ForeColor ?? ForeColor;
+                Graphics g = e.Graphics;
+                g.Clear(bg);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                if (active || hover)
+                {
+                    using GraphicsPath rounded = RoundedRect(
+                        new RectangleF(0, 0, Width - 1, Height - 1), Width * 0.2f);
+                    using var fill = new SolidBrush(active
+                        ? Blend(SystemColors.Highlight, bg, 0.22f)
+                        : Blend(fg, bg, 0.08f));
+                    g.FillPath(fill, rounded);
+                }
+                using var pen = new Pen(Blend(fg, bg, active ? 0.75f : 0.55f), Math.Max(1.6f, Width / 16f))
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round,
+                    LineJoin = LineJoin.Round
+                };
+                int half = Width / 2;
+                int span = Math.Max(3, Width * 5 / 16);
+                int rise = Math.Max(3, Height / 5);
+                int midGap = Math.Max(2, Height / 10);
+                int top = Height / 2 - midGap / 2 - rise;
+                g.DrawLines(pen, new[]
+                {
+                    new Point(half - span, top + rise),
+                    new Point(half, top),
+                    new Point(half + span, top + rise)
+                });
+                int bottom = Height / 2 + midGap / 2;
+                g.DrawLines(pen, new[]
+                {
+                    new Point(half - span, bottom),
+                    new Point(half, bottom + rise),
+                    new Point(half + span, bottom)
+                });
             }
         }
 

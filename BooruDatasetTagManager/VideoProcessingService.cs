@@ -23,7 +23,14 @@ namespace BooruDatasetTagManager
         All,
         ByFps,
         NativeFps,
-        Specific
+        Specific,
+        Random
+    }
+
+    public enum RandomFrameSampleMode
+    {
+        Distributed = 0,
+        Regional = 1
     }
 
     public sealed class VideoInfo
@@ -47,6 +54,9 @@ namespace BooruDatasetTagManager
     {
         private static readonly Regex FrameProgressRegex = new Regex(@"frame=\s*(?<frame>\d+)", RegexOptions.Compiled);
         private static readonly Regex TimeProgressRegex = new Regex(@"time=(?<time>[\d:.]+)", RegexOptions.Compiled);
+        private static readonly Regex ExtractItemProgressRegex = new Regex(
+            @"(?:^|\s)(?<current>\d+)/(?<total>\d+)(?:\s|$)",
+            RegexOptions.Compiled);
         private static readonly string[] SupportedVideoExtensions = { ".mp4", ".flv", ".mkv", ".ts", ".avi", ".webm", ".mov" };
         internal const int MaxCapturedProcessLogChars = 64 * 1024;
 
@@ -130,6 +140,54 @@ namespace BooruDatasetTagManager
             result.FrameNumbers = result.FrameNumbers.Distinct().OrderBy(v => v).ToList();
             result.Timestamps = result.Timestamps.Distinct().OrderBy(v => v).ToList();
             return result;
+        }
+
+        public static int CountRandomFrames(int frameCount, int percent)
+        {
+            if (frameCount <= 0)
+                return 0;
+
+            int clampedPercent = Math.Clamp(percent, 1, 100);
+            int take = (int)Math.Round(frameCount * (clampedPercent / 100.0), MidpointRounding.AwayFromZero);
+            return Math.Clamp(take, 1, frameCount);
+        }
+
+        public static IReadOnlyList<int> PlanRandomFrameIndices(
+            int frameCount,
+            int percent,
+            RandomFrameSampleMode mode,
+            Random rng)
+        {
+            if (rng == null)
+                throw new ArgumentNullException(nameof(rng));
+
+            int take = CountRandomFrames(frameCount, percent);
+            if (take <= 0)
+                return Array.Empty<int>();
+
+            if (mode == RandomFrameSampleMode.Regional)
+            {
+                int start = rng.Next(0, frameCount - take + 1);
+                var window = new int[take];
+                for (int i = 0; i < take; i++)
+                    window[i] = start + i;
+                return window;
+            }
+
+            if (mode != RandomFrameSampleMode.Distributed)
+                throw new ArgumentOutOfRangeException(nameof(mode));
+
+            var indices = new int[take];
+            for (int i = 0; i < take; i++)
+            {
+                int start = (int)((long)i * frameCount / take);
+                int end = (int)((long)(i + 1) * frameCount / take);
+                if (end <= start)
+                    end = start + 1;
+                indices[i] = rng.Next(start, end);
+            }
+
+            return indices;
         }
 
         public string GetConvertOutputPath(string inputPath, string targetFormat, bool replaceOriginal)
@@ -236,6 +294,44 @@ namespace BooruDatasetTagManager
             return string.Empty;
         }
 
+        public static string FormatExtractItemProgress(int current, int total, string item)
+        {
+            string label = item ?? string.Empty;
+            if (total <= 0)
+                return label;
+
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}/{1}  {2}",
+                current,
+                total,
+                label);
+        }
+
+        public static bool TryParseExtractItemProgress(string line, out int current, out int total)
+        {
+            current = 0;
+            total = 0;
+            if (string.IsNullOrWhiteSpace(line))
+                return false;
+
+            Match match = ExtractItemProgressRegex.Match(line);
+            if (!match.Success)
+                return false;
+
+            if (!int.TryParse(match.Groups["current"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out current)
+                || !int.TryParse(match.Groups["total"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out total)
+                || current < 0
+                || total <= 0)
+            {
+                current = 0;
+                total = 0;
+                return false;
+            }
+
+            return true;
+        }
+
         public async Task<VideoProcessResult> ConvertAsync(
             string inputPath,
             string outputPath,
@@ -287,7 +383,9 @@ namespace BooruDatasetTagManager
             string specificSelection,
             string imageFormat,
             IProgress<string> progress,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            int randomPercent = 10,
+            RandomFrameSampleMode randomMode = RandomFrameSampleMode.Distributed)
         {
             ValidateInputPath(inputPath);
             locator.EnsureAvailable();
@@ -313,6 +411,15 @@ namespace BooruDatasetTagManager
                 }
                 case FrameExtractMode.Specific:
                     return await ExtractSpecificFramesAsync(inputPath, outputDirectory, ext, specificSelection, progress, cancellationToken).ConfigureAwait(false);
+                case FrameExtractMode.Random:
+                    return await ExtractRandomFramesAsync(
+                        inputPath,
+                        outputDirectory,
+                        ext,
+                        randomPercent,
+                        randomMode,
+                        progress,
+                        cancellationToken).ConfigureAwait(false);
                 default:
                     throw new ArgumentOutOfRangeException(nameof(mode));
             }
@@ -583,6 +690,40 @@ namespace BooruDatasetTagManager
             return result;
         }
 
+        private async Task<VideoProcessResult> ExtractRandomFramesAsync(
+            string inputPath,
+            string outputDirectory,
+            string imageFormat,
+            int randomPercent,
+            RandomFrameSampleMode randomMode,
+            IProgress<string> progress,
+            CancellationToken cancellationToken)
+        {
+            VideoInfo info = await GetVideoInfoAsync(inputPath, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<int> indices = PlanRandomFrameIndices(
+                info.FrameCount,
+                randomPercent,
+                randomMode,
+                Random.Shared);
+            if (indices.Count == 0)
+            {
+                return new VideoProcessResult
+                {
+                    Success = false,
+                    ErrorMessage = I18n.GetText("VideoToolsRandomNoFrames")
+                };
+            }
+
+            string selection = string.Join(",", indices);
+            return await ExtractSpecificFramesAsync(
+                inputPath,
+                outputDirectory,
+                imageFormat,
+                selection,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         private async Task<VideoProcessResult> ExtractSpecificFramesAsync(
             string inputPath,
             string outputDirectory,
@@ -611,10 +752,19 @@ namespace BooruDatasetTagManager
             }
 
             int written = 0;
+            int total = selection.FrameNumbers.Count + selection.Timestamps.Count;
             string baseName = Path.GetFileNameWithoutExtension(inputPath);
+            string fileLabel = Path.GetFileName(inputPath);
             foreach (int frameNumber in selection.FrameNumbers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                progress?.Report(FormatExtractItemProgress(
+                    written + 1,
+                    total,
+                    fileLabel + "  " + string.Format(
+                        CultureInfo.CurrentCulture,
+                        I18n.GetText("VideoToolsExtractFrameItem"),
+                        frameNumber)));
                 string outputPath = Path.Combine(outputDirectory, $"{baseName}_frame_{frameNumber:D6}.{imageFormat}");
                 var args = new List<string>
                 {
@@ -626,7 +776,9 @@ namespace BooruDatasetTagManager
                     outputPath
                 };
 
-                var result = await RunFfmpegAsync(args, outputPath, progress, cancellationToken).ConfigureAwait(false);
+                // One ffmpeg call per source frame reports frame=0 then frame=1.
+                // Do not forward that as UI progress; the line above is the authority.
+                var result = await RunFfmpegAsync(args, outputPath, null, cancellationToken).ConfigureAwait(false);
                 if (!result.Success)
                     return result;
                 written++;
@@ -635,6 +787,11 @@ namespace BooruDatasetTagManager
             foreach (TimeSpan timestamp in selection.Timestamps)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                string timeLabel = timestamp.ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture);
+                progress?.Report(FormatExtractItemProgress(
+                    written + 1,
+                    total,
+                    fileLabel + "  " + timeLabel));
                 string stamp = timestamp.ToString(@"hh\-mm\-ss\.fff", CultureInfo.InvariantCulture);
                 string outputPath = Path.Combine(outputDirectory, $"{baseName}_time_{stamp.Replace('\\', '-')}.{imageFormat}");
                 var args = new List<string>
@@ -647,7 +804,7 @@ namespace BooruDatasetTagManager
                     outputPath
                 };
 
-                var result = await RunFfmpegAsync(args, outputPath, progress, cancellationToken).ConfigureAwait(false);
+                var result = await RunFfmpegAsync(args, outputPath, null, cancellationToken).ConfigureAwait(false);
                 if (!result.Success)
                     return result;
                 written++;

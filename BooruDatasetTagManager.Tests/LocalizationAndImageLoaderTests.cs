@@ -109,6 +109,35 @@ public class LocalizationAndImageLoaderTests
         Assert.Equal(expectedHeight, preview.Height);
     }
 
+    [Fact]
+    public void GetImageFromFileLoadsStemEndingWithUnderscore()
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "char_.png");
+        SaveSampleImage(imagePath);
+
+        using var image = ImageLoader.GetImageFromFile(imagePath);
+
+        Assert.NotNull(image);
+        Assert.Equal(80, image.Width);
+    }
+
+    [Fact]
+    public void DataItemPairsCaptionWhenImageStemEndsWithUnderscore()
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "char_.png");
+        SaveSampleImage(imagePath);
+        File.WriteAllText(Path.Combine(temp.Path, "char_.txt"), "1girl, smile");
+
+        var item = new DatasetManager.DataItem();
+        item.LoadData(imagePath, 0, false);
+
+        Assert.Equal("char_", item.Name);
+        Assert.Equal(Path.Combine(temp.Path, "char_.txt"), item.TextFilePath);
+        Assert.Equal(new[] { "1girl", "smile" }, item.Tags.TextTags);
+    }
+
     private static Dictionary<string, string> LoadLanguage(string language)
     {
         string root = FindRepoRoot();

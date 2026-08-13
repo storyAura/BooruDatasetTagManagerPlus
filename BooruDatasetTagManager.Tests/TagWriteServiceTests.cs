@@ -67,4 +67,74 @@ public class TagWriteServiceTests
 
         Assert.Equal(new[] { "1girl", "smile" }, item.Tags.TextTags);
     }
+
+    [Fact]
+    public void OrderByConfidenceDescendingPutsHighestFirst()
+    {
+        var ordered = TagWriteService.OrderByConfidenceDescending(new[]
+        {
+            new AutoTagProviderItem { Tag = "smile", Confidence = 0.4f },
+            new AutoTagProviderItem { Tag = "1girl", Confidence = 0.9f },
+            new AutoTagProviderItem { Tag = "solo", Confidence = 0.7f }
+        });
+
+        Assert.Equal(new[] { "1girl", "solo", "smile" }, ordered.Select(tag => tag.Tag));
+    }
+
+    [Fact]
+    public void ConfidenceSortWritesHighestFirst()
+    {
+        DataItem item = MakeItem();
+        var settings = new Wd14TaggerSettings
+        {
+            SetMode = NetworkResultSetMode.AllWithReplacement,
+            SortMode = AutoTaggerSort.Confidence
+        };
+
+        TagWriteService.ApplyTags(item, new[]
+        {
+            new AutoTagProviderItem { Tag = "smile", Confidence = 0.4f },
+            new AutoTagProviderItem { Tag = "1girl", Confidence = 0.9f }
+        }, settings);
+
+        Assert.Equal(new[] { "1girl", "smile" }, item.Tags.TextTags);
+    }
+
+    [Fact]
+    public void AlphabeticalSortWritesAToZ()
+    {
+        DataItem item = MakeItem();
+        var settings = new Wd14TaggerSettings
+        {
+            SetMode = NetworkResultSetMode.AllWithReplacement,
+            SortMode = AutoTaggerSort.Alphabetical
+        };
+
+        TagWriteService.ApplyTags(item, new[]
+        {
+            new AutoTagProviderItem { Tag = "smile", Confidence = 0.9f },
+            new AutoTagProviderItem { Tag = "1girl", Confidence = 0.4f }
+        }, settings);
+
+        Assert.Equal(new[] { "1girl", "smile" }, item.Tags.TextTags);
+    }
+
+    [Fact]
+    public void NoneSortKeepsIncomingOrder()
+    {
+        DataItem item = MakeItem();
+        var settings = new Wd14TaggerSettings
+        {
+            SetMode = NetworkResultSetMode.AllWithReplacement,
+            SortMode = AutoTaggerSort.None
+        };
+
+        TagWriteService.ApplyTags(item, new[]
+        {
+            new AutoTagProviderItem { Tag = "smile", Confidence = 0.4f },
+            new AutoTagProviderItem { Tag = "1girl", Confidence = 0.9f }
+        }, settings);
+
+        Assert.Equal(new[] { "smile", "1girl" }, item.Tags.TextTags);
+    }
 }

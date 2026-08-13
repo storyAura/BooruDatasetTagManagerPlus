@@ -191,7 +191,7 @@ namespace BooruDatasetTagManager
                     items.Add(new AutoTagProviderItem { Tag = name, Confidence = output[i] });
             }
 
-            return items;
+            return TagWriteService.OrderByConfidenceDescending(items);
         }
 
         public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, double threshold)
@@ -443,10 +443,12 @@ namespace BooruDatasetTagManager
                     for (int x = 0; x < width; x++)
                     {
                         int offset = row + (x * 3);
-                        // ONNX WD14 models expect BGR channel order (see wd14-migration-package preprocess.py).
-                        tensor[0, y, x, 0] = buffer[offset + 2];
-                        tensor[0, y, x, 1] = buffer[offset + 1];
-                        tensor[0, y, x, 2] = buffer[offset + 0];
+                        // GDI Format24bppRgb memory is already B,G,R per pixel.
+                        // WD14 ONNX expects BGR NHWC — write bytes as-is (do not
+                        // swap again; that used to feed RGB and scramble hues).
+                        tensor[0, y, x, 0] = buffer[offset + 0]; // B
+                        tensor[0, y, x, 1] = buffer[offset + 1]; // G
+                        tensor[0, y, x, 2] = buffer[offset + 2]; // R
                     }
                 }
             }

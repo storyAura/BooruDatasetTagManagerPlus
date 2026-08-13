@@ -70,9 +70,12 @@ namespace BooruDatasetTagManager
         // Dataset browser flat view: ignore folder grouping and show every
         // image of the current list as one flat sequence.
         public bool DatasetBrowserFlatView { get; set; } = false;
-        // Tag-consistency fixer: minimum dataset-wide count a child character
-        // variant needs to be trusted; rarer children fold into their parent
-        // tag (0 disables the rule).
+        public DatasetManager.OrderType DatasetOrderType { get; set; } = DatasetManager.OrderType.Name;
+        // Tag-consistency fixer: when false (default), rare child variants are
+        // left alone. When true, a child below TagFixChildThreshold folds into
+        // its parent. Opt-in from the test module; 0 on the threshold still
+        // disables the rule even if this is checked.
+        public bool TagFixFoldRareChildren { get; set; } = false;
         public int TagFixChildThreshold { get; set; } = 30;
         // Sticky category sort for the image-tags pane: while on, every newly
         // selected image's tags are re-sorted on load (mutates tag order, so
@@ -87,7 +90,7 @@ namespace BooruDatasetTagManager
 
         public static List<string> GetDefaultDatasetHiddenColumns()
         {
-            return new List<string> { "ImageFilePath", "ImageModifyTime", "TagsModifyTime" };
+            return new List<string> { "ImageFilePath", "ImageModifyTime", "TagsModifyTime", "FileType" };
         }
 
         public bool LoadSettingsLoadPreviewImages { get; set; } = true;
@@ -124,6 +127,9 @@ namespace BooruDatasetTagManager
         }
         public string AutoTagProviderId { get; set; } = "openai-compatible";
         public string FfmpegPath { get; set; } = string.Empty;
+        // Video extract: random percentage sample (1–100, default 10).
+        public int VideoExtractRandomPercent { get; set; } = 10;
+        public RandomFrameSampleMode VideoExtractRandomMode { get; set; } = RandomFrameSampleMode.Distributed;
         public Wd14TaggerSettings Wd14Tagger { get; set; } = new Wd14TaggerSettings();
         public PixAiTaggerSettings PixAiTagger { get; set; } = new PixAiTaggerSettings();
         public string OnnxTaggerLastModelId { get; set; } = string.Empty;
@@ -273,6 +279,10 @@ namespace BooruDatasetTagManager
                 MatchCharacterTags = tempSettings.MatchCharacterTags;
                 AllTagsCategorySort = tempSettings.AllTagsCategorySort;
                 DatasetBrowserFlatView = tempSettings.DatasetBrowserFlatView;
+                DatasetOrderType = Enum.IsDefined(typeof(DatasetManager.OrderType), tempSettings.DatasetOrderType)
+                    ? tempSettings.DatasetOrderType
+                    : DatasetManager.OrderType.Name;
+                TagFixFoldRareChildren = tempSettings.TagFixFoldRareChildren;
                 TagFixChildThreshold = Math.Max(0, tempSettings.TagFixChildThreshold);
                 ImageTagsCategorySort = tempSettings.ImageTagsCategorySort;
                 DebugMode = tempSettings.DebugMode;
@@ -298,6 +308,12 @@ namespace BooruDatasetTagManager
                     ? "openai-compatible"
                     : tempSettings.AutoTagProviderId;
                 FfmpegPath = tempSettings.FfmpegPath ?? string.Empty;
+                VideoExtractRandomPercent = tempSettings.VideoExtractRandomPercent <= 0
+                    ? 10
+                    : Math.Clamp(tempSettings.VideoExtractRandomPercent, 1, 100);
+                VideoExtractRandomMode = tempSettings.VideoExtractRandomMode == RandomFrameSampleMode.Regional
+                    ? RandomFrameSampleMode.Regional
+                    : RandomFrameSampleMode.Distributed;
                 Wd14Tagger = tempSettings.Wd14Tagger ?? new Wd14TaggerSettings();
                 Wd14Tagger.EnsureLegacyThresholdMigrated();
                 PixAiTagger = tempSettings.PixAiTagger ?? new PixAiTaggerSettings();
@@ -623,7 +639,7 @@ namespace BooruDatasetTagManager
     public abstract class TaggerSettings
     {
         public string ConnectionAddress { get; set; } = "http://127.0.0.1:50051";
-        public AutoTaggerSort SortMode { get; set; } = AutoTaggerSort.None;
+        public AutoTaggerSort SortMode { get; set; } = AutoTaggerSort.Confidence;
         public NetworkResultSetMode SetMode { get; set; } = NetworkResultSetMode.AllWithReplacement;
         public TagFilteringMode TagFilteringMode { get; set; } = TagFilteringMode.None;
         public string TagFilter { get; set; } = "";

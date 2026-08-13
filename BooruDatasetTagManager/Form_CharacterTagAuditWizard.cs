@@ -1742,6 +1742,12 @@ namespace BooruDatasetTagManager
             FillResultGrid();
             UpdateMetrics();
             SchedulePreviewWidthUpdate();
+            // ApplyAsync advances via SwitchResultProfile directly; keep the
+            // dropdown label in sync. Setting SelectedIndex re-enters this
+            // method through SelectedIndexChanged, but activeResultProfile
+            // already equals index so the early return above exits cleanly.
+            if (comboResultProfile.SelectedIndex != index)
+                comboResultProfile.SelectedIndex = index;
         }
 
         private void ApplyReviewModeToResultControls()

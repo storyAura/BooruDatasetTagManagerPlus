@@ -102,4 +102,45 @@ public sealed class SafeFileTests : IDisposable
         // the destination (File.WriteAllText used to leave a 0-byte file).
         Assert.Equal("precious", File.ReadAllText(target));
     }
+
+    [Fact]
+    public void WriteAllText_succeeds_for_long_basename_near_windows_component_limit()
+    {
+        // Old SafeFile appended ".{32hex}.tmp" onto the destination name (+36),
+        // which broke danbooru-style stems already near 255 chars. Short sibling
+        // temps keep the component legal.
+        string stem = new string('a', 220);
+        string target = PathFor(stem + ".txt");
+        Assert.True(Path.GetFileName(target).Length <= 255);
+
+        SafeFile.WriteAllText(target, "long-name-ok");
+
+        Assert.Equal("long-name-ok", File.ReadAllText(target));
+        Assert.Empty(Directory.GetFiles(tempDir, ".bdtm-*.tmp"));
+        Assert.Empty(Directory.GetFiles(tempDir, "*.tmp"));
+    }
+
+    [Fact]
+    public void WriteAllText_succeeds_when_stem_ends_with_underscore()
+    {
+        string target = PathFor("char_.txt");
+
+        SafeFile.WriteAllText(target, "1girl, smile");
+
+        Assert.Equal("1girl, smile", File.ReadAllText(target));
+        Assert.Empty(Directory.GetFiles(tempDir, ".bdtm-*.tmp"));
+    }
+
+    [Fact]
+    public void WriteAllText_succeeds_for_long_stem_ending_with_underscore()
+    {
+        string stem = new string('a', 210) + "_";
+        string target = PathFor(stem + ".txt");
+        Assert.True(Path.GetFileName(target).Length <= 255);
+
+        SafeFile.WriteAllText(target, "trailing-underscore-ok");
+
+        Assert.Equal("trailing-underscore-ok", File.ReadAllText(target));
+        Assert.Empty(Directory.GetFiles(tempDir, ".bdtm-*.tmp"));
+    }
 }

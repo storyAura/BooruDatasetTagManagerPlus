@@ -260,7 +260,7 @@ namespace BooruDatasetTagManager
                     items.Add(new AutoTagProviderItem { Tag = name, Confidence = output[i] });
             }
 
-            return items;
+            return TagWriteService.OrderByConfidenceDescending(items);
         }
 
         private static InferenceSession CreateSession(string modelPath, bool forceCpu, out bool usesDirectMl)

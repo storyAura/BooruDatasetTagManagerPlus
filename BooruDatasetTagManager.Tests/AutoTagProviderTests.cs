@@ -24,6 +24,17 @@ public sealed class AutoTagProviderTests
         }));
     }
 
+    [Theory]
+    [InlineData("char_.png", "image/png")]
+    [InlineData("char_.jpeg", "image/jpeg")]
+    [InlineData("char_.jpg", "image/jpeg")]
+    [InlineData("char_.webp", "image/webp")]
+    [InlineData(@"C:\ds\foo_.PNG", "image/png")]
+    public void ImageMediaTypeMapsStemEndingWithUnderscore(string path, string expected)
+    {
+        Assert.Equal(expected, ImageMediaType.FromPath(path));
+    }
+
     private sealed class FakeProvider : IAutoTagProvider
     {
         public FakeProvider(string id) => Id = id;

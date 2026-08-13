@@ -1094,6 +1094,24 @@ public sealed class CharacterTagFileTransactionTests
     }
 
     [Fact]
+    public async Task CommitAsync_succeeds_for_long_basename_near_windows_component_limit()
+    {
+        using var temp = new TemporaryDirectory();
+        string stem = new string('b', 220);
+        string target = Path.Combine(temp.Path, stem + ".txt");
+        File.WriteAllText(target, "old");
+
+        await CharacterTagFileTransaction.CommitAsync(temp.Path, new[]
+        {
+            new CharacterTagFileChange(target, "new-long")
+        });
+
+        Assert.Equal("new-long", File.ReadAllText(target));
+        Assert.Empty(Directory.GetDirectories(temp.Path, CharacterTagFileTransaction.DirectoryPrefix + "*"));
+        Assert.Empty(Directory.GetFiles(temp.Path, ".bdtm-*.tmp"));
+    }
+
+    [Fact]
     public void ApplyAsync_uses_bulk_mutation_and_background_scan()
     {
         string source = File.ReadAllText(Path.Combine(

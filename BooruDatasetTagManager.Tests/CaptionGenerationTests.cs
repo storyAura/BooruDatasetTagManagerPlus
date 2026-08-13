@@ -86,6 +86,19 @@ public class CaptionGenerationTests
     }
 
     [Fact]
+    public void OutputPathKeepsTrailingUnderscoreInStem()
+    {
+        string sourceDir = Path.Combine(Path.GetTempPath(), "bdtm-caption-underscore");
+        string imagePath = Path.Combine(sourceDir, "char_.png");
+
+        string output = CaptionGenerationService.GetOutputTextPath(sourceDir, imagePath, "_captioned");
+
+        Assert.Equal(
+            Path.Combine(Path.GetTempPath(), "bdtm-caption-underscore_captioned", "char_.txt"),
+            output);
+    }
+
+    [Fact]
     public async Task ScanCountsTotalPendingAndExistingOutputs()
     {
         using var temp = new TemporaryDirectory();

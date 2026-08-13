@@ -782,6 +782,14 @@ namespace BooruDatasetTagManager
                 return;
             }
 
+            const int LargeBatchThreshold = 200;
+            if (inputs.Count > LargeBatchThreshold)
+            {
+                string msg = string.Format(I18n.GetText("LlmTaggerLargeBatchConfirm"), inputs.Count);
+                if (MessageBox.Show(this, msg, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+            }
+
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
             try

@@ -45,7 +45,13 @@ namespace BooruDatasetTagManager
 
         private static void WriteCore(string path, Action<string> writeTemp, string backupPath)
         {
-            string tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            // Short sibling name: appending ".{guid}.tmp" to the destination
+            // basename pushed danbooru-style long filenames past Windows' 255
+            // component limit (ERROR_INVALID_NAME / "文件名、目录名或卷标语法不正确").
+            string directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory))
+                directory = ".";
+            string tmp = Path.Combine(directory, ".bdtm-" + Guid.NewGuid().ToString("N") + ".tmp");
             lock (LockFor(path))
             {
                 try

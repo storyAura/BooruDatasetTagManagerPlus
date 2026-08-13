@@ -52,6 +52,9 @@ namespace BooruDatasetTagManager
 
         private FilterType lastAndOperation = FilterType.Or;
         private IEnumerable<string> lastTagsFilter = null;
+        private OrderType lastOrderBy = OrderType.Name;
+
+        public OrderType LastOrderType => lastOrderBy;
 
         // Capacity-bounded, thread-safe cache that disposes evicted images to
         // avoid the unbounded memory / GDI-handle growth of the old Dictionary.
@@ -642,9 +645,9 @@ namespace BooruDatasetTagManager
             }
         }
 
-        public List<DataItem> GetDataSourceWithLastFilter(OrderType orderBy = OrderType.Name)
+        public List<DataItem> GetDataSourceWithLastFilter(OrderType? orderBy = null)
         {
-            return GetDataSource(orderBy, lastAndOperation, lastTagsFilter);
+            return GetDataSource(orderBy ?? lastOrderBy, lastAndOperation, lastTagsFilter);
         }
 
         /// <summary>
@@ -658,6 +661,8 @@ namespace BooruDatasetTagManager
         {
             // Store the last set of tags used for filtering. FilterLogic will use this value unless passed custom one
             lastTagsFilter = filterByTags;
+
+            lastOrderBy = orderBy;
 
             // Declare a list to store the filtered and ordered DataItem objects.
             List<DataItem> items = FilterLogic(andOp);
@@ -683,9 +688,32 @@ namespace BooruDatasetTagManager
                         items.Sort((a, b) => a.TagsModifyTime.CompareTo(b.TagsModifyTime));
                         break;
                     }
+                case OrderType.FileType:
+                    {
+                        items.Sort(CompareByFileType);
+                        break;
+                    }
             }
             // Return the filtered and sorted list of DataItem objects.
             return items;
+        }
+
+        public static string GetFileTypeKey(string path)
+        {
+            string ext = Path.GetExtension(path ?? string.Empty).TrimStart('.').ToLowerInvariant();
+            if (ext == "jpeg" || ext == "jpe")
+                return "jpg";
+            return ext;
+        }
+
+        public static int CompareByFileType(DataItem a, DataItem b)
+        {
+            string typeA = GetFileTypeKey(a?.ImageFilePath);
+            string typeB = GetFileTypeKey(b?.ImageFilePath);
+            int cmp = string.Compare(typeA, typeB, StringComparison.OrdinalIgnoreCase);
+            if (cmp != 0)
+                return cmp;
+            return FileNamesComparer.StrCmpLogicalW(a?.Name, b?.Name);
         }
 
         public List<DataItem> FilterLogic(FilterType andOp = FilterType.Or, IEnumerable<string> filterByTags = null)
@@ -1038,7 +1066,8 @@ namespace BooruDatasetTagManager
         {
             Name,
             ImageModifyTime,
-            TagsModifyTime
+            TagsModifyTime,
+            FileType
         }
 
         public class DataItem : IDisposable
@@ -1047,6 +1076,7 @@ namespace BooruDatasetTagManager
             [DisplayName("Image")]
             public Image Img { get; set; }
             public string Name { get; set; }
+            public string FileType => GetFileTypeKey(ImageFilePath);
             [Browsable(false)]
             public EditableTagList Tags { get; set; }
             [Browsable(false)]

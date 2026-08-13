@@ -14,12 +14,27 @@ namespace BooruDatasetTagManager
 
             IEnumerable<AutoTagProviderItem> ordered = tags;
             if (settings.SortMode == AutoTaggerSort.Confidence)
-                ordered = tags.OrderByDescending(tag => tag.Confidence);
+                ordered = OrderByConfidenceDescending(tags);
             else if (settings.SortMode == AutoTaggerSort.Alphabetical)
                 ordered = tags.OrderBy(tag => tag.Tag, StringComparer.OrdinalIgnoreCase);
 
             List<string> tagNames = TagPostProcessor.Process(ordered.Select(tag => tag.Tag), settings);
             ApplyTagNames(item, tagNames, settings);
+        }
+
+        /// <summary>
+        /// WD14/PixAI/CL label files are alphabetical; callers use this so
+        /// SortMode.None keeps confidence order (the wd14-tagger default)
+        /// instead of CSV A–Z.
+        /// </summary>
+        public static List<AutoTagProviderItem> OrderByConfidenceDescending(IEnumerable<AutoTagProviderItem> tags)
+        {
+            if (tags == null)
+                return new List<AutoTagProviderItem>();
+            return tags
+                .OrderByDescending(tag => tag.Confidence)
+                .ThenBy(tag => tag.Tag, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         public static void ApplyTagNames(DataItem item, IReadOnlyList<string> tagNames, TaggerSettings settings)

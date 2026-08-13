@@ -75,7 +75,13 @@ namespace BooruDatasetTagManager
                     string targetDirectory = Path.GetDirectoryName(entry.TargetPath);
                     if (!string.IsNullOrEmpty(targetDirectory))
                         Directory.CreateDirectory(targetDirectory);
-                    string siblingTemp = entry.TargetPath + ".bdtm-" + Guid.NewGuid().ToString("N") + ".tmp";
+                    else
+                        targetDirectory = ".";
+                    // Short sibling temp — do not append to the target basename
+                    // (danbooru-style long names already sit near the 255-char
+                    // Windows component limit; a +42 suffix breaks the write).
+                    string siblingTemp = Path.Combine(
+                        targetDirectory, ".bdtm-" + Guid.NewGuid().ToString("N") + ".tmp");
                     File.Copy(Path.Combine(transactionDirectory, entry.StagedFile), siblingTemp, true);
                     File.Move(siblingTemp, entry.TargetPath, true);
                     entry.Applied = true;

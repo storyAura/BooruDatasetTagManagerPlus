@@ -39,6 +39,11 @@ namespace BooruDatasetTagManager
         private readonly RadioButton radioExtractFps = new RadioButton();
         private readonly RadioButton radioExtractNativeFps = new RadioButton();
         private readonly RadioButton radioExtractSpecific = new RadioButton();
+        private readonly RadioButton radioExtractRandom = new RadioButton();
+        private readonly TrackBar trackRandomPercent = new TrackBar();
+        private readonly Label labelRandomPercent = new Label();
+        private readonly RadioButton radioRandomDistributed = new RadioButton();
+        private readonly RadioButton radioRandomRegional = new RadioButton();
         private readonly NumericUpDown numericFps = new NumericUpDown();
         private readonly TextBox textSpecificFrames = new TextBox();
         private readonly ComboBox comboImageFormat = new ComboBox();
@@ -90,7 +95,7 @@ namespace BooruDatasetTagManager
             // designed layout and scroll instead of overflowing the desktop.
             MinimumSize = new Size(760, 560);
             AutoScroll = true;
-            AutoScrollMinSize = new Size(1080, 820);
+            AutoScrollMinSize = new Size(1080, 900);
             ClientSize = new Size(1180, 860);
             CancelButton = buttonClose;
 
@@ -266,7 +271,11 @@ namespace BooruDatasetTagManager
                     jobCancellation?.Cancel();
                 }
             };
-            FormClosed += (_, _) => CleanupPreviewResources();
+            FormClosed += (_, _) =>
+            {
+                PersistRandomExtractSettings(save: true);
+                CleanupPreviewResources();
+            };
             Load += (_, _) => ConfigureSplitContainer();
             Resize += (_, _) => ClampSplitterDistance();
             splitMain.SplitterMoved += (_, _) => ClampSplitterDistance();
@@ -284,7 +293,15 @@ namespace BooruDatasetTagManager
         private void UpdateHintLabelWidths()
         {
             if (groupExtract.Controls.Find("labelExtractHint", true).FirstOrDefault() is Label extractHint)
-                UpdateHintLabel(extractHint, groupExtract, I18n.GetText("VideoToolsExtractFlatHint"));
+                UpdateExtractHint(extractHint);
+        }
+
+        private void UpdateExtractHint(Label extractHint)
+        {
+            string key = radioExtractRandom.Checked
+                ? "VideoToolsExtractRandomHint"
+                : "VideoToolsExtractFlatHint";
+            UpdateHintLabel(extractHint, groupExtract, I18n.GetText(key));
         }
 
         private GroupBox BuildSourceGroup()
@@ -349,6 +366,73 @@ namespace BooruDatasetTagManager
             textSpecificFrames.Dock = DockStyle.Fill;
             textSpecificFrames.TextChanged += TextSpecificFrames_TextChangedSync;
 
+            radioExtractRandom.AutoSize = true;
+            radioExtractRandom.CheckedChanged += (_, _) => UpdateExtractControls();
+
+            trackRandomPercent.Minimum = 1;
+            trackRandomPercent.Maximum = 100;
+            trackRandomPercent.TickFrequency = 10;
+            trackRandomPercent.TickStyle = TickStyle.BottomRight;
+            trackRandomPercent.AutoSize = false;
+            trackRandomPercent.Height = ScaleLayout(40);
+            trackRandomPercent.Dock = DockStyle.Fill;
+            trackRandomPercent.ValueChanged += (_, _) =>
+            {
+                UpdateRandomPercentLabel();
+                PersistRandomExtractSettings(save: false);
+            };
+
+            labelRandomPercent.AutoSize = true;
+            labelRandomPercent.Anchor = AnchorStyles.Left;
+            labelRandomPercent.TextAlign = ContentAlignment.MiddleLeft;
+            labelRandomPercent.Margin = new Padding(8, 0, 0, 0);
+
+            radioRandomDistributed.AutoSize = true;
+            radioRandomRegional.AutoSize = true;
+            radioRandomDistributed.Margin = new Padding(0, 0, 16, 0);
+            radioRandomDistributed.CheckedChanged += (_, _) => PersistRandomExtractSettings(save: false);
+            radioRandomRegional.CheckedChanged += (_, _) => PersistRandomExtractSettings(save: false);
+
+            int savedPercent = 10;
+            RandomFrameSampleMode savedMode = RandomFrameSampleMode.Distributed;
+            if (Program.Settings != null)
+            {
+                savedPercent = Program.Settings.VideoExtractRandomPercent <= 0
+                    ? 10
+                    : Math.Clamp(Program.Settings.VideoExtractRandomPercent, 1, 100);
+                savedMode = Program.Settings.VideoExtractRandomMode;
+            }
+
+            trackRandomPercent.Value = savedPercent;
+            if (savedMode == RandomFrameSampleMode.Regional)
+                radioRandomRegional.Checked = true;
+            else
+                radioRandomDistributed.Checked = true;
+
+            var panelRandomPercent = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                AutoSize = true,
+                Margin = new Padding(0)
+            };
+            panelRandomPercent.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            panelRandomPercent.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            panelRandomPercent.Controls.Add(trackRandomPercent, 0, 0);
+            panelRandomPercent.Controls.Add(labelRandomPercent, 1, 0);
+
+            var panelRandomMode = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                Margin = new Padding(0, 2, 0, 2)
+            };
+            panelRandomMode.Controls.Add(radioRandomDistributed);
+            panelRandomMode.Controls.Add(radioRandomRegional);
+
             comboImageFormat.DropDownStyle = ComboBoxStyle.DropDownList;
             comboImageFormat.Width = ScaleLayout(120);
             comboImageFormat.Items.AddRange(new object[] { "png", "jpg" });
@@ -367,16 +451,12 @@ namespace BooruDatasetTagManager
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 7
+                RowCount = 10
             };
             extractLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             extractLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            for (int i = 0; i < 9; i++)
+                extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             extractLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             extractLayout.Controls.Add(radioExtractAll, 0, 0);
@@ -389,11 +469,18 @@ namespace BooruDatasetTagManager
             extractLayout.SetColumnSpan(radioExtractSpecific, 2);
             extractLayout.Controls.Add(textSpecificFrames, 0, 4);
             extractLayout.SetColumnSpan(textSpecificFrames, 2);
-            extractLayout.Controls.Add(comboImageFormat, 0, 5);
+            extractLayout.Controls.Add(radioExtractRandom, 0, 5);
+            extractLayout.SetColumnSpan(radioExtractRandom, 2);
+            extractLayout.Controls.Add(panelRandomPercent, 0, 6);
+            extractLayout.SetColumnSpan(panelRandomPercent, 2);
+            extractLayout.Controls.Add(panelRandomMode, 0, 7);
+            extractLayout.SetColumnSpan(panelRandomMode, 2);
+            extractLayout.Controls.Add(comboImageFormat, 0, 8);
             extractLayout.SetColumnSpan(comboImageFormat, 2);
-            extractLayout.Controls.Add(labelExtractHint, 0, 6);
+            extractLayout.Controls.Add(labelExtractHint, 0, 9);
             extractLayout.SetColumnSpan(labelExtractHint, 2);
             groupExtract.Controls.Add(extractLayout);
+            UpdateRandomPercentLabel();
         }
 
         private int ScaleLayout(float value)
@@ -456,6 +543,13 @@ namespace BooruDatasetTagManager
             radioExtractFps.Text = I18n.GetText("VideoToolsExtractByFps");
             radioExtractNativeFps.Text = I18n.GetText("VideoToolsExtractNativeFps");
             radioExtractSpecific.Text = I18n.GetText("VideoToolsExtractSpecific");
+            radioExtractRandom.Text = I18n.GetText("VideoToolsExtractRandom");
+            radioRandomDistributed.Text = I18n.GetText("VideoToolsExtractRandomDistributed");
+            radioRandomRegional.Text = I18n.GetText("VideoToolsExtractRandomRegional");
+            UpdateRandomPercentLabel();
+            toolTip.SetToolTip(radioExtractRandom, I18n.GetText("VideoToolsExtractRandomHint"));
+            toolTip.SetToolTip(radioRandomDistributed, I18n.GetText("VideoToolsExtractRandomDistributedHint"));
+            toolTip.SetToolTip(radioRandomRegional, I18n.GetText("VideoToolsExtractRandomRegionalHint"));
             buttonRun.Text = I18n.GetText("VideoToolsRun");
             buttonCancelJob.Text = I18n.GetText("VideoToolsCancel");
             buttonClose.Text = I18n.GetText("VideoToolsClose");
@@ -468,7 +562,7 @@ namespace BooruDatasetTagManager
             buttonClearLocked.Text = I18n.GetText("VideoToolsClearLocked");
 
             if (groupExtract.Controls.Find("labelExtractHint", true).FirstOrDefault() is Label extractHint)
-                UpdateHintLabel(extractHint, groupExtract, I18n.GetText("VideoToolsExtractFlatHint"));
+                UpdateExtractHint(extractHint);
 
             ApplyButtonStyles();
             UpdateNativeFpsLabel();
@@ -516,7 +610,55 @@ namespace BooruDatasetTagManager
         {
             numericFps.Enabled = radioExtractFps.Checked;
             textSpecificFrames.Enabled = radioExtractSpecific.Checked;
+            bool random = radioExtractRandom.Checked;
+            trackRandomPercent.Enabled = random;
+            labelRandomPercent.Enabled = random;
+            radioRandomDistributed.Enabled = random;
+            radioRandomRegional.Enabled = random;
             UpdateNativeFpsLabel();
+            if (groupExtract.Controls.Find("labelExtractHint", true).FirstOrDefault() is Label extractHint)
+                UpdateExtractHint(extractHint);
+        }
+
+        private void UpdateRandomPercentLabel()
+        {
+            labelRandomPercent.Text = string.Format(
+                CultureInfo.CurrentCulture,
+                I18n.GetText("VideoToolsExtractRandomPercent"),
+                trackRandomPercent.Value);
+        }
+
+        private void PersistRandomExtractSettings(bool save)
+        {
+            try
+            {
+                if (Program.Settings == null)
+                    return;
+
+                Program.Settings.VideoExtractRandomPercent = trackRandomPercent.Value;
+                Program.Settings.VideoExtractRandomMode = radioRandomRegional.Checked
+                    ? RandomFrameSampleMode.Regional
+                    : RandomFrameSampleMode.Distributed;
+                if (save)
+                    Program.Settings.SaveSettings();
+            }
+            catch
+            {
+                // Closing the window must not fail because settings could not be written.
+            }
+        }
+
+        private FrameExtractMode GetSelectedExtractMode()
+        {
+            if (radioExtractAll.Checked)
+                return FrameExtractMode.All;
+            if (radioExtractFps.Checked)
+                return FrameExtractMode.ByFps;
+            if (radioExtractNativeFps.Checked)
+                return FrameExtractMode.NativeFps;
+            if (radioExtractRandom.Checked)
+                return FrameExtractMode.Random;
+            return FrameExtractMode.Specific;
         }
 
         private void UpdateNativeFpsLabel()
@@ -856,6 +998,8 @@ namespace BooruDatasetTagManager
                 return;
             }
 
+            PersistRandomExtractSettings(save: true);
+
             if (radioExtractAll.Checked)
             {
                 if (MessageBox.Show(this, I18n.GetText("VideoToolsExtractAllConfirm"), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
@@ -864,7 +1008,17 @@ namespace BooruDatasetTagManager
 
             SetJobRunning(true);
             jobCancellation = new CancellationTokenSource();
-            var progress = VideoProgressReporter.CreateForControl(this, UpdateStatus);
+            int videoCount = inputs.Count;
+            int videosDone = 0;
+            var progress = VideoProgressReporter.CreateForControl(this, line =>
+            {
+                UpdateStatus(line);
+                if (!VideoProcessingService.TryParseExtractItemProgress(line, out int current, out int total))
+                    return;
+
+                double fraction = (videosDone + (double)current / total) / Math.Max(1, videoCount);
+                progressBar.Value = Math.Min(100, Math.Max(0, (int)Math.Round(fraction * 100.0)));
+            });
             int completed = 0;
             var errors = new List<string>();
             var extractedVideos = new List<string>();
@@ -880,16 +1034,11 @@ namespace BooruDatasetTagManager
                 {
                     jobCancellation.Token.ThrowIfCancellationRequested();
                     UpdateStatus(Path.GetFileName(input));
-                    progressBar.Value = 0;
+                    FrameExtractMode mode = GetSelectedExtractMode();
+                    if (mode != FrameExtractMode.Specific && mode != FrameExtractMode.Random)
+                        progressBar.Value = 0;
 
                     string outputDir = videoService.GetFlatExtractOutputDirectory(input);
-                    FrameExtractMode mode = radioExtractAll.Checked
-                        ? FrameExtractMode.All
-                        : radioExtractFps.Checked
-                            ? FrameExtractMode.ByFps
-                            : radioExtractNativeFps.Checked
-                                ? FrameExtractMode.NativeFps
-                                : FrameExtractMode.Specific;
                     double extractFps = mode == FrameExtractMode.NativeFps
                         ? (currentVideoInfo?.Fps ?? (double)numericFps.Value)
                         : (double)numericFps.Value;
@@ -916,13 +1065,18 @@ namespace BooruDatasetTagManager
                         textSpecificFrames.Text,
                         imageFormat,
                         progress,
-                        jobCancellation.Token).ConfigureAwait(true);
+                        jobCancellation.Token,
+                        trackRandomPercent.Value,
+                        radioRandomRegional.Checked
+                            ? RandomFrameSampleMode.Regional
+                            : RandomFrameSampleMode.Distributed).ConfigureAwait(true);
                     if (!result.Success)
                         errors.Add(input + ": " + result.ErrorMessage);
                     else
                         extractedVideos.Add(input);
 
                     completed++;
+                    videosDone = completed;
                     progressBar.Value = Math.Min(100, (int)Math.Round(completed * 100.0 / inputs.Count));
                 }
 
@@ -952,6 +1106,7 @@ namespace BooruDatasetTagManager
                     && MessageBox.Show(this, I18n.GetText("VideoExtractDeleteSourceConfirm"), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 {
                     owner.DeleteDatasetMediaFiles(extractedVideos);
+                    closeAfterJob = true;
                 }
                 else if (errors.Count == 0)
                 {

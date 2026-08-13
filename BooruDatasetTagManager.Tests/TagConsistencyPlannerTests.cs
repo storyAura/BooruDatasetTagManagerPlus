@@ -250,6 +250,21 @@ public sealed class TagConsistencyPlannerTests
     }
 
     [Fact]
+    public void ThresholdZeroLeavesALoneCostumeChildUntouched()
+    {
+        Func<string, string?> parentOf = tag =>
+            tag == "kayoko (dress) (blue archive)" ? "kayoko (blue archive)" : null;
+        var issues = TagConsistencyPlanner.Plan(
+            new[] { ("img.png", (IReadOnlyList<string>)new[] { "kayoko (dress) (blue archive)" }) },
+            _ => true,
+            new Dictionary<string, int> { ["kayoko (dress) (blue archive)"] = 5 },
+            parentOf!,
+            childCountThreshold: 0);
+
+        Assert.Empty(issues);
+    }
+
+    [Fact]
     public void FoldClimbsPastRareAncestorsToTheFirstTrustedOne()
     {
         // grandchild → mid → root; mid is itself too rare, so the fold lands

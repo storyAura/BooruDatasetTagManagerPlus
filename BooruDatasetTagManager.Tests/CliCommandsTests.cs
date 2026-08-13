@@ -200,13 +200,13 @@ public sealed class CliCommandsTests : IDisposable
         File.WriteAllText(Path.Combine(folder, "d.txt"), "1boy, 2boys, solo, racing miku, hatsune miku");
 
         // Dry run reports without writing.
-        (int dryCode, string dryOut, _) = Run("fix-tags", folder, "--catalog", catalogPath, "--dry-run");
+        (int dryCode, string dryOut, _) = Run("fix-tags", folder, "--catalog", catalogPath, "--child-threshold", "30", "--dry-run");
         Assert.Equal(CliCommands.ExitOk, dryCode);
         Assert.Contains("would modify: 1", dryOut);
         Assert.Equal("1boy, 2boys, solo, racing miku, hatsune miku",
             File.ReadAllText(Path.Combine(folder, "d.txt")));
 
-        (int code, string output, _) = Run("fix-tags", folder, "--catalog", catalogPath);
+        (int code, string output, _) = Run("fix-tags", folder, "--catalog", catalogPath, "--child-threshold", "30");
         Assert.Equal(CliCommands.ExitOk, code);
         Assert.Contains("remove\td.png\t1boy\t2boys", output);
         Assert.Contains("remove\td.png\tsolo\t2boys", output);
@@ -215,7 +215,7 @@ public sealed class CliCommandsTests : IDisposable
         Assert.Equal("2boys, hatsune miku", File.ReadAllText(Path.Combine(folder, "d.txt")));
 
         // The fixer converges: a second run finds nothing.
-        (_, string second, _) = Run("fix-tags", folder, "--catalog", catalogPath);
+        (_, string second, _) = Run("fix-tags", folder, "--catalog", catalogPath, "--child-threshold", "30");
         Assert.Contains("no inconsistent tags found", second);
 
         // Without a catalog only the subject-count rules apply.
@@ -224,6 +224,26 @@ public sealed class CliCommandsTests : IDisposable
 
         (_, string helpOut, _) = Run("help");
         Assert.Contains("fix-tags", helpOut);
+        Assert.Contains("default 0", helpOut);
+    }
+
+    [Fact]
+    public void FixTagsDoesNotFoldRareChildrenByDefault()
+    {
+        string folder = Path.Combine(root, "fix-default");
+        Directory.CreateDirectory(folder);
+        string catalogPath = Path.Combine(folder, "relations.csv");
+        File.WriteAllText(catalogPath,
+            "character_tag,other_names,copyright,parent_tag,post_count\n"
+            + "kayoko_(blue_archive),,blue archive,,100\n"
+            + "kayoko_(dress)_(blue_archive),,blue archive,kayoko_(blue_archive),10\n");
+        File.WriteAllText(Path.Combine(folder, "d.png"), "x");
+        File.WriteAllText(Path.Combine(folder, "d.txt"), "kayoko (dress) (blue archive)");
+
+        (int code, string output, _) = Run("fix-tags", folder, "--catalog", catalogPath);
+        Assert.Equal(CliCommands.ExitOk, code);
+        Assert.Contains("no inconsistent tags found", output);
+        Assert.Equal("kayoko (dress) (blue archive)", File.ReadAllText(Path.Combine(folder, "d.txt")));
     }
 
     [Fact]
