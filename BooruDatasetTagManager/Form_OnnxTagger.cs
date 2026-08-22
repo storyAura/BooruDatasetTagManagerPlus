@@ -895,14 +895,12 @@ namespace BooruDatasetTagManager
                 // User cancel says nothing about the files: keep the download.
                 throw;
             }
-            catch (Exception ex) when (ex is DllNotFoundException
-                or EntryPointNotFoundException
-                or BadImageFormatException
-                or FileNotFoundException)
+            catch (Exception ex) when (!OnnxModelIntegrity.ShouldClearCachedModel(ex))
             {
                 // Environment problems (missing/incompatible native runtime,
-                // missing file): deleting the cached download cannot fix these,
-                // so keep it and surface the real error.
+                // file still locked after download, unsupported input): deleting
+                // the cached download cannot fix these, so keep it and surface
+                // the real error.
                 throw new InvalidOperationException(ex.Message, ex);
             }
             catch (Exception ex)

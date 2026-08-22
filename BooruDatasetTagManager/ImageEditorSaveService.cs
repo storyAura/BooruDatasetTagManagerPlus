@@ -48,6 +48,17 @@ namespace BooruDatasetTagManager
             if (bitmap == null)
                 throw new ArgumentNullException(nameof(bitmap));
             using Image<Bgra32> image = ToImageSharp(bitmap);
+            return Encode(image, extension);
+        }
+
+        /// <summary>
+        /// Encode an already-loaded ImageSharp image using the same extension
+        /// mapping as the bitmap overload (jpeg q95, webp, png, …).
+        /// </summary>
+        public static byte[] Encode(SixLabors.ImageSharp.Image image, string extension)
+        {
+            if (image == null)
+                throw new ArgumentNullException(nameof(image));
             using var stream = new MemoryStream();
             image.Save(stream, CreateEncoder(extension));
             return stream.ToArray();

@@ -88,6 +88,17 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuContextDSRetagOnnx;
         private ToolStripMenuItem menuContextDSRetagLlm;
         private ToolStripMenuItem menuContextDSEditImage;
+        private ToolStripMenuItem menuContextDSBatchCrop;
+        private ToolStripMenuItem menuBatchCrop;
+        private ToolStripMenuItem menuContextDSResolutionPrep;
+        private ToolStripMenuItem menuResolutionPrep;
+        private ToolStripMenuItem menuContextDSYoloDetect;
+        private ToolStripMenuItem menuYoloDetect;
+        private ToolStripMenuItem menuTagFolderClassify;
+        private ToolStripMenuItem menuContextDSPreBucket;
+        private ToolStripMenuItem menuPreBucket;
+        private ToolStripMenuItem menuFolderPreBucket;
+        private ToolStripMenuItem menuFolderPreBucketAll;
         private DatasetBrowserView datasetBrowserView;
         private Splitter sidebarPreviewSplitter;
         private DatasetPreviewPanel datasetPreviewPanel;
@@ -98,6 +109,8 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuBatchRenameImages;
         private ToolStripMenuItem menuFolderTagOnnx;
         private ToolStripMenuItem menuFolderTagLlm;
+        private ToolStripMenuItem menuFolderMultiCrop;
+        private ToolStripMenuItem menuFolderMultiCropAll;
         private ToolStripMenuItem menuFolderReplaceTransp;
         private ToolStripMenuItem menuFolderReplaceTranspAll;
         // Folder(s) the browser context menu was opened on: null = the pinned
@@ -195,6 +208,33 @@ namespace BooruDatasetTagManager
         }
 
         /// <summary>
+        /// Selects dataset-grid rows whose image path is in <paramref name="paths"/>
+        /// and mirrors into the browser (used after multi-crop / YOLO export).
+        /// </summary>
+        internal void SelectDatasetImagesByPaths(IReadOnlyList<string> paths)
+        {
+            var wanted = new HashSet<string>(
+                paths ?? Array.Empty<string>(),
+                StringComparer.OrdinalIgnoreCase);
+            selectionMode = true;
+            try
+            {
+                foreach (DataGridViewRow row in gridViewDS.Rows)
+                {
+                    bool select = row.Cells["ImageFilePath"].Value is string path && wanted.Contains(path);
+                    if (row.Selected != select)
+                        row.Selected = select;
+                }
+            }
+            finally
+            {
+                selectionMode = false;
+            }
+            datasetBrowserView?.SetSelectedImagePaths(GetGridSelectedPaths());
+            LoadSelectedImageToGrid();
+        }
+
+        /// <summary>
         /// Builds the unified dataset module: one browser (search box +
         /// collapsible folder groups + image rows) filling the pane, the
         /// embedded preview (the former right-pane "Preview" tab) docked
@@ -211,6 +251,7 @@ namespace BooruDatasetTagManager
             datasetBrowserView.ImageActivated += path => ShowPreview(path, true);
             datasetBrowserView.ImageContextRequested += screenPoint => contextMenuStrip1.Show(screenPoint);
             datasetBrowserView.BrowserKeyDown += Browser_KeyDown;
+            datasetBrowserView.FolderRenameRequested += RenameDatasetFolder;
             datasetBrowserView.SetFlatView(Program.Settings.DatasetBrowserFlatView);
             datasetBrowserView.SetSortOrder(Program.Settings.DatasetOrderType);
             datasetBrowserView.FlatViewChanged += Browser_FlatViewChanged;
@@ -229,6 +270,18 @@ namespace BooruDatasetTagManager
             menuFolderTagLlm = new ToolStripMenuItem { Name = "menuFolderTagLlm" };
             menuFolderTagLlm.Click += (_, _) => TagContextFolder(useOnnx: false);
             folderContextMenu.Items.Add(menuFolderTagLlm);
+            menuFolderMultiCrop = new ToolStripMenuItem { Name = "menuFolderMultiCrop" };
+            menuFolderMultiCrop.Click += (_, _) => OpenMultiCropFromFolder();
+            folderContextMenu.Items.Add(menuFolderMultiCrop);
+            menuFolderMultiCropAll = new ToolStripMenuItem { Name = "menuFolderMultiCropAll" };
+            menuFolderMultiCropAll.Click += (_, _) => OpenMultiCropAll();
+            folderContextMenu.Items.Add(menuFolderMultiCropAll);
+            menuFolderPreBucket = new ToolStripMenuItem { Name = "menuFolderPreBucket" };
+            menuFolderPreBucket.Click += (_, _) => OpenPreBucketFromFolder();
+            folderContextMenu.Items.Add(menuFolderPreBucket);
+            menuFolderPreBucketAll = new ToolStripMenuItem { Name = "menuFolderPreBucketAll" };
+            menuFolderPreBucketAll.Click += (_, _) => OpenPreBucketAll();
+            folderContextMenu.Items.Add(menuFolderPreBucketAll);
             folderContextMenu.Items.Add(new ToolStripSeparator());
             // Transparent-background batches are folder-scope actions, so they
             // belong on the folder header menu (the image menu keeps the
@@ -250,6 +303,9 @@ namespace BooruDatasetTagManager
                     && SingleFolderContextKey.Length > 0
                     && SingleFolderContextKey != DatasetFolderIndex.RootFolderKey;
                 menuBatchRenameImages.Enabled = single;
+                menuFolderMultiCrop.Enabled = folderContextKeys is { Count: > 0 };
+                if (menuFolderPreBucket != null)
+                    menuFolderPreBucket.Enabled = folderContextKeys is { Count: > 0 };
                 // On the pinned "All" row there is no folder to scope to, so
                 // only the whole-dataset variant stays available.
                 menuFolderReplaceTransp.Enabled = folderContextKeys is { Count: > 0 };
@@ -345,7 +401,11 @@ namespace BooruDatasetTagManager
         /// </summary>
         private void RenameDatasetFolder()
         {
-            string key = SingleFolderContextKey;
+            RenameDatasetFolder(SingleFolderContextKey);
+        }
+
+        private void RenameDatasetFolder(string key)
+        {
             if (Program.DataManager == null || string.IsNullOrEmpty(key)
                 || key == DatasetFolderIndex.RootFolderKey)
                 return;
@@ -769,6 +829,21 @@ namespace BooruDatasetTagManager
             return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
+        internal List<string> GetVisibleDatasetImagePaths()
+        {
+            var paths = new List<string>();
+            for (int i = 0; i < gridViewDS.RowCount; i++)
+            {
+                if (gridViewDS.Rows[i].Cells["ImageFilePath"].Value is not string path)
+                    continue;
+                string extension = Path.GetExtension(path).ToLowerInvariant();
+                if (Extensions.ImageExtensions.Contains(extension) && !VideoProcessingService.IsVideoFile(path))
+                    paths.Add(path);
+            }
+
+            return paths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
         internal List<string> GetSelectedDatasetImagePaths()
         {
             var paths = new List<string>();
@@ -969,8 +1044,20 @@ namespace BooruDatasetTagManager
 
             menuContextDSEditImage = new ToolStripMenuItem { Name = "menuContextDSEditImage", Text = "Edit image" };
             menuContextDSEditImage.Click += (_, _) => EditSelectedImage();
-            int editImageIndex = contextMenuStrip1.Items.IndexOf(cropImageToolStripMenuItem) + 1;
-            contextMenuStrip1.Items.Insert(editImageIndex, menuContextDSEditImage);
+            menuContextDSBatchCrop = new ToolStripMenuItem { Name = "menuContextDSBatchCrop", Text = "Batch crop" };
+            menuContextDSBatchCrop.Click += (_, _) => OpenBatchCrop();
+            menuContextDSResolutionPrep = new ToolStripMenuItem { Name = "menuContextDSResolutionPrep", Text = "Multi-crop" };
+            menuContextDSResolutionPrep.Click += (_, _) => OpenResolutionPrep(ResolutionPrepSource.Selected, requireSelection: true);
+            menuContextDSYoloDetect = new ToolStripMenuItem { Name = "menuContextDSYoloDetect", Text = "YOLO detect" };
+            menuContextDSYoloDetect.Click += (_, _) => OpenYoloDetect(ResolutionPrepSource.Selected, requireSelection: true);
+            menuContextDSPreBucket = new ToolStripMenuItem { Name = "menuContextDSPreBucket", Text = "Pre-bucket" };
+            menuContextDSPreBucket.Click += (_, _) => OpenPreBucket(ResolutionPrepSource.Selected, requireSelection: true);
+            int cropIndex = contextMenuStrip1.Items.IndexOf(cropImageToolStripMenuItem);
+            contextMenuStrip1.Items.Insert(cropIndex + 1, menuContextDSBatchCrop);
+            contextMenuStrip1.Items.Insert(cropIndex + 2, menuContextDSResolutionPrep);
+            contextMenuStrip1.Items.Insert(cropIndex + 3, menuContextDSYoloDetect);
+            contextMenuStrip1.Items.Insert(cropIndex + 4, menuContextDSPreBucket);
+            contextMenuStrip1.Items.Insert(cropIndex + 5, menuContextDSEditImage);
 
             contextMenuStrip1.Items.Add(menuContextDSRetagOnnx);
             contextMenuStrip1.Items.Add(menuContextDSRetagLlm);
@@ -984,6 +1071,21 @@ namespace BooruDatasetTagManager
             toolsToolStripMenuItem.DropDownItems.Add(menuLlmTagger);
             toolsToolStripMenuItem.DropDownItems.Add(menuSimilarImages);
             toolsToolStripMenuItem.DropDownItems.Add(menuCorruptedImages);
+            menuBatchCrop = new ToolStripMenuItem { Name = "menuBatchCrop" };
+            menuBatchCrop.Click += (_, _) => OpenBatchCrop();
+            toolsToolStripMenuItem.DropDownItems.Add(menuBatchCrop);
+            menuResolutionPrep = new ToolStripMenuItem { Name = "menuResolutionPrep" };
+            menuResolutionPrep.Click += (_, _) => OpenResolutionPrep();
+            toolsToolStripMenuItem.DropDownItems.Add(menuResolutionPrep);
+            menuYoloDetect = new ToolStripMenuItem { Name = "menuYoloDetect" };
+            menuYoloDetect.Click += (_, _) => OpenYoloDetect();
+            toolsToolStripMenuItem.DropDownItems.Add(menuYoloDetect);
+            menuTagFolderClassify = new ToolStripMenuItem { Name = "menuTagFolderClassify" };
+            menuTagFolderClassify.Click += (_, _) => OpenTagFolderClassify();
+            toolsToolStripMenuItem.DropDownItems.Add(menuTagFolderClassify);
+            menuPreBucket = new ToolStripMenuItem { Name = "menuPreBucket" };
+            menuPreBucket.Click += (_, _) => OpenPreBucket();
+            toolsToolStripMenuItem.DropDownItems.Add(menuPreBucket);
 
             int insertIndex = menuStrip1.Items.IndexOf(toolsToolStripMenuItem) + 1;
             if (insertIndex <= 0 || insertIndex > menuStrip1.Items.Count)
@@ -3526,6 +3628,14 @@ namespace BooruDatasetTagManager
             string file = (string)gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value;
             bool isVideo = VideoProcessingService.IsVideoFile(file);
             cropImageToolStripMenuItem.Visible = !isVideo;
+            if (menuContextDSBatchCrop != null)
+                menuContextDSBatchCrop.Visible = !isVideo;
+            if (menuContextDSResolutionPrep != null)
+                menuContextDSResolutionPrep.Visible = !isVideo;
+            if (menuContextDSYoloDetect != null)
+                menuContextDSYoloDetect.Visible = !isVideo;
+            if (menuContextDSPreBucket != null)
+                menuContextDSPreBucket.Visible = !isVideo;
             removeBackgroundToolStripMenuItem.Visible = !isVideo;
             if (menuContextDSEditImage != null)
                 menuContextDSEditImage.Visible = !isVideo;
@@ -4043,8 +4153,8 @@ namespace BooruDatasetTagManager
         // ---- semantic tag categories: light row tints + category sort ----
 
         private ToolStripButton toolStripCategorySortBtn;
-        private readonly Dictionary<string, TagSemanticCategory> tagCategoryCache =
-            new Dictionary<string, TagSemanticCategory>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, TagCategoryPath> tagCategoryCache =
+            new Dictionary<string, TagCategoryPath>(StringComparer.OrdinalIgnoreCase);
 
         private void InitializeTagCategoryUi()
         {
@@ -4087,37 +4197,16 @@ namespace BooruDatasetTagManager
             };
             toolStrip1.Items.Add(toolStripAllTagsCategorySortBtn);
 
-            // All-tags pane: single-category filter (index 0 = every category).
-            toolStripAllTagsCategoryFilter = new ToolStripComboBox
-            {
-                Name = "toolStripAllTagsCategoryFilter",
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                AutoSize = false,
-                Width = LogicalToDeviceUnits(96)
-            };
-            toolStripAllTagsCategoryFilter.SelectedIndexChanged += (_, _) =>
-            {
-                if (!fillingCategoryFilterItems)
-                    ApplyAllTagsCategoryFilter();
-            };
+            // All-tags pane: L1 list + hover L2 flyout + search.
+            toolStripAllTagsCategoryFilter = CreateCategoryFilterButton("toolStripAllTagsCategoryFilter");
+            toolStripAllTagsCategoryFilter.SelectionChanged += (_, _) => ApplyAllTagsCategoryFilter();
             toolStrip1.Items.Add(toolStripAllTagsCategoryFilter);
 
-            // Image-tags pane: same category dropdown, filtering the current
-            // image's rows by visibility (the EditableTagList binding itself
-            // stays untouched — hiding rows cannot desync the text mirror).
-            toolStripImageTagsCategoryFilter = new ToolStripComboBox
-            {
-                Name = "toolStripImageTagsCategoryFilter",
-                Alignment = ToolStripItemAlignment.Right,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                AutoSize = false,
-                Width = LogicalToDeviceUnits(96)
-            };
-            toolStripImageTagsCategoryFilter.SelectedIndexChanged += (_, _) =>
-            {
-                if (!fillingCategoryFilterItems)
-                    ApplyImageTagsCategoryVisibility();
-            };
+            // Image-tags pane: same picker; row visibility only (do not touch
+            // the EditableTagList binding — hiding rows cannot desync the mirror).
+            toolStripImageTagsCategoryFilter = CreateCategoryFilterButton("toolStripImageTagsCategoryFilter");
+            toolStripImageTagsCategoryFilter.Alignment = ToolStripItemAlignment.Right;
+            toolStripImageTagsCategoryFilter.SelectionChanged += (_, _) => ApplyImageTagsCategoryVisibility();
             int categoryIndex = toolStripTagsHeader.Items.IndexOf(toolStripCategorySortBtn);
             toolStripTagsHeader.Items.Insert(
                 categoryIndex >= 0 ? categoryIndex + 1 : toolStripTagsHeader.Items.Count,
@@ -4127,46 +4216,34 @@ namespace BooruDatasetTagManager
             gridViewTags.DataBindingComplete += (_, _) => ApplyImageTagsCategoryVisibility();
         }
 
+        private TagCategoryFilterButton CreateCategoryFilterButton(string name)
+        {
+            var button = new TagCategoryFilterButton(name, Program.GeneralTagCategoryLookup)
+            {
+                AutoSize = false,
+                Width = LogicalToDeviceUnits(160)
+            };
+            button.ApplyLanguage();
+            return button;
+        }
+
         private ToolStripButton toolStripAllTagsCategorySortBtn;
-        private ToolStripComboBox toolStripAllTagsCategoryFilter;
-        private ToolStripComboBox toolStripImageTagsCategoryFilter;
-        private bool fillingCategoryFilterItems;
+        private TagCategoryFilterButton toolStripAllTagsCategoryFilter;
+        private TagCategoryFilterButton toolStripImageTagsCategoryFilter;
         private bool imageTagsCategoryRowsHidden;
-
-        /// <summary>
-        /// (Re)fills a category-filter dropdown with localized names, keeping
-        /// the current selection across language switches.
-        /// </summary>
-        private void FillCategoryFilterItems(ToolStripComboBox combo)
-        {
-            fillingCategoryFilterItems = true;
-            try
-            {
-                int selected = Math.Max(0, combo.SelectedIndex);
-                combo.Items.Clear();
-                combo.Items.Add(I18n.GetText("TagCategoryAll"));
-                foreach (TagSemanticCategory category in Enum.GetValues<TagSemanticCategory>())
-                    combo.Items.Add(I18n.GetText("TagCategory" + category));
-                combo.SelectedIndex = selected < combo.Items.Count ? selected : 0;
-            }
-            finally
-            {
-                fillingCategoryFilterItems = false;
-            }
-        }
-
-        private static TagSemanticCategory? SelectedCategoryOf(ToolStripComboBox combo)
-        {
-            return combo == null || combo.SelectedIndex <= 0
-                ? null
-                : (TagSemanticCategory)(combo.SelectedIndex - 1);
-        }
 
         private void ApplyAllTagsCategoryFilter()
         {
-            TagSemanticCategory? category = SelectedCategoryOf(toolStripAllTagsCategoryFilter);
+            IReadOnlyList<TagCategoryPath> selected =
+                toolStripAllTagsCategoryFilter?.SelectedCategories;
+            if (selected == null || selected.Count == 0)
+            {
+                Program.DataManager?.AllTags.SetCategoryFilter(null);
+                return;
+            }
+            TagCategoryPath[] snapshot = Snapshot(selected);
             Program.DataManager?.AllTags.SetCategoryFilter(
-                category == null ? null : tag => ClassifyTagCached(tag) == category.Value);
+                tag => ClassifyTagCached(tag).MatchesAny(snapshot));
         }
 
         /// <summary>
@@ -4179,26 +4256,36 @@ namespace BooruDatasetTagManager
         {
             if (toolStripImageTagsCategoryFilter == null || gridViewTags.DataSource == null)
                 return;
-            TagSemanticCategory? category = SelectedCategoryOf(toolStripImageTagsCategoryFilter);
-            if (category == null && !imageTagsCategoryRowsHidden)
+            IReadOnlyList<TagCategoryPath> selected = toolStripImageTagsCategoryFilter.SelectedCategories;
+            bool filtering = selected != null && selected.Count > 0;
+            if (!filtering && !imageTagsCategoryRowsHidden)
                 return;
             if (gridViewTags.IsCurrentCellInEditMode)
                 gridViewTags.EndEdit();
             // The row under the currency manager's caret cannot be hidden.
-            if (category != null && gridViewTags.CurrentCell != null)
+            if (filtering && gridViewTags.CurrentCell != null)
                 gridViewTags.CurrentCell = null;
+            TagCategoryPath[] snapshot = filtering ? Snapshot(selected) : Array.Empty<TagCategoryPath>();
             bool anyHidden = false;
             foreach (DataGridViewRow row in gridViewTags.Rows)
             {
                 if (row.IsNewRow)
                     continue;
-                bool visible = category == null
-                    || ClassifyTagCached(GetTagsRowTag(row.Index)) == category.Value;
+                bool visible = !filtering
+                    || ClassifyTagCached(GetTagsRowTag(row.Index)).MatchesAny(snapshot);
                 if (row.Visible != visible)
                     row.Visible = visible;
                 anyHidden |= !visible;
             }
             imageTagsCategoryRowsHidden = anyHidden;
+        }
+
+        private static TagCategoryPath[] Snapshot(IReadOnlyList<TagCategoryPath> selected)
+        {
+            var copy = new TagCategoryPath[selected.Count];
+            for (int i = 0; i < selected.Count; i++)
+                copy[i] = selected[i];
+            return copy;
         }
 
         // ---- tag consistency fixer (测试 → 错误标签修复) -----------------
@@ -4233,7 +4320,7 @@ namespace BooruDatasetTagManager
                 : 0;
             IReadOnlyList<TagConsistencyIssue> issues = TagConsistencyPlanner.Plan(
                 items.Select(item => (item.ImageFilePath, (IReadOnlyList<string>)item.Tags.TextTags)),
-                tag => ClassifyTagCached(tag) == TagSemanticCategory.Character,
+                tag => ClassifyTagCached(tag).L1 == TagCategoryTaxonomy.Character,
                 datasetCounts,
                 Program.CharacterTagLookup == null ? null : Program.CharacterTagLookup.GetParentTag,
                 childThreshold);
@@ -4421,7 +4508,9 @@ namespace BooruDatasetTagManager
         private void ApplyAllTagsCategorySort()
         {
             Program.DataManager?.AllTags.SetCategorySort(
-                Program.Settings.AllTagsCategorySort ? tag => (int)ClassifyTagCached(tag) : null);
+                Program.Settings.AllTagsCategorySort
+                    ? tag => TagCategoryTaxonomy.Rank(ClassifyTagCached(tag).L1)
+                    : null);
         }
 
         /// <summary>
@@ -4442,21 +4531,23 @@ namespace BooruDatasetTagManager
             if (GetTagsDataSourceType() != DataSourceType.Single)
                 return;
             if (gridViewTags.DataSource is EditableTagList eTagList)
-                eTagList.SortByCategory(fixedLengthIndex, tag => (int)ClassifyTagCached(tag));
+                eTagList.SortByCategory(
+                    fixedLengthIndex,
+                    tag => TagCategoryTaxonomy.Rank(ClassifyTagCached(tag).L1));
         }
 
-        private TagSemanticCategory ClassifyTagCached(string tag)
+        private TagCategoryPath ClassifyTagCached(string tag)
         {
             if (string.IsNullOrEmpty(tag))
-                return TagSemanticCategory.General;
-            if (tagCategoryCache.TryGetValue(tag, out TagSemanticCategory cached))
+                return TagCategoryPath.General;
+            if (tagCategoryCache.TryGetValue(tag, out TagCategoryPath cached))
                 return cached;
             int danbooruType = Program.TagsList?.GetTagType(tag) ?? -1;
-            TagSemanticCategory category;
-            if (danbooruType < 0 && Program.CharacterTagLookup?.Contains(tag) == true)
-                category = TagSemanticCategory.Character;
-            else
-                category = TagSemanticClassifier.Classify(tag, danbooruType);
+            TagCategoryPath category = TagCategoryTaxonomy.Classify(
+                tag,
+                danbooruType,
+                Program.GeneralTagCategoryLookup,
+                Program.CharacterTagLookup);
             tagCategoryCache[tag] = category;
             return category;
         }
@@ -4494,7 +4585,8 @@ namespace BooruDatasetTagManager
         {
             if (string.IsNullOrEmpty(tag))
                 return;
-            Color? accent = TagSemanticClassifier.GetAccent(ClassifyTagCached(tag));
+            Color? accent = TagSemanticClassifier.GetAccent(
+                TagCategoryTaxonomy.ToLegacy(ClassifyTagCached(tag).L1));
             if (accent.HasValue)
                 e.CellStyle.BackColor = TagSemanticClassifier.ApplyTint(accent.Value, e.CellStyle.BackColor);
         }
@@ -4579,15 +4671,9 @@ namespace BooruDatasetTagManager
                 toolStripAllTagsCategorySortBtn.ToolTipText = I18n.GetText("TagsSortByCategory");
             }
             if (toolStripAllTagsCategoryFilter != null)
-            {
-                FillCategoryFilterItems(toolStripAllTagsCategoryFilter);
-                toolStripAllTagsCategoryFilter.ToolTipText = I18n.GetText("AllTagsCategoryFilterTip");
-            }
+                toolStripAllTagsCategoryFilter.ApplyLanguage();
             if (toolStripImageTagsCategoryFilter != null)
-            {
-                FillCategoryFilterItems(toolStripImageTagsCategoryFilter);
-                toolStripImageTagsCategoryFilter.ToolTipText = I18n.GetText("AllTagsCategoryFilterTip");
-            }
+                toolStripImageTagsCategoryFilter.ApplyLanguage();
             if (menuRenameFolder != null)
                 menuRenameFolder.Text = I18n.GetText("FolderRenameMenu");
             if (menuBatchRenameImages != null)
@@ -4596,6 +4682,14 @@ namespace BooruDatasetTagManager
                 menuFolderTagOnnx.Text = I18n.GetText("FolderTagOnnxMenu");
             if (menuFolderTagLlm != null)
                 menuFolderTagLlm.Text = I18n.GetText("FolderTagLlmMenu");
+            if (menuFolderMultiCrop != null)
+                menuFolderMultiCrop.Text = I18n.GetText("MenuFolderMultiCrop");
+            if (menuFolderMultiCropAll != null)
+                menuFolderMultiCropAll.Text = I18n.GetText("MenuFolderMultiCropAll");
+            if (menuFolderPreBucket != null)
+                menuFolderPreBucket.Text = I18n.GetText("MenuFolderPreBucket");
+            if (menuFolderPreBucketAll != null)
+                menuFolderPreBucketAll.Text = I18n.GetText("MenuFolderPreBucketAll");
             if (menuFolderReplaceTransp != null)
                 menuFolderReplaceTransp.Text = I18n.GetText("FolderReplaceTranspMenu");
             if (menuFolderReplaceTranspAll != null)
@@ -4634,6 +4728,24 @@ namespace BooruDatasetTagManager
             toolStripMenuItem1.Text = I18n.GetText("MenuContextDSOpenFolder");
             toolStripMenuItem2.Text = I18n.GetText("MenuContextDSDeleteImage");
             cropImageToolStripMenuItem.Text = I18n.GetText("MenuContextDSCropImage");
+            if (menuContextDSBatchCrop != null)
+                menuContextDSBatchCrop.Text = I18n.GetText("MenuContextDSBatchCrop");
+            if (menuBatchCrop != null)
+                menuBatchCrop.Text = I18n.GetText("MenuToolsBatchCrop");
+            if (menuContextDSResolutionPrep != null)
+                menuContextDSResolutionPrep.Text = I18n.GetText("MenuContextDSResolutionPrep");
+            if (menuResolutionPrep != null)
+                menuResolutionPrep.Text = I18n.GetText("MenuToolsResolutionPrep");
+            if (menuContextDSYoloDetect != null)
+                menuContextDSYoloDetect.Text = I18n.GetText("MenuContextDSYoloDetect");
+            if (menuYoloDetect != null)
+                menuYoloDetect.Text = I18n.GetText("MenuToolsYoloDetect");
+            if (menuTagFolderClassify != null)
+                menuTagFolderClassify.Text = I18n.GetText("MenuToolsTagFolderClassify");
+            if (menuContextDSPreBucket != null)
+                menuContextDSPreBucket.Text = I18n.GetText("MenuContextDSPreBucket");
+            if (menuPreBucket != null)
+                menuPreBucket.Text = I18n.GetText("MenuToolsPreBucket");
             if (menuContextDSEditImage != null)
                 menuContextDSEditImage.Text = I18n.GetText("MenuContextDSEditImage");
             if (menuContextDSVideoTools != null)
@@ -5892,6 +6004,277 @@ namespace BooruDatasetTagManager
                 if (added.Count > 0)
                     SetStatus(string.Format(I18n.GetText("CropImageImportedCount"), added.Count));
             }
+        }
+
+        private void OpenBatchCrop()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            List<string> selected = GetSelectedDatasetImagePaths();
+            if (selected.Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TipImgOrTagNotSelect"));
+                return;
+            }
+
+            using Form_BatchCrop form = new Form_BatchCrop(selected, GetVisibleDatasetImagePaths());
+            if (form.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            if (previewPicBox.Image != null)
+                previewPicBox.Image = null;
+
+            foreach (string path in form.OverwrittenPaths)
+            {
+                Program.DataManager.RemoveFromCache(path);
+                if (Program.DataManager.DataSet.TryGetValue(path, out DataItem item))
+                {
+                    Image oldThumb = item.Img;
+                    try
+                    {
+                        item.Img = Extensions.MakeThumb(path, Program.Settings.PreviewSize);
+                    }
+                    catch (Exception)
+                    {
+                        item.Img = null;
+                    }
+                    oldThumb?.Dispose();
+                }
+            }
+
+            if (form.NewFilePaths.Count > 0)
+            {
+                Program.DataManager.AddImages(
+                    form.NewFilePaths,
+                    loadPreviewImages: true,
+                    readMetadata: false);
+            }
+
+            RefreshDatasetGrid();
+            if (form.OverwrittenPaths.Count > 0 && IsPreviewFollowActive && gridViewDS.SelectedRows.Count == 1)
+            {
+                string current = gridViewDS.SelectedRows[0].Cells["ImageFilePath"].Value as string;
+                if (!string.IsNullOrEmpty(current)
+                    && form.OverwrittenPaths.Any(path => string.Equals(path, current, StringComparison.OrdinalIgnoreCase)))
+                {
+                    ShowPreview(current);
+                }
+            }
+            int done = form.OverwrittenPaths.Count + form.NewFilePaths.Count;
+            if (done > 0)
+                SetStatus(string.Format(I18n.GetText("BatchCropDone"), done));
+        }
+
+        private void OpenResolutionPrep(ResolutionPrepSource? source = null, bool requireSelection = false)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            if (requireSelection && GetSelectedDatasetImagePaths().Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TipImgOrTagNotSelect"));
+                return;
+            }
+
+            using Form_ResolutionPrep form = new Form_ResolutionPrep(this, source);
+            if (form.ShowDialog(this) != DialogResult.OK)
+                return;
+            ImportWrittenImages(form.NewFilePaths);
+        }
+
+        private void OpenYoloDetect(ResolutionPrepSource? source = null, bool requireSelection = false)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            if (requireSelection && GetSelectedDatasetImagePaths().Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TipImgOrTagNotSelect"));
+                return;
+            }
+
+            using Form_YoloDetect form = new Form_YoloDetect(this, source);
+            form.ShowDialog(this);
+            ImportWrittenImages(form.NewFilePaths);
+        }
+
+        private void OpenTagFolderClassify()
+        {
+            if (Program.DataManager == null || Program.DataManager.DataSet.Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            using Form_TagFolderClassify form = new Form_TagFolderClassify(this);
+            form.ShowDialog(this);
+        }
+
+        private void OpenPreBucket(ResolutionPrepSource? source = null, bool requireSelection = false)
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            if (requireSelection && GetSelectedDatasetImagePaths().Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TipImgOrTagNotSelect"));
+                return;
+            }
+
+            using Form_PreBucket form = new Form_PreBucket(this, source);
+            if (form.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            string root = Program.DataManager.DatasetRoot;
+            List<string> toImport = form.NewFilePaths
+                .Where(path => !string.IsNullOrEmpty(root) && DatasetFolderIndex.IsUnderRoot(root, path))
+                .ToList();
+            if (form.RemovedSourcePaths.Count > 0)
+                DeleteDatasetMediaFiles(form.RemovedSourcePaths);
+            if (toImport.Count > 0)
+                ImportWrittenImages(toImport);
+            if (form.RemovedSourcePaths.Count > 0)
+            {
+                Program.DataManager.DeleteEmptyFoldersUnderRoot(
+                    PreBucketMath.CollectSourceDirectories(form.RemovedSourcePaths));
+                RefreshDatasetFolderList();
+            }
+
+            if (form.NewFilePaths.Count > 0)
+            {
+                SetStatus(string.Format(
+                    I18n.GetText("PreBucketDone"),
+                    form.NewFilePaths.Count,
+                    form.NewFilePaths
+                        .Select(path => Path.GetDirectoryName(path))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Count()));
+            }
+        }
+
+        private void OpenPreBucketFromFolder()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            List<string> keys = folderContextKeys;
+            Program.DataManager.SetActiveFolders(keys);
+            RefreshDatasetGrid();
+            if (keys is { Count: > 1 })
+                SelectDatasetImagesInFolders(keys);
+            int available = keys is { Count: > 1 }
+                ? GetSelectedDatasetImagePaths().Count
+                : Program.DataManager.GetActiveScopeCount();
+            if (available == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            ResolutionPrepSource source = keys == null
+                ? ResolutionPrepSource.AllImages
+                : keys.Count == 1
+                    ? ResolutionPrepSource.Folder
+                    : ResolutionPrepSource.Selected;
+            OpenPreBucket(source);
+        }
+
+        private void OpenPreBucketAll()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            Program.DataManager.SetActiveFolders(null);
+            RefreshDatasetGrid();
+            if (Program.DataManager.DataSet.Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            OpenPreBucket(ResolutionPrepSource.AllImages);
+        }
+
+        private void OpenMultiCropFromFolder()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            List<string> keys = folderContextKeys;
+            Program.DataManager.SetActiveFolders(keys);
+            RefreshDatasetGrid();
+            if (keys is { Count: > 1 })
+                SelectDatasetImagesInFolders(keys);
+            int available = keys is { Count: > 1 }
+                ? GetSelectedDatasetImagePaths().Count
+                : Program.DataManager.GetActiveScopeCount();
+            if (available == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            ResolutionPrepSource source = keys == null
+                ? ResolutionPrepSource.AllImages
+                : keys.Count == 1
+                    ? ResolutionPrepSource.Folder
+                    : ResolutionPrepSource.Selected;
+            OpenResolutionPrep(source);
+        }
+
+        private void OpenMultiCropAll()
+        {
+            if (Program.DataManager == null)
+            {
+                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                return;
+            }
+
+            Program.DataManager.SetActiveFolders(null);
+            RefreshDatasetGrid();
+            if (Program.DataManager.DataSet.Count == 0)
+            {
+                MessageBox.Show(I18n.GetText("TaggerNoImages"), I18n.GetText("UIError"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            OpenResolutionPrep(ResolutionPrepSource.AllImages);
+        }
+
+        internal void ImportWrittenImages(IReadOnlyList<string> paths)
+        {
+            if (paths == null || paths.Count == 0 || Program.DataManager == null)
+                return;
+
+            Program.DataManager.AddImages(paths, loadPreviewImages: true, readMetadata: false);
+            RefreshDatasetGrid();
+            SetStatus(string.Format(I18n.GetText("ResolutionPrepDone"), paths.Count));
         }
 
         private void EditSelectedImage()

@@ -32,6 +32,8 @@ namespace BooruDatasetTagManager
                 // automation case) works either way.
                 AttachConsole(AttachParentProcess);
                 CliCommands.AiRunner = CliAiCommands.Run;
+                CliCommands.GeneralCategoryCatalog = GeneralTagCategoryCatalog.LoadFromFile(
+                    GetGeneralTagCategoryCatalogPath(AppContext.BaseDirectory));
                 try
                 {
                     Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -63,7 +65,7 @@ namespace BooruDatasetTagManager
 #endif
             Application.SetCompatibleTextRenderingDefault(false);
             AppPath = Application.StartupPath;
-            Settings = new AppSettings(Application.StartupPath);
+            Settings = new AppSettings(AppSettings.ResolveUserSettingsDirectory(Application.StartupPath));
             DebugLog.Enabled = Settings.DebugMode;
             DebugLog.Write("App", $"Started v{Application.ProductVersion}, OS: {Environment.OSVersion}, 64-bit: {Environment.Is64BitProcess}");
             EditableTagListLocker = new SemaphoreSlim(1,1);
@@ -127,6 +129,9 @@ namespace BooruDatasetTagManager
                         CharacterTagLookup = Settings.MatchCharacterTags
                             ? CharacterTagCatalog.LoadFromFile(GetCharacterTagCatalogPath())
                             : null;
+                        GeneralTagCategoryLookup = GeneralTagCategoryCatalog.LoadFromFile(
+                            GetGeneralTagCategoryCatalogPath());
+                        CliCommands.GeneralCategoryCatalog = GeneralTagCategoryLookup;
                     });
                 }
                 catch (Exception ex)
@@ -339,9 +344,21 @@ namespace BooruDatasetTagManager
         // Settings.MatchCharacterTags is off.
         public static CharacterTagCatalog CharacterTagLookup;
 
+        public static GeneralTagCategoryCatalog GeneralTagCategoryLookup = GeneralTagCategoryCatalog.Empty;
+
         public static string GetCharacterTagCatalogPath()
         {
             return Path.Combine(Application.StartupPath, "Data", "danbooru_character_tags.csv");
+        }
+
+        public static string GetGeneralTagCategoryCatalogPath()
+        {
+            return GetGeneralTagCategoryCatalogPath(Application.StartupPath);
+        }
+
+        public static string GetGeneralTagCategoryCatalogPath(string appDir)
+        {
+            return Path.Combine(appDir, "Data", "danbooru_dataset_general.csv");
         }
 
         // In-process RMBG-2.0 background removal (replaces the AiApiServer path).

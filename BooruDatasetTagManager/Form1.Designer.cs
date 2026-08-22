@@ -1635,7 +1635,6 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator8;
         private System.Windows.Forms.ToolStripButton BtnTagFilter;
         private System.Windows.Forms.ToolStripButton BtnTagExitFilter;
-        private System.Windows.Forms.ToolStripButton promptSortButton;
         private System.Windows.Forms.ToolStripMenuItem MenuSetting;
         private System.Windows.Forms.ToolStripMenuItem MenuShowTagCount;
         private CustomTextBoxColumn ImageTags;

@@ -9,14 +9,34 @@ using System.Threading.Tasks;
 
 namespace BooruDatasetTagManager
 {
+    public enum CachedFileState
+    {
+        Missing,
+        Locked,
+        Invalid,
+        Valid
+    }
+
     public sealed class HuggingFaceModelDownloader
     {
         private const long MinOnnxFileBytes = 1024 * 1024;
+        private const int DownloadValidationAttempts = 8;
+        private const int DownloadValidationDelayMilliseconds = 200;
 
-        private static readonly HttpClient SharedClient = new HttpClient
+        private static readonly HttpClient SharedClient = CreateSharedClient();
+
+        private static HttpClient CreateSharedClient()
         {
-            Timeout = TimeSpan.FromHours(6)
-        };
+            var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromHours(6)
+            };
+            // HuggingFace (and some mirrors) reject or HTML-intercept
+            // requests that omit a User-Agent. Other downloaders in this
+            // app already send one; the model client used to not.
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("BooruDatasetTagManagerPlus");
+            return client;
+        }
 
         // Same-target downloads must not share one mutable .partial file.
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> DownloadGates =
@@ -92,17 +112,22 @@ namespace BooruDatasetTagManager
 
         public static bool ValidateCachedFile(string path, string filename)
         {
+            return GetCachedFileState(path, filename) == CachedFileState.Valid;
+        }
+
+        public static CachedFileState GetCachedFileState(string path, string filename)
+        {
             try
             {
                 if (!File.Exists(path))
-                    return false;
+                    return CachedFileState.Missing;
 
                 var info = new FileInfo(path);
                 if (info.Length == 0)
-                    return false;
+                    return CachedFileState.Invalid;
 
                 if (LooksLikeHtml(path))
-                    return false;
+                    return CachedFileState.Invalid;
 
                 // Repos can nest files in subfolders (e.g. "v2_01a/model.onnx"),
                 // so match validation rules on the file name only.
@@ -112,26 +137,32 @@ namespace BooruDatasetTagManager
                     // External-data exports (cl_tagger_v2: 773KB graph +
                     // 2.2GB model.onnx.data) are legitimately under the 1MB
                     // floor — accept an ONNX protobuf header as an alternative.
-                    return info.Length >= MinOnnxFileBytes || LooksLikeOnnxProtobuf(path);
+                    return info.Length >= MinOnnxFileBytes || LooksLikeOnnxProtobuf(path)
+                        ? CachedFileState.Valid
+                        : CachedFileState.Invalid;
                 }
 
                 if (string.Equals(name, "selected_tags.csv", StringComparison.OrdinalIgnoreCase))
                 {
                     // Header alone must not count as ready: a header-only CSV
                     // loads as zero labels and tagging silently returns nothing.
-                    return HasCsvHeaderAndDataRow(path);
+                    return HasCsvHeaderAndDataRow(path)
+                        ? CachedFileState.Valid
+                        : CachedFileState.Invalid;
                 }
 
-                return info.Length > 0;
+                return info.Length > 0 ? CachedFileState.Valid : CachedFileState.Invalid;
             }
             catch (IOException)
             {
-                // File is locked (e.g. still being written); treat as not ready instead of crashing.
-                return false;
+                // Defender / indexer often exclusive-locks a just-written ONNX
+                // for a moment. That is not corruption — callers must retry,
+                // not delete the download.
+                return CachedFileState.Locked;
             }
             catch (UnauthorizedAccessException)
             {
-                return false;
+                return CachedFileState.Locked;
             }
         }
 
@@ -144,8 +175,8 @@ namespace BooruDatasetTagManager
         public void DeleteCachedFile(string repo, string filename)
         {
             string path = GetLocalPath(repo, filename);
-            if (File.Exists(path))
-                File.Delete(path);
+            TryDelete(path);
+            TryDelete(path + ".partial");
         }
 
         public Task<string> DownloadFileAsync(
@@ -316,8 +347,26 @@ namespace BooruDatasetTagManager
 
         private void EnsureValidDownloadedFile(string repo, string filename, string localPath)
         {
-            if (ValidateCachedFile(localPath, filename))
-                return;
+            CachedFileState state = CachedFileState.Missing;
+            for (int attempt = 0; attempt < DownloadValidationAttempts; attempt++)
+            {
+                state = GetCachedFileState(localPath, filename);
+                if (state == CachedFileState.Valid)
+                    return;
+
+                if (state != CachedFileState.Locked)
+                    break;
+
+                if (attempt < DownloadValidationAttempts - 1)
+                    Thread.Sleep(DownloadValidationDelayMilliseconds);
+            }
+
+            if (state == CachedFileState.Locked)
+            {
+                // A locked file is still on disk. Deleting it is how a completed
+                // ONNX download used to vanish the instant Defender scanned it.
+                throw new IOException(I18n.GetText("TaggerModelFileInUse"));
+            }
 
             DeleteCachedFile(repo, filename);
             throw new InvalidOperationException(I18n.GetText("TaggerModelCorrupt"));

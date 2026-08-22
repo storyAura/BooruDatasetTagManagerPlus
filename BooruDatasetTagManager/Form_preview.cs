@@ -29,6 +29,7 @@ namespace BooruDatasetTagManager
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             pictureBox1.Dock = DockStyle.Fill;
             pictureBox1.SizeMode = PictureBoxSizeMode.Normal;
+            pictureBox1.Image = null;
             pictureBox1.Paint += Canvas_Paint;
             pictureBox1.MouseDown += Canvas_MouseDown;
             pictureBox1.MouseMove += Canvas_MouseMove;
@@ -36,6 +37,7 @@ namespace BooruDatasetTagManager
             pictureBox1.MouseDoubleClick += Canvas_MouseDoubleClick;
             MouseWheel += Form_preview_MouseWheel;
             Resize += (_, _) => OnViewportChanged();
+            FormClosed += Form_preview_FormClosed;
         }
 
         /// <summary>
@@ -203,15 +205,20 @@ namespace BooruDatasetTagManager
 
         private void Form_preview_VisibleChanged(object sender, EventArgs e)
         {
-            if (!Visible && image != null)
-            {
-                // Detach before disposing so a later show can never paint a
-                // disposed image.
-                Image old = image;
-                image = null;
-                old.Dispose();
-                pictureBox1.Invalidate();
-            }
+            // Owned floating previews are hidden while a modal dialog is open
+            // (ShowDialog hides owned windows). Do not dispose the bitmap on
+            // hide — restoring the owner would then PictureBox.Animate a
+            // disposed image ("Parameter is not valid").
+            if (!Visible)
+                pictureBox1.Image = null;
+        }
+
+        private void Form_preview_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            pictureBox1.Image = null;
+            Image old = image;
+            image = null;
+            old?.Dispose();
         }
 
         protected override bool ProcessDialogKey(Keys keyData)

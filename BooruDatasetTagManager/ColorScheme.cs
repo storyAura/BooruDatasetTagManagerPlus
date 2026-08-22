@@ -230,13 +230,10 @@ namespace UmaMusumeDBBrowser
             {
                 itemCollection[i].ForeColor = scheme.ToolStripStyle.ForeColor;
                 itemCollection[i].BackColor = scheme.ToolStripStyle.BackColor;
-                if (!(itemCollection[i] is ToolStripSeparator))
+                if (itemCollection[i] is ToolStripDropDownItem dropDownItem
+                    && dropDownItem.DropDownItems.Count > 0)
                 {
-                    var drItems = ((ToolStripDropDownItem)itemCollection[i]).DropDownItems;
-                    if (drItems.Count > 0)
-                    {
-                        ChangeColorOnToolStripItemsCollection(drItems, scheme);
-                    }
+                    ChangeColorOnToolStripItemsCollection(dropDownItem.DropDownItems, scheme);
                 }
             }
         }

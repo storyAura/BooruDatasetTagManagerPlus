@@ -15,6 +15,7 @@ namespace BooruDatasetTagManager
         public ChineseTranslator() : base(TranslationService.ChineseTranslate)
         {
             client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(15);
         }
 
         public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)

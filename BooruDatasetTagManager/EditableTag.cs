@@ -35,6 +35,11 @@ namespace BooruDatasetTagManager
                 else
                     return false;
             }
+
+            public override int GetHashCode()
+            {
+                return HashCode.Combine(id, tag, weight, order);
+            }
         }
 
         private EditableTagList parent;

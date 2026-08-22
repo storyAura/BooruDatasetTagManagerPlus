@@ -141,6 +141,8 @@ public class ChineseTagLookupTests
         var lookup = ChineseTagLookupService.LoadFromFile(csvPath, fixTags: true);
 
         Assert.Equal("\u7ea2\u8272\u4e3b\u9898", lookup.GetChineseNameForEnglishTag("red theme", "zh-CN"));
+        Assert.Equal("\u7ea2\u8272\u4e3b\u9898", lookup.GetChineseNameForEnglishTag("red_theme", "zh-CN"));
+        Assert.Equal("\u7ea2\u8272\u4e3b\u9898", lookup.GetChineseNameForEnglishTag("red theme", "zh-TW"));
         Assert.Equal(string.Empty, lookup.GetChineseNameForEnglishTag("red theme", "en-US"));
     }
 

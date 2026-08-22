@@ -97,6 +97,7 @@ public class AiServerSetMigrationAndDocumentationTests
         Assert.Contains("docs/images/onnx-tagger.png", readme);
         Assert.Contains("docs/images/character-tag-audit-review.png", readme);
         Assert.Contains("docs/images/crop-image-multi-region.png", readme);
+        Assert.Contains("docs/images/tag-category-filter.png", readme);
     }
 
     private static string FindRepoRoot()

@@ -72,10 +72,19 @@ namespace BooruDatasetTagManager
 
         public Task TranslateAllAsync()
         {
-            return TranslateAllAsync(Program.TransManager.TranslateAsync);
+            return TranslateAllAsync(
+                Program.TransManager.TranslateAsync,
+                Program.TransManager.TryGetLocalTranslation);
         }
 
         public Task TranslateAllAsync(Func<string, Task<string>> translateAsync)
+        {
+            return TranslateAllAsync(translateAsync, tryGetLocalTranslation: null);
+        }
+
+        public Task TranslateAllAsync(
+            Func<string, Task<string>> translateAsync,
+            Func<string, string> tryGetLocalTranslation)
         {
             if (translateAsync == null)
                 throw new ArgumentNullException(nameof(translateAsync));
@@ -85,12 +94,14 @@ namespace BooruDatasetTagManager
                 if (!translationTask.IsCompleted)
                     return translationTask;
 
-                translationTask = TranslatePendingAsync(translateAsync);
+                translationTask = TranslatePendingAsync(translateAsync, tryGetLocalTranslation);
                 return translationTask;
             }
         }
 
-        private async Task TranslatePendingAsync(Func<string, Task<string>> translateAsync)
+        private async Task TranslatePendingAsync(
+            Func<string, Task<string>> translateAsync,
+            Func<string, string> tryGetLocalTranslation)
         {
             while (true)
             {
@@ -102,15 +113,48 @@ namespace BooruDatasetTagManager
                 if (pending.Count == 0)
                     return;
 
-                // Translate on the thread pool: with the old inline loop every
-                // per-tag await hopped back to the UI thread, so a folder-scope
-                // rebuild with translation enabled stuttered the whole window.
-                // (TranslationManager is internally locked, so a background
-                // worker is safe.)
+                var remaining = pending;
+                if (tryGetLocalTranslation != null)
+                {
+                    var localHits = new List<(AllTagsItem Item, string Tag, string Result)>();
+                    remaining = new List<KeyValuePair<AllTagsItem, string>>();
+                    foreach (var entry in pending)
+                    {
+                        string local = null;
+                        if (!string.IsNullOrEmpty(entry.Value))
+                        {
+                            try
+                            {
+                                local = tryGetLocalTranslation(entry.Value);
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        if (!string.IsNullOrEmpty(local))
+                            localHits.Add((entry.Key, entry.Value, local));
+                        else
+                            remaining.Add(entry);
+                    }
+
+                    // Paint dictionary / cache hits immediately so the
+                    // translation column is not blank while leftovers wait
+                    // on network translators.
+                    ApplyTranslationResults(localHits);
+                    if (remaining.Count == 0)
+                        continue;
+                }
+
+                // Translate leftovers on the thread pool: with the old inline
+                // loop every per-tag await hopped back to the UI thread, so a
+                // folder-scope rebuild with translation enabled stuttered the
+                // whole window. (TranslationManager is internally locked, so
+                // a background worker is safe.)
                 var results = await Task.Run(async () =>
                 {
-                    var translated = new List<(AllTagsItem Item, string Tag, string Result)>(pending.Count);
-                    foreach (var entry in pending)
+                    var translated = new List<(AllTagsItem Item, string Tag, string Result)>(remaining.Count);
+                    foreach (var entry in remaining)
                     {
                         string result = string.Empty;
                         if (!string.IsNullOrEmpty(entry.Value))
@@ -129,28 +173,34 @@ namespace BooruDatasetTagManager
                     return translated;
                 });
 
-                // Back on the caller (UI) context: apply the whole batch with a
-                // single reset instead of per-item ItemChanged + O(n) IndexOf
-                // (that combination made the apply phase quadratic).
-                bool applied = false;
-                foreach ((AllTagsItem item, string tag, string result) in results)
+                ApplyTranslationResults(results);
+            }
+        }
+
+        private void ApplyTranslationResults(List<(AllTagsItem Item, string Tag, string Result)> results)
+        {
+            if (results == null || results.Count == 0)
+                return;
+
+            bool applied = false;
+            foreach ((AllTagsItem item, string tag, string result) in results)
+            {
+                if (tagIndex.TryGetValue(tag, out var current)
+                    && ReferenceEquals(current, item)
+                    && current.Tag == tag)
                 {
-                    if (tagIndex.TryGetValue(tag, out var current)
-                        && ReferenceEquals(current, item)
-                        && current.Tag == tag)
-                    {
-                        current.SetTranslation(result);
-                        applied = true;
-                    }
-                }
-                if (applied)
-                {
-                    if (batchUpdateDepth > 0)
-                        batchDirty = true;
-                    else
-                        OnListChanged(resetEvent);
+                    current.SetTranslation(result);
+                    applied = true;
                 }
             }
+
+            if (!applied)
+                return;
+
+            if (batchUpdateDepth > 0)
+                batchDirty = true;
+            else
+                OnListChanged(resetEvent);
         }
 
         public IDisposable BeginBatchUpdate()

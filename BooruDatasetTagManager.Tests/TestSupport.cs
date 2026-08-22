@@ -33,6 +33,7 @@ namespace BooruDatasetTagManager
         public static TranslationManager TransManager { get; set; }
         public static ChineseTagLookupService ChineseTagLookup { get; set; } = ChineseTagLookupService.Empty;
         public static CharacterTagCatalog CharacterTagLookup { get; set; }
+        public static GeneralTagCategoryCatalog GeneralTagCategoryLookup { get; set; } = GeneralTagCategoryCatalog.Empty;
     }
 
     public sealed class AppSettingsStub
@@ -44,6 +45,7 @@ namespace BooruDatasetTagManager
         public int PreviewSize { get; set; }
         public bool CacheOpenImages { get; set; }
         public bool UseDanbooruZhCsvBeforeTranslation { get; set; }
+        public string Language { get; set; }
         public string FfmpegPath { get; set; } = string.Empty;
         public HotkeyDataStub Hotkeys { get; } = new HotkeyDataStub();
 

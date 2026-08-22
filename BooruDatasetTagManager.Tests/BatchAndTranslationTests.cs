@@ -88,6 +88,48 @@ public class BatchAndTranslationTests
     }
 
     [Fact]
+    public async Task AllTagsAppliesLocalTranslationsBeforeWaitingForOnline()
+    {
+        var tags = new AllTagsList();
+        tags.AddTag("long hair");
+        tags.AddTag("unknown rare tag");
+        var release = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var translating = tags.TranslateAllAsync(
+            tag => tag == "unknown rare tag" ? release.Task : Task.FromResult("online"),
+            tag => tag == "long hair" ? "长发" : null);
+
+        Assert.Equal("长发", tags.Cast<AllTagsItem>().Single(x => x.Tag == "long hair").Translation);
+        Assert.True(string.IsNullOrEmpty(tags.Cast<AllTagsItem>().Single(x => x.Tag == "unknown rare tag").Translation));
+        Assert.False(translating.IsCompleted);
+
+        release.SetResult("稀有");
+        await translating;
+
+        Assert.Equal("稀有", tags.Cast<AllTagsItem>().Single(x => x.Tag == "unknown rare tag").Translation);
+    }
+
+    [Fact]
+    public async Task EditableTagsApplyLocalTranslationsBeforeWaitingForOnline()
+    {
+        var tags = new EditableTagList(new[] { "long hair", "unknown rare tag" });
+        var release = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var translating = tags.TranslateAllAsync(
+            tag => tag == "unknown rare tag" ? release.Task : Task.FromResult("online"),
+            tag => tag == "long hair" ? "长发" : null);
+
+        Assert.Equal("长发", tags[0].Translation);
+        Assert.True(string.IsNullOrEmpty(tags[1].Translation));
+        Assert.False(translating.IsCompleted);
+
+        release.SetResult("稀有");
+        await translating;
+
+        Assert.Equal("稀有", tags[1].Translation);
+    }
+
+    [Fact]
     public async Task TranslationManagerCoalescesConcurrentRequests()
     {
         using var temp = new TemporaryDirectory();

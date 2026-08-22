@@ -66,13 +66,24 @@
     <Compile Include="..\BooruDatasetTagManager\CharacterTagReasonLocalizer.cs" Link="Source\CharacterTagReasonLocalizer.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagFileTransaction.cs" Link="Source\CharacterTagFileTransaction.cs" />
     <Compile Include="..\BooruDatasetTagManager\CropRegion.cs" Link="Source\CropRegion.cs" />
+    <Compile Include="..\BooruDatasetTagManager\BatchCropMath.cs" Link="Source\BatchCropMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\BatchCropService.cs" Link="Source\BatchCropService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ResolutionPrepMath.cs" Link="Source\ResolutionPrepMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\ResolutionPrepService.cs" Link="Source\ResolutionPrepService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\PreBucketMath.cs" Link="Source\PreBucketMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\PreBucketService.cs" Link="Source\PreBucketService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\YoloDetectionMath.cs" Link="Source\YoloDetectionMath.cs" />
+    <Compile Include="..\BooruDatasetTagManager\YoloDetectorCatalog.cs" Link="Source\YoloDetectorCatalog.cs" />
+    <Compile Include="..\BooruDatasetTagManager\YoloPersonDetectorService.cs" Link="Source\YoloPersonDetectorService.cs" />
     <Compile Include="..\BooruDatasetTagManager\CropCanvasHelper.cs" Link="Source\CropCanvasHelper.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageCropExporter.cs" Link="Source\ImageCropExporter.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageEditorCanvasMath.cs" Link="Source\ImageEditorCanvasMath.cs" />
     <Compile Include="..\BooruDatasetTagManager\PreviewCanvasMath.cs" Link="Source\PreviewCanvasMath.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagSemanticClassifier.cs" Link="Source\TagSemanticClassifier.cs" />
+    <Compile Include="..\BooruDatasetTagManager\GeneralTagCategoryCatalog.cs" Link="Source\GeneralTagCategoryCatalog.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagCatalog.cs" Link="Source\CharacterTagCatalog.cs" />
     <Compile Include="..\BooruDatasetTagManager\BatchRenamePlanner.cs" Link="Source\BatchRenamePlanner.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagFolderClassifyPlanner.cs" Link="Source\TagFolderClassifyPlanner.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageEditorDocument.cs" Link="Source\ImageEditorDocument.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageEditorSaveService.cs" Link="Source\ImageEditorSaveService.cs" />
     <Compile Include="..\BooruDatasetTagManager\AutoTagProvider.cs" Link="Source\AutoTagProvider.cs" />
@@ -80,6 +91,7 @@
     <Compile Include="..\BooruDatasetTagManager\VideoProcessingService.cs" Link="Source\VideoProcessingService.cs" />
     <Compile Include="..\BooruDatasetTagManager\OnnxTaggerCatalog.cs" Link="Source\OnnxTaggerCatalog.cs" />
     <Compile Include="..\BooruDatasetTagManager\HuggingFaceModelDownloader.cs" Link="Source\HuggingFaceModelDownloader.cs" />
+    <Compile Include="..\BooruDatasetTagManager\OnnxModelIntegrity.cs" Link="Source\OnnxModelIntegrity.cs" />
     <Compile Include="..\BooruDatasetTagManager\OnnxTaggerProgressTracker.cs" Link="Source\OnnxTaggerProgressTracker.cs" />
     <Compile Include="..\BooruDatasetTagManager\Wd14OnnxTaggerService.cs" Link="Source\Wd14OnnxTaggerService.cs" />
     <Compile Include="..\BooruDatasetTagManager\PixAiOnnxTaggerService.cs" Link="Source\PixAiOnnxTaggerService.cs" />

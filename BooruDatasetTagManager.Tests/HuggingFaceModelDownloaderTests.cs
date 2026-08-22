@@ -93,6 +93,66 @@ public sealed class HuggingFaceModelDownloaderTests
         }
     }
 
+    [Fact]
+    public void GetCachedFileState_treats_exclusive_lock_as_locked_not_invalid()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "bdtm-dl-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string path = Path.Combine(dir, "model.onnx");
+            var bytes = new byte[2 * 1024 * 1024];
+            bytes[0] = 0x08;
+            File.WriteAllBytes(path, bytes);
+
+            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Assert.Equal(
+                    CachedFileState.Locked,
+                    HuggingFaceModelDownloader.GetCachedFileState(path, "model.onnx"));
+                Assert.False(HuggingFaceModelDownloader.ValidateCachedFile(path, "model.onnx"));
+                Assert.True(File.Exists(path));
+            }
+
+            Assert.Equal(
+                CachedFileState.Valid,
+                HuggingFaceModelDownloader.GetCachedFileState(path, "model.onnx"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void DeleteCachedFile_also_removes_partial_sidecar()
+    {
+        string previous = Program.AppPath;
+        string root = Path.Combine(Path.GetTempPath(), "bdtm-dl-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        Program.AppPath = root;
+        try
+        {
+            var downloader = new HuggingFaceModelDownloader();
+            string path = HuggingFaceModelDownloader.GetLocalPath("org/repo", "model.onnx");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, new byte[] { 0x08, 1, 2, 3 });
+            File.WriteAllBytes(path + ".partial", new byte[] { 0x08, 9, 9 });
+
+            downloader.DeleteCachedFile("org/repo", "model.onnx");
+
+            Assert.False(File.Exists(path));
+            Assert.False(File.Exists(path + ".partial"));
+        }
+        finally
+        {
+            Program.AppPath = previous;
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
+    }
+
     [Theory]
     [InlineData("https://huggingface.co/org/repo/resolve/main/model.onnx", true)]
     [InlineData("https://cdn-lfs.huggingface.co/some/blob", true)]

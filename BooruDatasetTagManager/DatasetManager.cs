@@ -79,6 +79,12 @@ namespace BooruDatasetTagManager
         public List<string> LastSaveErrors { get; } = new List<string>();
 
         /// <summary>
+        /// Per-file failures from the most recent <see cref="MoveImagesToFolders"/>.
+        /// Successful items are remapped even when this list is non-empty.
+        /// </summary>
+        public List<string> LastMoveErrors { get; } = new List<string>();
+
+        /// <summary>
         /// Per-directory/per-file failures from the most recent
         /// <see cref="LoadFromFolder"/>. Failed items are skipped; the rest of
         /// the dataset still loads.
@@ -587,6 +593,223 @@ namespace BooruDatasetTagManager
         {
             string directory = Path.GetDirectoryName(path) ?? string.Empty;
             return Path.Combine(directory, "~bdtmren" + index + "_" + Path.GetFileName(path));
+        }
+
+        /// <summary>
+        /// Moves images (and their caption sidecars) into dest folders under
+        /// <see cref="DatasetRoot"/> and remaps in-memory paths. Every target
+        /// is validated before anything moves. Returns the number of images
+        /// moved; per-file failures go to <see cref="LastMoveErrors"/>. Empty
+        /// leftover source folders (never the dataset root) are deleted.
+        /// </summary>
+        public int MoveImagesToFolders(IReadOnlyList<TagFolderMove> moves)
+        {
+            if (moves == null)
+                throw new ArgumentNullException(nameof(moves));
+            LastMoveErrors.Clear();
+            if (string.IsNullOrEmpty(DatasetRoot))
+                throw new InvalidOperationException("No dataset root.");
+
+            string[] tagExts = Program.Settings.GetTagFilesExtensions();
+            var plan = new List<(DataItem Item, string OldImage, string NewImage, string OldText, string NewText, string OldDir)>();
+            var destImages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (TagFolderMove move in moves)
+            {
+                if (move == null || string.IsNullOrWhiteSpace(move.SourcePath))
+                    continue;
+                if (!DataSet.TryGetValue(move.SourcePath, out DataItem item))
+                    continue;
+                string destFolder = DatasetFolderIndex.NormalizeRelative(move.DestRelativeFolder);
+                if (destFolder.Length == 0
+                    || destFolder == DatasetFolderIndex.RootFolderKey
+                    || destFolder.IndexOf('/') >= 0
+                    || !DatasetFolderIndex.IsSafeRelativeFolder(destFolder)
+                    || destFolder.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                {
+                    throw new ArgumentException("Invalid destination folder: " + move.DestRelativeFolder);
+                }
+                string destName = Path.GetFileName(move.DestFileName ?? string.Empty);
+                if (destName.Length == 0 || destName == "." || destName == ".."
+                    || destName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                {
+                    throw new ArgumentException("Invalid destination file name: " + move.DestFileName);
+                }
+                string destDir = Path.GetFullPath(Path.Combine(DatasetRoot, destFolder));
+                string newImage = Path.GetFullPath(Path.Combine(destDir, destName));
+                if (!DatasetFolderIndex.IsUnderRoot(DatasetRoot, destDir)
+                    || !DatasetFolderIndex.IsUnderRoot(DatasetRoot, newImage))
+                {
+                    throw new ArgumentException("Destination escapes the dataset root.", nameof(moves));
+                }
+                if (string.Equals(newImage, item.ImageFilePath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!destImages.Add(newImage))
+                    throw new ArgumentException("Duplicate destination: " + destName);
+                string oldText = ImageEditorSaveService.FindExistingCaptionPath(item.ImageFilePath, tagExts);
+                if (string.IsNullOrEmpty(oldText) && !string.IsNullOrEmpty(item.TextFilePath) && File.Exists(item.TextFilePath))
+                    oldText = item.TextFilePath;
+                string newText = oldText == null
+                    ? null
+                    : Path.Combine(destDir, Path.GetFileNameWithoutExtension(destName) + Path.GetExtension(oldText));
+                string oldDir = Path.GetDirectoryName(item.ImageFilePath) ?? string.Empty;
+                plan.Add((item, item.ImageFilePath, newImage, oldText, newText, oldDir));
+            }
+            if (plan.Count == 0)
+                return 0;
+
+            foreach ((DataItem _, string oldImage, string newImage, string oldText, string newText, string _) in plan)
+            {
+                if (File.Exists(newImage) || Directory.Exists(newImage))
+                    throw new ArgumentException("Target already exists: " + Path.GetFileName(newImage));
+                if (newText != null && !string.Equals(oldText, newText, StringComparison.OrdinalIgnoreCase)
+                    && (File.Exists(newText) || Directory.Exists(newText)))
+                {
+                    throw new ArgumentException("Target already exists: " + Path.GetFileName(newText));
+                }
+                if (!File.Exists(oldImage))
+                    throw new FileNotFoundException(oldImage);
+            }
+
+            bool structureWasClean = ComputeStructureSignature() == originalStructureSignature;
+            var destDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach ((DataItem _, string _, string newImage, string _, string _, string _) in plan)
+                destDirs.Add(Path.GetDirectoryName(newImage));
+            foreach (string destDir in destDirs)
+                Directory.CreateDirectory(destDir);
+
+            var succeeded = new List<(DataItem Item, string OldImage, string NewImage, string NewText, string OldDir)>();
+            var emptiedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach ((DataItem item, string oldImage, string newImage, string oldText, string newText, string oldDir) in plan)
+            {
+                bool imageMoved = false;
+                try
+                {
+                    File.Move(oldImage, newImage);
+                    imageMoved = true;
+                    if (oldText != null)
+                        File.Move(oldText, newText);
+                }
+                catch (Exception ex)
+                {
+                    if (imageMoved)
+                    {
+                        try { File.Move(newImage, oldImage); } catch { }
+                    }
+                    LastMoveErrors.Add(Path.GetFileName(oldImage) + ": " + ex.Message);
+                    continue;
+                }
+                succeeded.Add((item, oldImage, newImage, newText, oldDir));
+                emptiedDirs.Add(oldDir);
+            }
+
+            foreach ((DataItem _, string oldImage, string _, string _, string _) in succeeded)
+            {
+                DataSet.TryRemove(oldImage, out _);
+                imagesCache.Remove(oldImage);
+            }
+            foreach ((DataItem item, string _, string newImage, string newText, string _) in succeeded)
+            {
+                item.ImageFilePath = newImage;
+                item.ImageFilePathHash = newImage.GetHashCode();
+                item.Name = Path.GetFileNameWithoutExtension(newImage);
+                if (newText != null)
+                {
+                    item.TextFilePath = newText;
+                }
+                else if (!string.IsNullOrEmpty(item.TextFilePath))
+                {
+                    item.TextFilePath = Path.Combine(
+                        Path.GetDirectoryName(newImage) ?? string.Empty,
+                        Path.GetFileNameWithoutExtension(newImage) + Path.GetExtension(item.TextFilePath));
+                }
+                item.Tags.OwnerImagePath = newImage;
+                DataSet[newImage] = item;
+            }
+
+            DeleteEmptyFoldersUnderRoot(emptiedDirs);
+            PruneMissingActiveFolders();
+            if (succeeded.Count > 0)
+                RebuildAllTagsForScope();
+
+            if (structureWasClean)
+                originalStructureSignature = ComputeStructureSignature();
+            return succeeded.Count;
+        }
+
+        /// <summary>
+        /// Deletes now-empty directories walking up toward
+        /// <see cref="DatasetRoot"/>, then drops vanished folders from the
+        /// active scope. Never deletes the dataset root itself.
+        /// </summary>
+        public void DeleteEmptyFoldersUnderRoot(IEnumerable<string> startDirs)
+        {
+            if (string.IsNullOrWhiteSpace(DatasetRoot) || startDirs == null)
+                return;
+
+            foreach (string dir in startDirs
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                TryDeleteEmptyParents(dir, DatasetRoot);
+            }
+
+            PruneMissingActiveFolders();
+        }
+
+        private void PruneMissingActiveFolders()
+        {
+            if (activeFolders.Count == 0)
+                return;
+            var remaining = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (DatasetFolderEntry entry in GetFolderEntries())
+            {
+                string key = DatasetFolderIndex.NormalizeRelative(entry.RelativePath);
+                remaining.Add(key.Length == 0 ? DatasetFolderIndex.RootFolderKey : key);
+            }
+            var still = activeFolders
+                .Where(folder =>
+                {
+                    string key = DatasetFolderIndex.NormalizeRelative(folder);
+                    if (key.Length == 0)
+                        key = DatasetFolderIndex.RootFolderKey;
+                    return remaining.Contains(key);
+                })
+                .ToList();
+            if (still.Count == 0)
+                SetActiveFolders(null);
+            else if (still.Count != activeFolders.Count)
+                SetActiveFolders(still);
+        }
+
+        private static void TryDeleteEmptyParents(string startDir, string root)
+        {
+            if (string.IsNullOrWhiteSpace(startDir) || string.IsNullOrWhiteSpace(root))
+                return;
+            string current = Path.GetFullPath(startDir)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedRoot = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            while (!string.IsNullOrEmpty(current)
+                && !string.Equals(current, normalizedRoot, StringComparison.OrdinalIgnoreCase)
+                && DatasetFolderIndex.IsUnderRoot(root, current)
+                && Directory.Exists(current))
+            {
+                try
+                {
+                    if (Directory.EnumerateFileSystemEntries(current).Any())
+                        break;
+                    Directory.Delete(current);
+                }
+                catch
+                {
+                    break;
+                }
+                current = Path.GetDirectoryName(current);
+                if (string.IsNullOrEmpty(current))
+                    break;
+                current = Path.GetFullPath(current)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
         }
 
         private void RebuildAllTagsForScope()

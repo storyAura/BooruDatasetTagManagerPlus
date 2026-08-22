@@ -647,10 +647,19 @@ namespace BooruDatasetTagManager
 
         public Task TranslateAllAsync()
         {
-            return TranslateAllAsync(Program.TransManager.TranslateAsync);
+            return TranslateAllAsync(
+                Program.TransManager.TranslateAsync,
+                Program.TransManager.TryGetLocalTranslation);
         }
 
         public Task TranslateAllAsync(Func<string, Task<string>> translateAsync)
+        {
+            return TranslateAllAsync(translateAsync, tryGetLocalTranslation: null);
+        }
+
+        public Task TranslateAllAsync(
+            Func<string, Task<string>> translateAsync,
+            Func<string, string> tryGetLocalTranslation)
         {
             if (translateAsync == null)
                 throw new ArgumentNullException(nameof(translateAsync));
@@ -660,12 +669,14 @@ namespace BooruDatasetTagManager
                 if (!translationTask.IsCompleted)
                     return translationTask;
 
-                translationTask = TranslatePendingAsync(translateAsync);
+                translationTask = TranslatePendingAsync(translateAsync, tryGetLocalTranslation);
                 return translationTask;
             }
         }
 
-        private async Task TranslatePendingAsync(Func<string, Task<string>> translateAsync)
+        private async Task TranslatePendingAsync(
+            Func<string, Task<string>> translateAsync,
+            Func<string, string> tryGetLocalTranslation)
         {
             bool previousStoreHistory = isStoreHistory;
             var attempted = new HashSet<(EditableTag Item, string Tag)>();
@@ -683,7 +694,36 @@ namespace BooruDatasetTagManager
                     if (pending.Count == 0)
                         return;
 
-                    foreach (var entry in pending)
+                    var remaining = pending;
+                    if (tryGetLocalTranslation != null)
+                    {
+                        remaining = new List<(EditableTag Item, string Tag)>();
+                        foreach (var entry in pending)
+                        {
+                            string local = null;
+                            try
+                            {
+                                local = tryGetLocalTranslation(entry.Tag);
+                            }
+                            catch
+                            {
+                            }
+
+                            if (!string.IsNullOrEmpty(local)
+                                && entry.Item.Parent == this
+                                && entry.Item.Tag == entry.Tag
+                                && List.Contains(entry.Item))
+                            {
+                                entry.Item.Translation = local;
+                            }
+                            else if (string.IsNullOrEmpty(local))
+                            {
+                                remaining.Add(entry);
+                            }
+                        }
+                    }
+
+                    foreach (var entry in remaining)
                     {
                         string result;
                         try

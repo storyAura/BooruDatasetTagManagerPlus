@@ -23,7 +23,7 @@ namespace BooruDatasetTagManager
             Program.ColorManager.ChangeColorScheme(this, Program.ColorManager.SelectedScheme);
             Program.ColorManager.ChangeColorSchemeInConteiner(Controls, Program.ColorManager.SelectedScheme);
             Program.ColorManager.SchemeChanded += ColorManager_SchemeChanded;
-            Program.Settings.TranslationLanguage ??= "en-US";
+            Program.Settings.TranslationLanguage ??= "zh-CN";
             textBoxOpenApiEndpoint.AutoCompleteSource = AutoCompleteSource.CustomSource;
             SettingFrame.Tabs.Remove(tabInterrogator);
         }
@@ -36,6 +36,7 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.Label labelAllTagsDoubleClick;
         private System.Windows.Forms.ComboBox comboBoxAllTagsDoubleClick;
         private System.Windows.Forms.CheckBox checkBoxDebugMode;
+        private System.Windows.Forms.Label labelSettingsPath;
 
         // Double-click quick action of the All Tags grid; lives on the General
         // tab below the auto-sort checkbox. Positions derive from the already
@@ -69,6 +70,15 @@ namespace BooruDatasetTagManager
                 Name = "checkBoxDebugMode"
             };
             tabGeneral.Controls.Add(checkBoxDebugMode);
+            labelSettingsPath = new System.Windows.Forms.Label
+            {
+                AutoSize = true,
+                MaximumSize = new System.Drawing.Size(tabGeneral.ClientSize.Width - LabelAutocompMode.Left * 2, 0),
+                Location = new System.Drawing.Point(LabelAutocompMode.Left,
+                    checkBoxDebugMode.Bottom + comboAutocompMode.Height / 2),
+                Name = "labelSettingsPath"
+            };
+            tabGeneral.Controls.Add(labelSettingsPath);
         }
 
         // Default save behavior of the image editor; lives on the UI tab below
@@ -414,6 +424,10 @@ namespace BooruDatasetTagManager
             checkBoxFixOnLoad.Text = I18n.GetText("SettingFixTagLoad");
             AutoSortCheckBox.Text = I18n.GetText("SettingAutoSortCheck");
             checkBoxDebugMode.Text = I18n.GetText("SettingDebugMode");
+            string settingsPath = Program.Settings.SettingsFilePath;
+            labelSettingsPath.Text = string.IsNullOrEmpty(settingsPath)
+                ? I18n.GetText("SettingSettingsPathUnknown")
+                : string.Format(I18n.GetText("SettingSettingsPath"), settingsPath);
             BtnSave.Text = I18n.GetText("SettingBtnSave");
             BtnCancel.Text = I18n.GetText("SettingBtnCancel");
             BtnCheckUpdate.Text = I18n.GetText("SettingBtnCheckUpdate");
@@ -460,7 +474,6 @@ namespace BooruDatasetTagManager
 
             Program.Settings.Hotkeys.ChangeLanguage();
         }
-        bool isControlKeyPressed = false;
         Dictionary<string, HotkeyItem> tempHotkeys = new Dictionary<string, HotkeyItem>();
         private void dataGridView1_KeyDown(object sender, KeyEventArgs e)
         {

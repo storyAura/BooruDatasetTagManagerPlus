@@ -1,23 +1,26 @@
-# BooruDatasetTagManager+ 1.2.4
+# BooruDatasetTagManager+ 1.2.5
 
 [简体中文](README.md) | [Português do Brasil](docs/pt-BR/README_pt_BR.md)
 
-Windows tool for LoRA and character dataset tagging, forked from **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**. It keeps the original "load a folder → edit the matching `.txt`" workflow and adds LLM tagging (Tags / Natural-language modes), character tag audit, local ONNX tagging, and a Chinese tag workflow. **Default UI language is Simplified Chinese (zh-CN).** Licensed under the [MIT License](LICENSE).
+A Windows tagger for LoRA and character datasets, forked from **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**.
+
+Each image has a matching `.txt` file for its tags — load a folder and edit them. You can also auto-tag with an LLM or local ONNX, run a character audit, and search tags in Chinese. The UI defaults to Simplified Chinese. [MIT License](LICENSE).
 
 ![Main window](docs/images/main-window-dataset-browser.png)
 
 ## Changelog
 
-- **1.2.4** (current) — Fixed: multi-character audit dropdown not advancing after Apply, WD14 ONNX channel-order wrong-color tags, save failures on very long filenames (atomic temp name too long), LLM tagging confirmation when selecting more than 200 images; the tag fixer's rare-child fold is off by default (opt-in checkbox in the Test module, per-row preview checks); ONNX tagging sorts by confidence instead of CSV alphabetical order; tagging/saving captions for filenames that end with `_` no longer errors. New: random percentage frame extraction (distributed or regional, default 10%); dataset sort by type (jpg / png / video, …). [Release notes](docs/RELEASE_NOTES_v1.2.4.md)
-- **1.2.3** — New: corrupted image scanner (Tools menu; keep/delete review wall), current-folder / all-images batch runs for transparent background replacement (folder context menu). Fixed: replacing a transparent background on WebP files failed with an out-of-memory error (now ImageSharp decode + extension-keyed encode), tag filter "click NOT, get OR" (explicit AND/OR/NOT/XOR dropdown), re-filters immediately when picking another tag, re-clicking the active mode cancels the filter. Security/I/O hardening: DPAPI encrypt failure no longer persists plaintext keys, LLM image GDI leak, folder-rename path traversal, model-download races, update-asset filename sanitization, local classifier for audit delete gating, Caption/ffmpeg/theme atomic writes, and more. [Release notes](docs/RELEASE_NOTES_v1.2.3.md)
-- **1.2.2** — New: similar image finder (group-based duplicate cleanup), multi-character tag audit (up to 4), tag-pane category filters, dataset flat view, tag consistency fixer, full headless CLI, Reload current dataset (F5). Fixed: the "Skipping existing tag lists" mode no longer silently discards results and burns LLM credits (P0), the Ctrl+Z undo crash cascade, no-dataset null-reference crashes, stale tags after switching folders, and more. [Release notes](docs/RELEASE_NOTES_v1.2.2.md)
-- **1.2.1** — second audit-fix wave: memory and data-safety hardening, faster first load, accessibility and i18n completion; legacy Python backend removed (old configs migrate automatically); dataset browser root-group scoping and multi-folder unions; dual-audit checkpoints; opt-in debug mode; fixes for the floating preview covering dialogs, tag-list desynchronization, high-DPI clipping and more. [Release notes](docs/RELEASE_NOTES_v1.2.1.md)
-- **1.2.0** — dataset panel rebuilt: folder-group browser with an embedded multi-image preview; semantic tag colors and category sort; danbooru character-catalog matching (colors + translated names); audit-driven release and data-safety hardening. [Release notes](docs/RELEASE_NOTES_v1.2.0.md)
-- **1.1.3** — file-I/O and data-safety hardening (fixes the 8 risks confirmed by an internal audit: failed saves keep edits, transactional deletion, safe concurrent writes, …); adds the image editor, CL-family ONNX models, Chinese-dictionary tag search, and the All Tags double-click quick action. [Release notes](docs/RELEASE_NOTES_v1.1.3.md)
-- **1.1.2** — unified LLM tagging window (Tags / Natural-language modes); in-process background removal (RMBG-1.4); crash backstop, atomic writes, encrypted keys, and other robustness/security hardening. [Release notes](docs/RELEASE_NOTES_v1.1.2.md)
-- **1.1.1** — faster character-tag-audit save; unified Crop image dialog. [Release notes](docs/RELEASE_NOTES_v1.1.1.md)
-- **1.1** — full WD14 catalog, per-model thresholds, PixAI fix. [Release notes](docs/RELEASE_NOTES_v1.1.md)
-- **1.0.5** — unified ONNX tagger, video tools. [Release notes](docs/RELEASE_NOTES_v1.0.5.md)
+- **1.2.5** (current) — New: batch crop, multi-crop, YOLO detect, pre-bucket, two-level category filter, classify images into folders by tag; settings now live in Documents. Fixed: ONNX download deleting a locked model, translation hanging. [Release notes](docs/RELEASE_NOTES_v1.2.5.md)
+- **1.2.4** — Fixed WD14 wrong-color tags, saves on very long filenames, and the multi-character audit dropdown; ONNX results sort by confidence; random-percentage frame extraction; sort the dataset by file type. [Release notes](docs/RELEASE_NOTES_v1.2.4.md)
+- **1.2.3** — Corrupted-image scanner; folder / all-images batch transparent-background fill; fixed tag filter “click NOT, get OR”; key and path hardening. [Release notes](docs/RELEASE_NOTES_v1.2.3.md)
+- **1.2.2** — Similar-image finder, multi-character audit (up to 4), category filters, flat view, tag consistency fixer, CLI, F5 reload; fixed “skip existing tags” burning LLM credits. [Release notes](docs/RELEASE_NOTES_v1.2.2.md)
+- **1.2.1** — Removed the Python backend; multi-folder browser scope; retry only the failed audit character; faster first load and safety hardening. [Release notes](docs/RELEASE_NOTES_v1.2.1.md)
+- **1.2.0** — Folder-group browser with embedded preview; category tints and sort; bundled danbooru character catalog. [Release notes](docs/RELEASE_NOTES_v1.2.0.md)
+- **1.1.3** — Image editor, CL-family ONNX, Chinese-dictionary search; failed saves no longer drop edits. [Release notes](docs/RELEASE_NOTES_v1.1.3.md)
+- **1.1.2** — Unified LLM tagging window; in-process RMBG background removal; crash backstop and encrypted keys. [Release notes](docs/RELEASE_NOTES_v1.1.2.md)
+- **1.1.1** — Faster character-audit save; unified crop-image dialog. [Release notes](docs/RELEASE_NOTES_v1.1.1.md)
+- **1.1** — Full WD14 catalog, per-model thresholds, PixAI fix. [Release notes](docs/RELEASE_NOTES_v1.1.md)
+- **1.0.5** — Unified ONNX tagger, video tools. [Release notes](docs/RELEASE_NOTES_v1.0.5.md)
 
 ## Getting started
 
@@ -26,7 +29,7 @@ Download `BooruDatasetTagManagerPlus-*-win-x64.zip` from [Releases](https://gith
 1. **File → Load Folder**; *Load Folder (Custom Options)…* can additionally skip thumbnails (faster for large datasets) or read initial tags from image metadata (handy for fresh generations without `.txt` files yet); *Reload current dataset* (F5) refreshes the loaded folder from disk at any time
 2. Edit tags directly: the All Tags and Image Tags search boxes understand the Chinese dictionary (typing 头发 finds long hair, black hair, …); double-clicking an All Tags row runs a quick action (opens "Replace all" by default, configurable in Settings); open the Danbooru Wiki for unfamiliar tags
 3. Before using any LLM feature, configure your OpenAI-compatible endpoint and models in **LLM Settings**
-4. Run **Tools → LLM tagging / ONNX tagger / Remove background / Replace transparent background / video tools / Find similar images / Scan corrupted images**, or **Test → Open character tag audit** (the character tag audit and the tag consistency fixer both live there), as needed
+4. Run **Tools → LLM tagging / ONNX tagger / Remove background / Replace transparent background / video tools / Find similar images / Scan corrupted images / Batch crop / Multi-crop / YOLO detect / Pre-bucket / Classify into folders by tag**, or **Test → Open character tag audit** (the character tag audit and the tag consistency fixer both live there), as needed
 5. Automation scripts can drive the very same exe from the command line: `BooruDatasetTagManagerPlus.exe help` lists every verb (stats / bulk tag edits / export / fix-tags / onnx-tag / audit)
 
 ### Build from source
@@ -40,26 +43,17 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 - `test_start.bat` — launch Release (or Debug)
 - `quick_build.bat` — quick local build to `dist/` (downloads FFmpeg on first build)
 
-Running locally creates **Models/** (downloaded ONNX weights), **Cache/**, and **settings.json** (API keys and preferences) beside the executable. All are locally generated and safe to delete — settings reset to defaults, and models can be re-downloaded from inside the app.
+Running locally creates **Models/** (downloaded ONNX weights) and **Cache/** beside the executable. **settings.json** (API keys and preferences) lives in `Documents\BooruDatasetTagManagerPlus` so Debug / Release / dist copies share one config; a missing Documents file is copied from beside the exe, and if Documents already has an empty config while the exe-adjacent file still has a recognizable API (endpoint / keys / site profiles), only those API fields are merged in. All are locally generated and safe to delete — settings reset to defaults, and models can be re-downloaded from inside the app.
 
 ## Features
 
-| Module | Description |
+| Group | Includes |
 | --- | --- |
-| **Dataset browser** | Folder-group browser (search, collapse, rename / batch rename, per-folder quick tagging); flat view; sort by type / name / date; embedded preview (multi-select tiles); inline format·pixels·size |
-| **Tag semantics** | 18-category light tints, category sort and category filter dropdowns; built-in danbooru character catalog (exact matching + "name (franchise)" translations + parent relations) |
-| **LLM tagging** | Tags / Tags→Natural-language modes; OpenAI-compatible endpoint; prompt templates; LLM concurrency 1–100 |
-| **Character tag audit** | Trigger word + reference image + dataset inventory; two-stage AI review; single / multi-character (up to 4); transactional save |
-| **ONNX tagger** | Local WD14 catalog + PixAI + CL family; per-model threshold memory; HuggingFace download |
-| **Background removal** | Built-in RMBG-1.4 ONNX, fully local — no external service; transparent or solid background |
-| **Transparent background replacement** | Fill transparent areas with a solid color, a random color, or a random pick from your color list; a pre-scan keeps only PNG / WebP files that really carry transparency; Tools menu runs on the selection, the folder context menu adds that-folder / all-images batches; WebP and friends read/write through ImageSharp |
-| **Image editor** | Brush / eraser / eyedropper / crop / rotate & flip with Photoshop-style shortcuts; separate multi-region crop dialog |
-| **Similar image finder** | czkawka-style perceptual-hash duplicate search (4 similarity levels); grouped keep/delete review; keep one per group; transactional deletion |
-| **Corrupted image scanner** | Decode failures / empty / missing files on a review wall; keep/delete; transactional deletion |
-| **Tag consistency fixer** | Subject-count conflicts / solo on multi-subject images / character parent-child duplicates cleaned in one pass; rare-child fold off by default (opt-in in Test); per-row preview checks + undo |
-| **Video tools** | Format conversion; all frames / by FPS / specific frames / random percentage extraction (distributed or regional); bundled FFmpeg |
-| **Tag editing** | Chinese-dictionary search, All Tags double-click quick action, multi-select review (Shift+T), filter the dataset by tags (explicit AND / OR / NOT / XOR dropdown), Danbooru Wiki |
-| **Headless CLI** | The same exe, windowless: stats / bulk tag edits / export / fix-tags / ONNX tagging / LLM audit for automation |
+| **Tagging** | LLM (tags / captions) · local ONNX (WD14 / PixAI / CL) · character audit (up to 4) |
+| **Tags** | Chinese search, category tints and L1/L2 filter, consistency fixer, filter images by tag |
+| **Images** | Editor, batch crop, multi-crop (incl. YOLO), pre-bucket, background removal / fill |
+| **Cleanup** | Folder browser + preview, classify into folders by tag, bucket-by-resolution, similar images, corrupted-file scan, video convert / frames |
+| **CLI** | Same exe: stats, bulk edits, export, ONNX, audit |
 
 ## Feature guide
 
@@ -68,10 +62,14 @@ Running locally creates **Models/** (downloaded ONNX weights), **Cache/**, and *
 The dataset panel is one unified browser: the search box filters folders and file names together; kohya repeat folders render as collapsible groups (multi-folder datasets open fully collapsed; expand-all / collapse-all, flat-view and sort buttons sit next to the search box; flat view ignores the folder groups and renders the current scope + filter as one list), and clicking a folder header scopes the dataset to it (All Tags counts, bulk operations and the audit wizard follow); image rows show the thumbnail, the name and `format · pixels · size`, with file-manager-style selection (Ctrl / Shift / Ctrl+A / arrows / context menu / Delete).
 
 - **Sort**: the button next to the search box orders by name, type, or modification date. Type groups by extension (jpg / jpeg together; png, webp, mp4, webm, … each their own group — images and videos use the same rule), then by name within the group; the choice is remembered
-- **Folder right-click**: rename the folder (disk + in-memory remap, unsaved edits survive); batch rename images (prefix + numeric / letters / original name + suffix, live preview, `.txt` follows); tag the folder with ONNX / LLM
+- **Folder right-click**: rename the folder (disk + in-memory remap, unsaved edits survive); **F2** or **double-click** a group header also renames; batch rename images (prefix + numeric / letters / original name + suffix, live preview, `.txt` follows); tag the folder with ONNX / LLM
 - **Embedded preview**: collapsible panel under the browser (View → Show preview, state persisted); multi-select tiles the first four images, double-click a cell to open it in the floating viewer; the floating window supports cursor-anchored zoom, drag pan, double-click fit ↔ 100 %, Ctrl+0 / Ctrl+1
-- **Tag colors & category sort**: both tag panes tint rows across 18 semantic categories (character / copyright / hair / eyes / clothing …); the image-tags toolbar's *Category sort* is a sticky toggle: while checked, every newly selected image is grouped by category automatically (honoring "don't sort first N rows"), and the state persists; the All Tags category sort is opt-in (off by default); both toolbars also carry a **category filter** dropdown: pick one semantic category (hair / clothing / …) to show only its tags — stacking with search and count filters — and "All categories" restores everything
-- **Character catalog**: ~330 k danbooru character tags ship in `Data/danbooru_character_tags.csv` (including ~26 k real parent/child relations) for exact character coloring, "name (franchise)" translations and the tag fixer's family grouping; can be disabled in Settings → Translation
+- **Tag colors & category sort**: both tag panes tint and group by the **primary** category (hair / clothing / character …); the image-tags toolbar's *Category sort* is a sticky toggle: while checked, every newly selected image is grouped by primary automatically (honoring "don't sort first N rows"), and the state persists; the All Tags category sort is opt-in (off by default)
+- **Category filter**: each pane has a two-column menu. Tick a primary on the left to filter that whole group; hover lists its secondaries on the right. Multi-select and search by category name. Stacks with text and count filters
+- **General-tag catalog**: ~100 k danbooru general tags in `Data/danbooru_dataset_general.csv` with L1/L2 categories, loaded at startup; `long_hair` and `long hair` both match. Unknown tags land in General
+- **Character catalog**: ~330 k danbooru character tags ship in `Data/danbooru_character_tags.csv` (including ~26 k real parent/child relations) for exact character coloring, "name (franchise)" translations and the tag fixer's family grouping; can be disabled in Settings → Translation. The general CSV has no character names — the Character bucket still comes from this table / the Danbooru type column
+
+![Tag category filter](docs/images/tag-category-filter.png)
 
 ### LLM tagging
 
@@ -100,6 +98,7 @@ Entry: **Tools → ONNX tagger…**, or right-click **Retag with ONNX** on selec
 ![ONNX tagger](docs/images/onnx-tagger.png)
 
 - Models: full WD14 catalog (12 models) + PixAI 0.9 + CL family (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); thresholds and settings remembered per model; download from HuggingFace official or mirror
+- After download the app checks the model; a file briefly locked by antivirus/indexer is retried and kept, not treated as corrupt and deleted. Missing native runtime and other environment errors also leave a finished download in place
 - cl_tagger_v2 is a **gated repo** whose author license forbids redistribution and bundling — the app does not ship it; a license notice shows before download, and you must request access on HuggingFace and enter your own access token (stored DPAPI-encrypted), or place manually downloaded files into the `Models` folder
 - Write mode (replace / append / skip existing), optional sort, underscore→space, prefix/suffix tags; progress bar for batch runs; the "Skipping existing tag lists" mode skips already-tagged images before inference and reports written / skipped counts on completion
 
@@ -130,8 +129,30 @@ Entry: dataset context menu → **Edit image**. Photoshop-style layout: compact 
 - Photoshop-consistent shortcuts: **B** brush, **E** eraser, **I** eyedropper, **C** crop, **H** hand (or hold **Space**), `[`/`]` brush size, **Alt+click** samples a color, cursor-anchored wheel zoom, **Ctrl+0** fit, **Ctrl+1** 100%, **Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y** undo/redo (one stroke = one step, up to 15), **Enter** apply crop, **Ctrl+S** save
 - Save **overwrites the original** (atomic write — a failed save cannot corrupt the file) or writes an **`_edit` copy** (caption file cloned and imported into the dataset); the default action is configurable under Settings → UI
 - There is also a dataset context menu **Crop image** dialog: draw multiple regions at once, export `_r1/_r2…` to the source folder, auto-import into the dataset
+- **Batch crop**: dataset context menu or **Tools → Batch crop**; draw a free rectangle on a reference image (lock 1:1 / 2:3 / 16:9 / … or enter a custom ratio) and apply that same pixel crop to every image of that resolution; overwrite in place or save `_crop` copies (tag files are cloned)
 
 ![Multi-region crop](docs/images/crop-image-multi-region.png)
+
+### Multi-crop tool
+
+Entry: dataset context menu, folder-header context menu, or **Tools → Multi-crop…**. You do not have to click an image first: the source can be **selected images**, **current folder**, or **all images**. Downscale large images to training gears, or cut them to a chosen ratio, keeping high-frequency detail where possible. **Originals are never overwritten**; each ticked gear writes a new file, clones the caption, and imports it into the dataset.
+
+- **Scale only**: keep the original aspect and shrink the long edge to each ticked gear
+- **Center-crop to ratio**: take the largest centered 1:1 / 2:3 / 16:9 / … rectangle, then downscale
+- **Split into tiles**: lay gear-sized windows on the source pixels (last row/column flush to the edge); downscale only when a tile is still larger than the gear
+- **Random-position crop**: N crops per image (default 1, max 32); the aspect rectangle is placed uniformly in the remaining slide range, then downscaled
+- **YOLO detect crop**: pick a deepghs anime detector from the dropdown — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; default v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, not gated, standard YOLOv8 ONNX. Each box is expanded to the chosen ratio then geared; images with no hit are skipped. You can also import your own YOLOv8 ONNX; download source is shared with the ONNX tagger (HuggingFace / hf-mirror)
+- Default gears 512 / 768 / 896 / 1024 / 1280 / 1536, multi-select, plus custom values 64–8192 (snapped down to a multiple of 64); Lanczos downscale with no upscaling; images already smaller than a gear are skipped
+- Also **Tools → YOLO detect…**: a separate window draws boxes, lets you keep/drop them, optionally ONNX-tags the kept crops, then exports; the same model dropdown, download source and *Download model* button live there
+
+### Pre-bucket
+
+Entry: dataset context menu, folder-header context menu, or **Tools → Pre-bucket…**. Set resolution / min·max side / step, then **letterbox** each image with white borders onto that exact size and write it into a `{width}x{height}` folder under the current dataset. Captions are cloned. After writing, the source images and any emptied source folders are removed.
+
+- **Why**: each resolution bucket is batched on its own, so many leftover-heavy buckets can push actual steps well above the theoretical figure. Snapping images onto fewer fixed sizes makes the trainer use the count you chose
+- **Bucket settings**: resolution (default 1536×1536), min / max side, and step (usually 64). *Do not upscale (pad only)* is on by default — small images get white borders only
+- **Target count**: type a number, or tap 4 / 8 / 12 / 16 / All. All keeps every aspect-assigned bucket; N merges neighboring ratios down to N folders
+- **Step estimate**: repeats / batch / epochs produce a **theoretical** count and the **actual** count after bucketing
 
 ### Video tools
 
@@ -144,6 +165,15 @@ Entry: dataset context menu → **Edit image**. Photoshop-style layout: compact 
 Select multiple images and press **Shift+T**: a left tag list (with occurrence counts, sorted by frequency) switches the reviewed tag; **green border = has the tag, red = missing** — click Y/N on a thumbnail to toggle; edits across multiple tags apply in one Save.
 
 ![Multi-select tag editor](docs/images/multi-select-tag-editor.png)
+
+### Classify into folders by tag
+
+Entry: **Tools → Classify into folders by tag…**. Tick tags, confirm, and images that have **every** selected tag are **moved** into one folder under the dataset root — `.txt` / `.caption` files follow.
+
+- **Rules**: an image must have all ticked tags to move; anything missing one stays put
+- **Folder name**: type one, or leave it blank for `Mix`. A name that already exists becomes `Mix_2`, then `Mix_3`
+- **Scope**: all images or the current folder. The tag list is searchable; the preview shows how many images will move
+- **Rename**: after the folder appears, **F2** or **double-click** a group header (or right-click rename) to turn it into a kohya-style `10_miku`
 
 ### Similar image finder
 
@@ -172,7 +202,7 @@ Entry: the **Test** menu window (the same one hosting the character tag audit), 
 
 `BooruDatasetTagManagerPlus.exe` itself is a command-line tool: a known first argument runs windowless (redirectable output; exit codes 0/1/2 = ok / error / usage), anything else starts the GUI as usual. `help` shows the full usage:
 
-- **Dataset operations**: `stats`; `list-images` / `list-tags` / `classify-tags` queries (filter by tags, semantic category, count); `add-tags` / `remove-tags` / `replace-tag` bulk edits (conditional targeting, `--dry-run`); `export` to JSON
+- **Dataset operations**: `stats`; `list-images` / `list-tags` / `classify-tags` queries (filter by tags, L1/L2 category, count; `--category` accepts `头发` or `Hair`, or `头发/发色` for a secondary); `add-tags` / `remove-tags` / `replace-tag` bulk edits (conditional targeting, `--dry-run`); `export` to JSON
 - **`fix-tags`**: the consistency fixer's CLI twin — `--child-threshold` sets the trust threshold (default 0 = off), `--catalog` points at a custom relations CSV
 - **`onnx-models` / `onnx-tag`**: local ONNX tagging — list / auto-download models (`--hf-token` for gated repos), thresholds and write modes with GUI-equal semantics, "skip existing" filters before inference
 - **`audit`**: the LLM character tag audit — reuses the API configuration and audit prompts saved in the GUI, runs the two-stage review, writes back transactionally; `--report` emits a JSON report, `--dry-run` shows decisions only
@@ -181,7 +211,8 @@ Entry: the **Test** menu window (the same one hosting the character tag audit), 
 ### Data & privacy
 
 - **LLM tagging and the character tag audit send images to your configured endpoint**; ONNX tagging, background removal, and video tools run entirely on your machine
-- Settings (including DPAPI-encrypted API keys) live in the local `settings.json`; tag saves are atomic, batch image tools write to a temp file and only swap it in on success, and deletion is staged so a mid-way failure restores the files. Note: video conversion with "replace original" checked deletes the source video after a successful conversion
+- **Settings file** `settings.json` (UI preferences + LLM/API, keys DPAPI-encrypted) is written to `Documents\BooruDatasetTagManagerPlus`; Settings → General shows the path. Debug / Release / `dist` copies share that file; a missing Documents file is copied from beside the exe (including `.bak`); if Documents already exists without API config but the exe-adjacent file still has a recognizable endpoint or keys, only those API fields are merged in. The old file is left in place. A different PC still needs keys re-entered
+- Tag saves are atomic, batch image tools write to a temp file and only swap it in on success, and deletion is staged so a mid-way failure restores the files. Note: video conversion with "replace original" checked deletes the source video after a successful conversion
 - **Debug mode** (Settings → General, off by default) shows a Debug menu and writes runtime info and exceptions to `debug.log` next to the executable (the menu can open it directly) — handy to attach when reporting issues
 
 ## Acknowledgments & license

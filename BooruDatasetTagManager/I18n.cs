@@ -86,7 +86,7 @@ namespace BooruDatasetTagManager
                 }
                 return result;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return key;
             }

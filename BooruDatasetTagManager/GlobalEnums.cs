@@ -131,4 +131,28 @@ namespace BooruDatasetTagManager
         Single,
         Multi
     }
+
+    /// <summary>
+    /// How the resolution-prep window turns each source image into training-sized outputs.
+    /// Internal type name stays ResolutionPrep* so we do not churn settings and tests.
+    /// </summary>
+    public enum ResolutionPrepMode
+    {
+        ScaleOnly,
+        CenterCrop,
+        SplitTiles,
+        RandomCrop,
+        YoloPerson
+    }
+
+    /// <summary>
+    /// Which dataset images the multi-crop / YOLO windows read.
+    /// Same three choices as the ONNX tagger.
+    /// </summary>
+    public enum ResolutionPrepSource
+    {
+        Selected,
+        Folder,
+        AllImages
+    }
 }

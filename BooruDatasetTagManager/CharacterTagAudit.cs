@@ -181,6 +181,7 @@ namespace BooruDatasetTagManager
                 TagSemanticCategory.Expression => CharacterTagCategory.Expression,
                 TagSemanticCategory.Clothing => CharacterTagCategory.Clothing,
                 TagSemanticCategory.Accessory => CharacterTagCategory.WearableAccessory,
+                TagSemanticCategory.Cosplay => CharacterTagCategory.Other,
                 TagSemanticCategory.Object or TagSemanticCategory.Animal
                     or TagSemanticCategory.Food => CharacterTagCategory.Object,
                 TagSemanticCategory.Action => CharacterTagCategory.Action,

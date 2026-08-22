@@ -171,29 +171,38 @@ namespace BooruDatasetTagManager
             try
             {
                 // Loading labels + session is the integrity check: a corrupt
-                // JSON or truncated ONNX throws here. Purge the whole model so
-                // the next attempt re-downloads clean files.
-                labels = LoadLabels(labelsPath, model.Preprocess);
-                loadedModelPath = modelPath;
-                try
+                // JSON or truncated ONNX throws here. Purge only genuine parse
+                // failures — a just-downloaded file locked by Defender is not
+                // corrupt, and neither is a missing native runtime.
+                OnnxModelIntegrity.RunWithTransientLockRetry(() =>
                 {
-                    session = CreateSession(modelPath);
-                }
-                catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
-                {
-                    // A DirectML session can fail for device/driver reasons that
-                    // say nothing about the file on disk: retry on CPU before
-                    // the outer handler declares the model corrupt and purges
-                    // the cached download.
-                    session = CreateSession(modelPath, forceCpu: true);
-                }
-                (inputName, outputName) = Wd14OnnxTaggerService.ResolveSessionMetadata(session);
+                    labels = LoadLabels(labelsPath, model.Preprocess);
+                    loadedModelPath = modelPath;
+                    try
+                    {
+                        session = CreateSession(modelPath);
+                    }
+                    catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
+                    {
+                        // A DirectML session can fail for device/driver reasons that
+                        // say nothing about the file on disk: retry on CPU before
+                        // the outer handler declares the model corrupt and purges
+                        // the cached download.
+                        session = CreateSession(modelPath, forceCpu: true);
+                    }
+                    (inputName, outputName) = Wd14OnnxTaggerService.ResolveSessionMetadata(session);
+                });
             }
-            catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
+            catch (Exception ex) when (ex is not FileNotFoundException)
             {
                 Unload();
-                ClearModelCache(model);
-                throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+                if (OnnxModelIntegrity.ShouldClearCachedModel(ex))
+                {
+                    ClearModelCache(model);
+                    throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+                }
+
+                throw;
             }
             loadedModel = model;
         }

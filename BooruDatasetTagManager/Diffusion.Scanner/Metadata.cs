@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿#nullable enable annotations
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Directory = MetadataExtractor.Directory;
@@ -212,7 +213,7 @@ public class Metadata
                                                         fileParameters = ReadRuinedFooocusParameters(tag.Description);
                                                         format = MetaFormat.RuinedFooocus;
                                                     }
-                                                    catch (Exception e)
+                                                    catch (Exception)
                                                     {
                                                         fileParameters = ReadA111Parameters(tag.Description);
                                                         format = MetaFormat.A1111;
@@ -450,7 +451,7 @@ public class Metadata
                             fileParameters = ReadAutomatic1111Parameters(file, directories);
                         }
                     }
-                    catch (Exception e)
+                    catch (Exception)
                     {
                         //Logger.Log($"An error occurred while reading {file}: {e.Message}\r\n\r\n{e.StackTrace}");
                     }
@@ -466,7 +467,7 @@ public class Metadata
                     {
                         fileParameters = ReadAutomatic1111Parameters(file, directories);
                     }
-                    catch (Exception e)
+                    catch (Exception)
                     {
                         //Logger.Log($"An error occurred while reading {file}: {e.Message}\r\n\r\n{e.StackTrace}");
                     }
@@ -503,7 +504,7 @@ public class Metadata
                 }
 
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 //Logger.Log($"An error occurred while reading {file}: {e.Message}\r\n\r\n{e.StackTrace}");
             }
@@ -626,19 +627,6 @@ public class Metadata
             }
 
             return null;
-        }
-
-        float GetFloatTag(string key)
-        {
-            if (TryFindTag(directories, "PNG-tEXt", "Textual Data", tag => tag.Description.StartsWith($"{key}: "), out var tag))
-            {
-                workflowBuilder.AppendLine(tag.Description);
-                var value = tag.Description.Substring($"{key}: ".Length);
-
-                return float.Parse(value);
-            }
-
-            return 0f;
         }
 
         decimal GetDecimalTag(string key)

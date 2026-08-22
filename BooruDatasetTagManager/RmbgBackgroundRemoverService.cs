@@ -113,18 +113,25 @@ namespace BooruDatasetTagManager
                 {
                     // Loading the session is the integrity check: a corrupt or
                     // truncated ONNX file throws here. Delete it so the caller
-                    // re-downloads a clean copy. FileNotFound / unsupported-input /
+                    // re-downloads a clean copy. File locks / unsupported-input /
                     // missing-native-runtime are not corruption.
-                    session = CreateSession(modelPath, forceCpu: false, out usesDirectMlProvider);
-                    ResolveSessionMetadata(session);
+                    OnnxModelIntegrity.RunWithTransientLockRetry(() =>
+                    {
+                        session = CreateSession(modelPath, forceCpu: false, out usesDirectMlProvider);
+                        ResolveSessionMetadata(session);
+                    });
                 }
                 catch (Exception ex) when (ex is not FileNotFoundException
-                                           and not NotSupportedException
-                                           and not DllNotFoundException)
+                                           and not NotSupportedException)
                 {
                     UnloadUnderLock();
-                    downloader.DeleteCachedFile(model.Repo, model.FileName);
-                    throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+                    if (OnnxModelIntegrity.ShouldClearCachedModel(ex))
+                    {
+                        downloader.DeleteCachedFile(model.Repo, model.FileName);
+                        throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+                    }
+
+                    throw;
                 }
                 loadedModelId = model.Id;
             }

@@ -69,6 +69,12 @@ namespace BooruDatasetTagManager
                 || string.Equals(language, "zh-Hans", StringComparison.OrdinalIgnoreCase);
         }
 
+        public static bool IsChineseLanguage(string language)
+        {
+            return !string.IsNullOrWhiteSpace(language)
+                && language.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+        }
+
         public string ResolveInput(string input, string language)
         {
             if (!IsSimplifiedChineseLanguage(language) || string.IsNullOrWhiteSpace(input))
@@ -85,12 +91,31 @@ namespace BooruDatasetTagManager
 
         public string GetChineseNameForEnglishTag(string tag, string language)
         {
-            if (!IsSimplifiedChineseLanguage(language) || string.IsNullOrWhiteSpace(tag))
+            if (!IsChineseLanguage(language) || string.IsNullOrWhiteSpace(tag))
                 return string.Empty;
 
-            string normalizedTag = NormalizeEnglishTag(tag, fixTags: false);
-            if (englishToChineseLookup.TryGetValue(normalizedTag, out string chineseName))
+            return TryGetChineseName(tag);
+        }
+
+        /// <summary>
+        /// First Chinese name for the English tag, matching both underscore and
+        /// space forms so FixTags-on keys still hit raw danbooru tags.
+        /// </summary>
+        public string TryGetChineseName(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+                return string.Empty;
+
+            string spaced = NormalizeEnglishTag(tag, fixTags: true);
+            if (englishToChineseLookup.TryGetValue(spaced, out string chineseName))
                 return chineseName;
+
+            string raw = NormalizeEnglishTag(tag, fixTags: false);
+            if (!string.Equals(raw, spaced, StringComparison.Ordinal)
+                && englishToChineseLookup.TryGetValue(raw, out chineseName))
+            {
+                return chineseName;
+            }
 
             return string.Empty;
         }

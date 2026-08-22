@@ -18,6 +18,7 @@ namespace BooruDatasetTagManager
         {
             this.client = client ?? throw new ArgumentNullException(nameof(client));
             this.client.DefaultRequestHeaders.UserAgent.ParseAdd("BooruDatasetTagManager/1.0");
+            this.client.Timeout = TimeSpan.FromSeconds(15);
         }
 
         public override async Task<string> TranslateAsync(string text, string fromLang, string toLang, CancellationToken cancellationToken = default)

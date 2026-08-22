@@ -99,6 +99,33 @@ public class FallbackTranslatorTests
         finally
         {
             Program.Settings.UseDanbooruZhCsvBeforeTranslation = false;
+            Program.Settings.Language = null;
+            Program.ChineseTagLookup = ChineseTagLookupService.Empty;
+        }
+    }
+
+    [Fact]
+    public async Task TranslationManagerUsesDanbooruCsvWhenUiIsChineseEvenIfTargetIsRussian()
+    {
+        try
+        {
+            using var temp = new TemporaryDirectory();
+            string csvPath = Path.Combine(temp.Path, "danbooru-0-zh.csv");
+            File.WriteAllText(csvPath, "long_hair,\u957f\u53d1");
+            Program.ChineseTagLookup = ChineseTagLookupService.LoadFromFile(csvPath, fixTags: true);
+            Program.Settings.UseDanbooruZhCsvBeforeTranslation = true;
+            Program.Settings.Language = "zh-CN";
+            var translator = new QueueTranslator("online translation");
+            var manager = new TranslationManager("ru", TranslationService.GoogleTranslate, temp.Path, translator);
+
+            Assert.Equal("\u957f\u53d1", manager.TryGetLocalTranslation("long hair"));
+            Assert.Equal("\u957f\u53d1", await manager.TranslateAsync("long hair"));
+            Assert.Equal(0, translator.CallCount);
+        }
+        finally
+        {
+            Program.Settings.UseDanbooruZhCsvBeforeTranslation = false;
+            Program.Settings.Language = null;
             Program.ChineseTagLookup = ChineseTagLookupService.Empty;
         }
     }

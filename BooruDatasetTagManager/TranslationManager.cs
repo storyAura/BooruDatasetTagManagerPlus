@@ -127,6 +127,52 @@ namespace BooruDatasetTagManager
             return TranslateAsync(text, false);
         }
 
+        /// <summary>
+        /// Cache / character catalog / built-in Chinese dictionary only.
+        /// Never talks to a network translator, so the all-tags grid can paint
+        /// local hits before leftover tags go online.
+        /// </summary>
+        public string TryGetLocalTranslation(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Empty;
+
+            TransItem cached = GetTranslationItem(text);
+            if (cached != null && cached.IsManual)
+                return cached.Trans;
+
+            if (Program.CharacterTagLookup != null)
+            {
+                string characterTranslation = Program.CharacterTagLookup.GetDisplayTranslation(text);
+                if (!string.IsNullOrEmpty(characterTranslation))
+                    return characterTranslation;
+            }
+
+            if (cached != null)
+                return cached.Trans;
+
+            if (ShouldUseBuiltInChineseDictionary())
+            {
+                var lookup = Program.ChineseTagLookup ?? ChineseTagLookupService.Empty;
+                string csvTranslation = lookup.TryGetChineseName(text);
+                if (!string.IsNullOrEmpty(csvTranslation))
+                    return csvTranslation;
+            }
+
+            return string.Empty;
+        }
+
+        private bool ShouldUseBuiltInChineseDictionary()
+        {
+            if (Program.Settings == null || !Program.Settings.UseDanbooruZhCsvBeforeTranslation)
+                return false;
+
+            if (ChineseTagLookupService.IsChineseLanguage(_language))
+                return true;
+
+            return ChineseTagLookupService.IsChineseLanguage(Program.Settings.Language);
+        }
+
         public async Task<string> TranslateAsync(string text, bool forceRefresh, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -140,32 +186,14 @@ namespace BooruDatasetTagManager
                 if (cached != null && cached.IsManual)
                     return cached.Trans;
 
-                // The character catalog outranks non-manual cache entries:
-                // caches predating the catalog hold machine translations of
-                // character names ("fuji miyako"→"富士都") that would
-                // otherwise shadow the real 译名 forever. A hit rewrites the
-                // cache entry.
-                if (!forceRefresh && Program.CharacterTagLookup != null)
+                if (!forceRefresh)
                 {
-                    string characterTranslation = Program.CharacterTagLookup.GetDisplayTranslation(text);
-                    if (!string.IsNullOrEmpty(characterTranslation))
+                    string local = TryGetLocalTranslation(text);
+                    if (!string.IsNullOrEmpty(local))
                     {
-                        if (cached == null || !string.Equals(cached.Trans, characterTranslation, StringComparison.Ordinal))
-                            await AddOrUpdateTranslationAsync(text, characterTranslation, false, false);
-                        return characterTranslation;
-                    }
-                }
-
-                if (cached != null && !forceRefresh)
-                    return cached.Trans;
-
-                if (!forceRefresh && Program.Settings.UseDanbooruZhCsvBeforeTranslation)
-                {
-                    string csvTranslation = Program.ChineseTagLookup.GetChineseNameForEnglishTag(text, _language);
-                    if (!string.IsNullOrEmpty(csvTranslation))
-                    {
-                        await AddOrUpdateTranslationAsync(text, csvTranslation, false, false);
-                        return csvTranslation;
+                        if (cached == null || !string.Equals(cached.Trans, local, StringComparison.Ordinal))
+                            await AddOrUpdateTranslationAsync(text, local, false, false);
+                        return local;
                     }
                 }
 

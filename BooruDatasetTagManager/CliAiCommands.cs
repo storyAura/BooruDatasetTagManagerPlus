@@ -70,7 +70,7 @@ namespace BooruDatasetTagManager
         private static void EnsureRuntime()
         {
             Program.AppPath ??= Application.StartupPath;
-            Program.Settings ??= new AppSettings(Application.StartupPath);
+            Program.Settings ??= new AppSettings(AppSettings.ResolveUserSettingsDirectory(Application.StartupPath));
             Program.EditableTagListLocker ??= new SemaphoreSlim(1, 1);
             Program.ListChangeLocker ??= new object();
             DebugLog.Enabled = Program.Settings.DebugMode;

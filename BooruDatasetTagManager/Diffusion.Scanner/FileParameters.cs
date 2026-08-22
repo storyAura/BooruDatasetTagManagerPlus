@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿#nullable enable annotations
+using System.Collections.Generic;
 
 namespace Diffusion.IO;
 

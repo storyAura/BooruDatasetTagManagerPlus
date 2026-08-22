@@ -35,6 +35,12 @@ namespace BooruDatasetTagManager
         /// <summary>Runs the AI verbs; installed by Program.Main.</summary>
         public static Func<string[], TextWriter, TextWriter, int> AiRunner;
 
+        /// <summary>
+        /// Optional general-tag L1/L2 catalog. Null or empty keeps the
+        /// heuristic <see cref="TagSemanticClassifier"/> path used by tests.
+        /// </summary>
+        public static GeneralTagCategoryCatalog GeneralCategoryCatalog;
+
         private static readonly string[] HelpFlags = { "--help", "-h", "/?" };
         private static readonly string[] VersionFlags = { "--version", "-v" };
 
@@ -123,7 +129,8 @@ namespace BooruDatasetTagManager
             output.WriteLine("      [--tags \"a,b\" --match any|all|none] [--untagged]");
             output.WriteLine("  list-tags <folder>                  tag<TAB>count, most frequent first");
             output.WriteLine("      [--category NAME] [--min-count N]");
-            output.WriteLine("  classify-tags <folder>              tag<TAB>semantic category<TAB>count");
+            output.WriteLine("  classify-tags <folder>              tag<TAB>category<TAB>count");
+            output.WriteLine("                                      (with catalog: tag<TAB>L1<TAB>L2<TAB>count)");
             output.WriteLine("  add-tags <folder> --tags \"a,b\"      add tags to caption files");
             output.WriteLine("      [--position start|end] [--if-tags \"x,y\" --match any|all|none]");
             output.WriteLine("      [--only-untagged]");
@@ -181,24 +188,40 @@ namespace BooruDatasetTagManager
             return ExitOk;
         }
 
+        private static bool HasCategoryCatalog =>
+            GeneralCategoryCatalog != null && GeneralCategoryCatalog.Count > 0;
+
         private static int RunListTags(CliDataset dataset, CliOptions options, TextWriter output)
         {
-            TagSemanticCategory? category = null;
             string categoryName = options.GetValue("category");
+            TagCategoryPath? csvFilter = null;
+            TagSemanticCategory? heuristicFilter = null;
             if (categoryName != null)
             {
-                if (!Enum.TryParse(categoryName, ignoreCase: true, out TagSemanticCategory parsed))
+                if (HasCategoryCatalog)
+                {
+                    if (!TagCategoryTaxonomy.TryParseFilter(categoryName, out TagCategoryPath parsed))
+                    {
+                        throw new CliUsageException($"Unknown category '{categoryName}'. Valid: "
+                            + string.Join(", ", TagCategoryTaxonomy.PrimaryOrder)
+                            + " (or Hair, Eyes, …)");
+                    }
+                    csvFilter = parsed;
+                }
+                else if (!Enum.TryParse(categoryName, ignoreCase: true, out TagSemanticCategory parsed))
                 {
                     throw new CliUsageException($"Unknown category '{categoryName}'. Valid: "
                         + string.Join(", ", Enum.GetNames<TagSemanticCategory>()));
                 }
-                category = parsed;
+                else
+                {
+                    heuristicFilter = parsed;
+                }
             }
             int minCount = options.GetInt("min-count", 1);
             foreach (var pair in dataset.CountTags()
                 .Where(pair => pair.Value >= minCount)
-                .Where(pair => category == null
-                    || TagSemanticClassifier.Classify(pair.Key, -1) == category.Value)
+                .Where(pair => MatchesListCategory(pair.Key, csvFilter, heuristicFilter))
                 .OrderByDescending(pair => pair.Value)
                 .ThenBy(pair => pair.Key, StringComparer.Ordinal))
             {
@@ -207,13 +230,35 @@ namespace BooruDatasetTagManager
             return ExitOk;
         }
 
+        private static bool MatchesListCategory(
+            string tag, TagCategoryPath? csvFilter, TagSemanticCategory? heuristicFilter)
+        {
+            if (csvFilter == null && heuristicFilter == null)
+                return true;
+            if (csvFilter != null)
+            {
+                return TagCategoryTaxonomy.Classify(tag, -1, GeneralCategoryCatalog, null)
+                    .Matches(csvFilter.Value);
+            }
+            return TagSemanticClassifier.Classify(tag, -1) == heuristicFilter.Value;
+        }
+
         private static int RunClassifyTags(CliDataset dataset, TextWriter output)
         {
             foreach (var pair in dataset.CountTags()
                 .OrderByDescending(pair => pair.Value)
                 .ThenBy(pair => pair.Key, StringComparer.Ordinal))
             {
-                output.WriteLine($"{pair.Key}\t{TagSemanticClassifier.Classify(pair.Key, -1)}\t{pair.Value}");
+                if (HasCategoryCatalog)
+                {
+                    TagCategoryPath path = TagCategoryTaxonomy.Classify(
+                        pair.Key, -1, GeneralCategoryCatalog, null);
+                    output.WriteLine($"{pair.Key}\t{path.L1}\t{path.L2}\t{pair.Value}");
+                }
+                else
+                {
+                    output.WriteLine($"{pair.Key}\t{TagSemanticClassifier.Classify(pair.Key, -1)}\t{pair.Value}");
+                }
             }
             return ExitOk;
         }

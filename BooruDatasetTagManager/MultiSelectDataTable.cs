@@ -379,10 +379,19 @@ namespace BooruDatasetTagManager
 
         public Task TranslateAllAsync()
         {
-            return TranslateAllAsync(Program.TransManager.TranslateAsync);
+            return TranslateAllAsync(
+                Program.TransManager.TranslateAsync,
+                Program.TransManager.TryGetLocalTranslation);
         }
 
         public Task TranslateAllAsync(Func<string, Task<string>> translateAsync)
+        {
+            return TranslateAllAsync(translateAsync, tryGetLocalTranslation: null);
+        }
+
+        public Task TranslateAllAsync(
+            Func<string, Task<string>> translateAsync,
+            Func<string, string> tryGetLocalTranslation)
         {
             if (!isTranslateMode)
                 return Task.CompletedTask;
@@ -394,12 +403,14 @@ namespace BooruDatasetTagManager
                 if (!translationTask.IsCompleted)
                     return translationTask;
 
-                translationTask = TranslatePendingAsync(translateAsync);
+                translationTask = TranslatePendingAsync(translateAsync, tryGetLocalTranslation);
                 return translationTask;
             }
         }
 
-        private async Task TranslatePendingAsync(Func<string, Task<string>> translateAsync)
+        private async Task TranslatePendingAsync(
+            Func<string, Task<string>> translateAsync,
+            Func<string, string> tryGetLocalTranslation)
         {
             var attempted = new HashSet<(MultiSelectDataRow Row, string Tag)>();
             while (true)
@@ -416,7 +427,38 @@ namespace BooruDatasetTagManager
                 if (pending.Count == 0)
                     return;
 
-                foreach (var entry in pending)
+                var remaining = pending;
+                if (tryGetLocalTranslation != null)
+                {
+                    remaining = new List<(MultiSelectDataRow Row, string Tag)>();
+                    foreach (var entry in pending)
+                    {
+                        string local = null;
+                        try
+                        {
+                            local = tryGetLocalTranslation(entry.Tag);
+                        }
+                        catch
+                        {
+                        }
+
+                        if (!string.IsNullOrEmpty(local)
+                            && entry.Row.Table == this
+                            && entry.Row.RowState != DataRowState.Deleted
+                            && entry.Row.RowState != DataRowState.Detached
+                            && entry.Row.GetTagText() == entry.Tag
+                            && (string)entry.Row["Tag"] == entry.Tag)
+                        {
+                            entry.Row["Translation"] = local;
+                        }
+                        else if (string.IsNullOrEmpty(local))
+                        {
+                            remaining.Add(entry);
+                        }
+                    }
+                }
+
+                foreach (var entry in remaining)
                 {
                     string result;
                     try

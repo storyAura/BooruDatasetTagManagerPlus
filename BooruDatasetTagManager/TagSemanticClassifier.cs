@@ -6,10 +6,10 @@ using System.Text.RegularExpressions;
 namespace BooruDatasetTagManager
 {
     /// <summary>
-    /// Semantic tag buckets for the light color-coding and the category
-    /// sort. Declaration order doubles as the sort rank: identity first
-    /// (character/copyright), then subject count, appearance, clothing,
-    /// action, scene; General and Meta last. General carries no tint.
+    /// Semantic tag buckets for the light color-coding and the legacy
+    /// sort rank. UI filter/sort now rank by
+    /// <see cref="TagCategoryTaxonomy"/> L1 names; this enum still maps
+    /// tints and the audit heuristic. General carries no tint.
     /// </summary>
     public enum TagSemanticCategory
     {
@@ -23,6 +23,7 @@ namespace BooruDatasetTagManager
         Expression,
         Clothing,
         Accessory,
+        Cosplay,
         Object,
         Animal,
         Food,
@@ -282,6 +283,7 @@ namespace BooruDatasetTagManager
                 case TagSemanticCategory.Expression: return Color.FromArgb(214, 191, 0);
                 case TagSemanticCategory.Clothing: return Color.FromArgb(219, 112, 147);
                 case TagSemanticCategory.Accessory: return Color.FromArgb(138, 103, 220);
+                case TagSemanticCategory.Cosplay: return Color.FromArgb(72, 168, 188);
                 case TagSemanticCategory.Object: return Color.FromArgb(181, 137, 84);
                 case TagSemanticCategory.Animal: return Color.FromArgb(64, 178, 128);
                 case TagSemanticCategory.Food: return Color.FromArgb(204, 120, 44);

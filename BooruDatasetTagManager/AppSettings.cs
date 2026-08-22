@@ -12,7 +12,12 @@ namespace BooruDatasetTagManager
 {
     public class AppSettings
     {
-        public string TranslationLanguage { get; set; } = "ru";
+        public string TranslationLanguage { get; set; } = "zh-CN";
+        /// <summary>
+        /// Set after the one-shot leftover "ru" remap so a user who later
+        /// picks Russian on a Chinese UI keeps that choice.
+        /// </summary>
+        public bool TranslationLanguageMigratedFromLegacyRu { get; set; }
         public int PreviewSize { get; set; } = 130;
         [JsonIgnore]
         public List<LanguageItem> AvaibleLanguages;
@@ -143,6 +148,36 @@ namespace BooruDatasetTagManager
         // Double-click action on the All Tags grid (Form1).
         public AllTagsQuickAction AllTagsDoubleClickAction { get; set; } = AllTagsQuickAction.QuickActionReplaceTag;
 
+        // Last-used state of Tools → Multi-crop.
+        public ResolutionPrepMode ResolutionPrepMode { get; set; } = ResolutionPrepMode.ScaleOnly;
+        public ResolutionPrepSource ResolutionPrepSource { get; set; } = ResolutionPrepSource.Selected;
+        public int ResolutionPrepAspectWidth { get; set; } = 1;
+        public int ResolutionPrepAspectHeight { get; set; } = 1;
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public List<int> ResolutionPrepSelectedGears { get; set; } = new List<int> { 1024 };
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public List<int> ResolutionPrepCustomGears { get; set; } = new List<int>();
+        public bool ResolutionPrepSharpen { get; set; } = true;
+        public int ResolutionPrepRandomCount { get; set; } = 1;
+        public string YoloPersonModelId { get; set; } = string.Empty;
+        public string YoloPersonImportPath { get; set; } = string.Empty;
+        public float YoloPersonConfidence { get; set; } = YoloPersonDetectorService.DefaultConfidence;
+
+        // Last-used state of Tools → Pre-bucket.
+        public ResolutionPrepSource PreBucketSource { get; set; } = ResolutionPrepSource.Selected;
+        public int PreBucketResolutionWidth { get; set; } = PreBucketMath.DefaultResolution;
+        public int PreBucketResolutionHeight { get; set; } = PreBucketMath.DefaultResolution;
+        public bool PreBucketEnableBucket { get; set; } = true;
+        public int PreBucketMinReso { get; set; } = PreBucketMath.DefaultMinReso;
+        public int PreBucketMaxReso { get; set; } = PreBucketMath.DefaultMaxReso;
+        public int PreBucketResoSteps { get; set; } = PreBucketMath.DefaultSteps;
+        public int PreBucketTargetCount { get; set; }
+        public bool PreBucketAllowUpscale { get; set; }
+        public int PreBucketRepeats { get; set; } = 1;
+        public int PreBucketBatchSize { get; set; } = 4;
+        public int PreBucketEpochs { get; set; } = 1;
+        public string PreBucketOutputFolder { get; set; } = string.Empty;
+
         // HuggingFace access token used for gated model repos (e.g. cl_tagger_v2).
         [JsonIgnore]
         public string HuggingFaceToken { get; set; } = string.Empty;
@@ -181,6 +216,181 @@ namespace BooruDatasetTagManager
 
         private string settingsFile;
 
+        public const string SettingsFileName = "settings.json";
+        public const string ProductSettingsFolderName = "BooruDatasetTagManagerPlus";
+
+        /// <summary>Resolved path of the settings file this instance loads/saves.</summary>
+        [JsonIgnore]
+        public string SettingsFilePath => settingsFile;
+
+        /// <summary>
+        /// Per-user Documents folder that holds the shared settings.json so
+        /// Debug / Release / dist copies of the app read the same config.
+        /// </summary>
+        public static string GetDefaultDocumentsDirectory()
+        {
+            string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            if (string.IsNullOrWhiteSpace(documents))
+                return null;
+            return Path.Combine(documents, ProductSettingsFolderName);
+        }
+
+        /// <summary>
+        /// Picks the user-settings directory. Prefer
+        /// <paramref name="documentsDir"/> (or My Documents\BooruDatasetTagManagerPlus);
+        /// if that folder has no settings.json yet, copy the portable file
+        /// from <paramref name="startupPath"/> once. When the Documents file
+        /// already exists but has no API config, and the exe-adjacent file
+        /// still has a recognizable endpoint or keys, only those API fields
+        /// are copied in. When Documents is unavailable the startup directory
+        /// is used as a fallback. Tests pass an explicit documentsDir so they
+        /// never touch the real Documents folder.
+        /// </summary>
+        public static string ResolveUserSettingsDirectory(string startupPath, string documentsDir = null)
+        {
+            string dest = documentsDir ?? GetDefaultDocumentsDirectory();
+            if (string.IsNullOrWhiteSpace(dest))
+                return startupPath ?? string.Empty;
+
+            try
+            {
+                Directory.CreateDirectory(dest);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"AppSettings.ResolveUserSettingsDirectory: cannot create '{dest}': {ex}");
+                return string.IsNullOrWhiteSpace(startupPath) ? dest : startupPath;
+            }
+
+            string destFile = Path.Combine(dest, SettingsFileName);
+            string legacy = string.IsNullOrWhiteSpace(startupPath)
+                ? null
+                : Path.Combine(startupPath, SettingsFileName);
+            if (!File.Exists(destFile) && legacy != null && File.Exists(legacy))
+            {
+                try
+                {
+                    File.Copy(legacy, destFile, overwrite: false);
+                    string legacyBak = legacy + ".bak";
+                    string destBak = destFile + ".bak";
+                    if (File.Exists(legacyBak) && !File.Exists(destBak))
+                        File.Copy(legacyBak, destBak, overwrite: false);
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"AppSettings.ResolveUserSettingsDirectory: migrate failed: {ex}");
+                }
+            }
+            else if (File.Exists(destFile))
+            {
+                TryMigrateLegacyApiConfig(startupPath, destFile);
+            }
+
+            return dest;
+        }
+
+        /// <summary>
+        /// True when <paramref name="settings"/> still carries a usable LLM/API
+        /// site: a profile endpoint or token, the flat OpenAI endpoint/key, or
+        /// a HuggingFace token.
+        /// </summary>
+        public static bool HasRecognizableApiConfig(AppSettings settings)
+        {
+            if (settings == null)
+                return false;
+            if (settings.LlmApiProfiles != null)
+            {
+                foreach (LlmApiProfile profile in settings.LlmApiProfiles)
+                {
+                    if (profile == null)
+                        continue;
+                    if (LlmApiProfileLogic.SanitizeTokens(profile.Tokens).Count > 0)
+                        return true;
+                    if (!string.IsNullOrWhiteSpace(profile.Endpoint))
+                        return true;
+                }
+            }
+            OpenAiSettings openAi = settings.OpenAiAutoTagger;
+            if (openAi != null
+                && (!string.IsNullOrWhiteSpace(openAi.ApiKey)
+                    || !string.IsNullOrWhiteSpace(openAi.ConnectionAddress)))
+            {
+                return true;
+            }
+            return !string.IsNullOrWhiteSpace(settings.HuggingFaceToken);
+        }
+
+        /// <summary>
+        /// Copies LLM/API profiles, the mirrored flat OpenAI fields, audit
+        /// model, HF token and prompt templates from <paramref name="from"/>
+        /// onto <paramref name="to"/>. UI preferences are left alone.
+        /// </summary>
+        public static void CopyApiConfig(AppSettings from, AppSettings to)
+        {
+            if (from == null || to == null)
+                return;
+            to.LlmApiProfiles = (from.LlmApiProfiles ?? new List<LlmApiProfile>())
+                .Where(profile => profile != null)
+                .Select(profile => profile.Clone())
+                .ToList();
+            to.LlmApiProfileIndex = from.LlmApiProfileIndex;
+            if (from.OpenAiAutoTagger != null)
+            {
+                to.OpenAiAutoTagger ??= new OpenAiSettings();
+                to.OpenAiAutoTagger.ConnectionAddress = from.OpenAiAutoTagger.ConnectionAddress ?? string.Empty;
+                to.OpenAiAutoTagger.ApiKey = from.OpenAiAutoTagger.ApiKey ?? string.Empty;
+                to.OpenAiAutoTagger.Model = from.OpenAiAutoTagger.Model ?? string.Empty;
+                to.OpenAiAutoTagger.VisionModel = from.OpenAiAutoTagger.VisionModel ?? string.Empty;
+                to.OpenAiAutoTagger.RequestTimeout = from.OpenAiAutoTagger.RequestTimeout;
+            }
+            to.CharacterTagAuditModel = from.CharacterTagAuditModel ?? string.Empty;
+            to.HuggingFaceToken = from.HuggingFaceToken ?? string.Empty;
+            to.AiServerSetPromptTemplate = from.AiServerSetPromptTemplate;
+            to.AiServerSetPromptTemplateId = from.AiServerSetPromptTemplateId;
+            if (from.AiServerSetPromptTemplates != null)
+            {
+                to.AiServerSetPromptTemplates = from.AiServerSetPromptTemplates
+                    .Where(template => template != null)
+                    .Select(template => template.Clone())
+                    .ToList();
+            }
+            LlmApiProfileLogic.EnsureLegacyProfile(to);
+            LlmApiProfileLogic.ApplyActiveProfile(to);
+        }
+
+        private static void TryMigrateLegacyApiConfig(string startupPath, string destFile)
+        {
+            try
+            {
+                AppSettings destSettings = TryLoadSettingsFile(destFile);
+                if (destSettings == null || HasRecognizableApiConfig(destSettings))
+                    return;
+                AppSettings legacy = FindLegacyApiSettings(startupPath);
+                if (legacy == null)
+                    return;
+                CopyApiConfig(legacy, destSettings);
+                SafeFile.WriteAllTextWithBackup(destFile, JsonConvert.SerializeObject(destSettings));
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"AppSettings.TryMigrateLegacyApiConfig: {ex}");
+            }
+        }
+
+        private static AppSettings FindLegacyApiSettings(string startupPath)
+        {
+            if (string.IsNullOrWhiteSpace(startupPath))
+                return null;
+            string primary = Path.Combine(startupPath, SettingsFileName);
+            foreach (string path in new[] { primary, primary + ".bak" })
+            {
+                AppSettings loaded = TryLoadSettingsFile(path);
+                if (HasRecognizableApiConfig(loaded))
+                    return loaded;
+            }
+            return null;
+        }
+
 
         public AppSettings(string appDir)
         {
@@ -202,7 +412,7 @@ namespace BooruDatasetTagManager
 
         private void LoadData(string appDir)
         {
-            settingsFile = Path.Combine(appDir, "settings.json");
+            settingsFile = Path.Combine(appDir, SettingsFileName);
             if (!File.Exists(settingsFile))
             {
                 //Settings = new AppSettings();
@@ -245,6 +455,7 @@ namespace BooruDatasetTagManager
                     return;
 
                 TranslationLanguage = tempSettings.TranslationLanguage;
+                TranslationLanguageMigratedFromLegacyRu = tempSettings.TranslationLanguageMigratedFromLegacyRu;
                 PreviewSize = tempSettings.PreviewSize <= 0 ? 130 : tempSettings.PreviewSize;
                 TransService = tempSettings.TransService;
                 if (tempSettings.TranslationProviderOrder == null || tempSettings.TranslationProviderOrder.Count == 0)
@@ -323,7 +534,58 @@ namespace BooruDatasetTagManager
                 BackgroundRemoverColorArgb = tempSettings.BackgroundRemoverColorArgb;
                 BackgroundRemoverReplaceOriginal = tempSettings.BackgroundRemoverReplaceOriginal;
                 AllTagsDoubleClickAction = tempSettings.AllTagsDoubleClickAction;
+                ResolutionPrepMode = Enum.IsDefined(typeof(ResolutionPrepMode), tempSettings.ResolutionPrepMode)
+                    ? tempSettings.ResolutionPrepMode
+                    : ResolutionPrepMode.ScaleOnly;
+                ResolutionPrepSource = Enum.IsDefined(typeof(ResolutionPrepSource), tempSettings.ResolutionPrepSource)
+                    ? tempSettings.ResolutionPrepSource
+                    : ResolutionPrepSource.Selected;
+                ResolutionPrepAspectWidth = tempSettings.ResolutionPrepAspectWidth <= 0 ? 1 : tempSettings.ResolutionPrepAspectWidth;
+                ResolutionPrepAspectHeight = tempSettings.ResolutionPrepAspectHeight <= 0 ? 1 : tempSettings.ResolutionPrepAspectHeight;
+                ResolutionPrepSelectedGears = tempSettings.ResolutionPrepSelectedGears == null || tempSettings.ResolutionPrepSelectedGears.Count == 0
+                    ? new List<int> { 1024 }
+                    : tempSettings.ResolutionPrepSelectedGears;
+                ResolutionPrepCustomGears = tempSettings.ResolutionPrepCustomGears ?? new List<int>();
+                ResolutionPrepSharpen = tempSettings.ResolutionPrepSharpen;
+                ResolutionPrepRandomCount = ResolutionPrepMath.ClampRandomCount(tempSettings.ResolutionPrepRandomCount);
+                YoloPersonModelId = tempSettings.YoloPersonModelId ?? string.Empty;
+                YoloPersonImportPath = tempSettings.YoloPersonImportPath ?? string.Empty;
+                YoloPersonConfidence = tempSettings.YoloPersonConfidence <= 0f || tempSettings.YoloPersonConfidence > 1f
+                    ? YoloPersonDetectorService.DefaultConfidence
+                    : tempSettings.YoloPersonConfidence;
+                PreBucketSettings preBucket = PreBucketMath.Normalize(new PreBucketSettings
+                {
+                    ResolutionWidth = tempSettings.PreBucketResolutionWidth,
+                    ResolutionHeight = tempSettings.PreBucketResolutionHeight,
+                    EnableBucket = true,
+                    MinBucketReso = tempSettings.PreBucketMinReso,
+                    MaxBucketReso = tempSettings.PreBucketMaxReso,
+                    BucketResoSteps = tempSettings.PreBucketResoSteps,
+                    TargetBucketCount = tempSettings.PreBucketTargetCount,
+                    AllowUpscale = tempSettings.PreBucketAllowUpscale,
+                    Repeats = tempSettings.PreBucketRepeats,
+                    BatchSize = tempSettings.PreBucketBatchSize,
+                    Epochs = tempSettings.PreBucketEpochs,
+                    OutputRoot = tempSettings.PreBucketOutputFolder
+                });
+                PreBucketSource = Enum.IsDefined(typeof(ResolutionPrepSource), tempSettings.PreBucketSource)
+                    ? tempSettings.PreBucketSource
+                    : ResolutionPrepSource.Selected;
+                PreBucketResolutionWidth = preBucket.ResolutionWidth;
+                PreBucketResolutionHeight = preBucket.ResolutionHeight;
+                PreBucketEnableBucket = preBucket.EnableBucket;
+                PreBucketMinReso = preBucket.MinBucketReso;
+                PreBucketMaxReso = preBucket.MaxBucketReso;
+                PreBucketResoSteps = preBucket.BucketResoSteps;
+                PreBucketTargetCount = preBucket.TargetBucketCount;
+                PreBucketAllowUpscale = preBucket.AllowUpscale;
+                PreBucketRepeats = preBucket.Repeats;
+                PreBucketBatchSize = preBucket.BatchSize;
+                PreBucketEpochs = preBucket.Epochs;
+                PreBucketOutputFolder = preBucket.OutputRoot ?? string.Empty;
                 HuggingFaceToken = tempSettings.HuggingFaceToken ?? string.Empty;
+                NormalizeLegacyTranslationLanguage();
+
                 if (!string.IsNullOrEmpty(tempSettings.ColorScheme))
                     ColorScheme = tempSettings.ColorScheme;
                 AutoTagger = tempSettings.AutoTagger;
@@ -385,6 +647,33 @@ namespace BooruDatasetTagManager
                 Trace.WriteLine($"AppSettings.LoadData: failed to parse '{path}': {ex}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Upstream defaulted the translation target to Russian. This fork's UI
+        /// defaults to zh-CN, and a Documents settings file created with the
+        /// old constructor default still carries "ru" even when the user never
+        /// picked Russian. Remap that leftover so built-in Chinese data is used.
+        /// </summary>
+        public void NormalizeLegacyTranslationLanguage()
+        {
+            if (TranslationLanguageMigratedFromLegacyRu)
+                return;
+
+            if (IsLegacyRussianTranslationDefault(Language, TranslationLanguage))
+            {
+                TranslationLanguage = string.Equals(Language, "zh-TW", StringComparison.OrdinalIgnoreCase)
+                    ? "zh-TW"
+                    : "zh-CN";
+            }
+
+            TranslationLanguageMigratedFromLegacyRu = true;
+        }
+
+        public static bool IsLegacyRussianTranslationDefault(string language, string translationLanguage)
+        {
+            return ChineseTagLookupService.IsChineseLanguage(language)
+                && string.Equals(translationLanguage, "ru", StringComparison.OrdinalIgnoreCase);
         }
 
         public void SaveSettings()

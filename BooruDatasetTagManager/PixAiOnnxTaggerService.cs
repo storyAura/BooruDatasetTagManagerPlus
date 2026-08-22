@@ -81,31 +81,38 @@ namespace BooruDatasetTagManager
             try
             {
                 // Loading the csv/json metadata + session is the integrity check:
-                // a corrupt file throws here. Purge the whole model so the next
-                // attempt re-downloads clean files.
-                labels = PixAiSelectedTagsCsvLoader.Load(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "selected_tags.csv"));
-                LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "thresholds.csv"));
-                LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "preprocess.json"));
-                string modelPath = HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx");
-                try
+                // a corrupt file throws here. Purge only genuine parse failures.
+                OnnxModelIntegrity.RunWithTransientLockRetry(() =>
                 {
-                    session = CreateSession(modelPath);
-                }
-                catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
-                {
-                    // A DirectML session can fail for device/driver reasons that
-                    // say nothing about the file on disk: retry on CPU before
-                    // the outer handler declares the model corrupt and purges
-                    // the cached download.
-                    session = CreateSession(modelPath, forceCpu: true);
-                }
-                ConfigureSessionMetadata(session);
+                    labels = PixAiSelectedTagsCsvLoader.Load(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "selected_tags.csv"));
+                    LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "thresholds.csv"));
+                    LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "preprocess.json"));
+                    string modelPath = HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx");
+                    try
+                    {
+                        session = CreateSession(modelPath);
+                    }
+                    catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
+                    {
+                        // A DirectML session can fail for device/driver reasons that
+                        // say nothing about the file on disk: retry on CPU before
+                        // the outer handler declares the model corrupt and purges
+                        // the cached download.
+                        session = CreateSession(modelPath, forceCpu: true);
+                    }
+                    ConfigureSessionMetadata(session);
+                });
             }
-            catch (Exception ex) when (ex is not FileNotFoundException and not DllNotFoundException)
+            catch (Exception ex) when (ex is not FileNotFoundException)
             {
                 Unload();
-                ClearModelCache();
-                throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+                if (OnnxModelIntegrity.ShouldClearCachedModel(ex))
+                {
+                    ClearModelCache();
+                    throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
+                }
+
+                throw;
             }
         }
 

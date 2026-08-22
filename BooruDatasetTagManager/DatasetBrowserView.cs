@@ -44,6 +44,8 @@ namespace BooruDatasetTagManager
         /// the checked folder keys in display order, or null for All (= every
         /// folder). Screen coordinates.</summary>
         public event Action<IReadOnlyList<string>, Point> FolderContextRequested;
+        /// <summary>F2 or double-click on a real folder group (not All / root).</summary>
+        public event Action<string> FolderRenameRequested;
         /// <summary>Raw key events from the list (Delete, Ctrl+V, ... handled by the form).</summary>
         public event KeyEventHandler BrowserKeyDown;
         /// <summary>The user toggled the flat (headerless) image list.</summary>
@@ -628,8 +630,17 @@ namespace BooruDatasetTagManager
         private void HandleDoubleClick(MouseEventArgs e)
         {
             int index = HitTestRow(e.Location);
-            if (index >= 0 && rows[index].Kind == RowKind.Image && e.Button == MouseButtons.Left)
-                ImageActivated?.Invoke(rows[index].Item.ImageFilePath);
+            if (index < 0 || e.Button != MouseButtons.Left)
+                return;
+            Row row = rows[index];
+            if (row.Kind == RowKind.Image)
+                ImageActivated?.Invoke(row.Item.ImageFilePath);
+            else if (row.Kind == RowKind.Group)
+            {
+                string key = ToScopeKey(row.FolderKey);
+                if (key != DatasetFolderIndex.RootFolderKey)
+                    FolderRenameRequested?.Invoke(key);
+            }
         }
 
         private void HandleKeyDown(KeyEventArgs e)
@@ -649,7 +660,33 @@ namespace BooruDatasetTagManager
                 MoveCaret(e.KeyCode == Keys.Down ? 1 : -1, e.Shift);
                 e.Handled = true;
             }
+            else if (e.KeyCode == Keys.F2)
+            {
+                string key = ResolveRenameFolderKey();
+                if (key != null)
+                {
+                    FolderRenameRequested?.Invoke(key);
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+            }
             BrowserKeyDown?.Invoke(this, e);
+        }
+
+        private string ResolveRenameFolderKey()
+        {
+            if (selectedFolders.Count == 1)
+            {
+                string key = ToScopeKey(selectedFolders.First());
+                return key == DatasetFolderIndex.RootFolderKey ? null : key;
+            }
+            if (selectedFolders.Count == 0
+                && !string.IsNullOrEmpty(activeFolder)
+                && activeFolder != DatasetFolderIndex.RootFolderKey)
+            {
+                return activeFolder;
+            }
+            return null;
         }
 
         private void MoveCaret(int direction, bool extendRange)

@@ -1,22 +1,25 @@
-# BooruDatasetTagManager+ 1.2.4
+# BooruDatasetTagManager+ 1.2.5
 
 [English](../../README_en.md) | [简体中文](../../README.md)
 
-Ferramenta para Windows de marcação de datasets de LoRA e de personagens, fork de **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**. Mantém o fluxo original "carregar uma pasta → editar o `.txt` correspondente" e adiciona Marcação LLM (modos Tags / Linguagem natural), auditoria de tags de personagem, marcação ONNX local e um fluxo de trabalho de tags em chinês. **O idioma padrão da interface é o chinês simplificado (zh-CN).** Licenciado sob a [Licença MIT](../../LICENSE).
+Ferramenta Windows para marcar datasets de LoRA e personagens, fork de **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**.
+
+Cada imagem tem um `.txt` com o mesmo nome para as tags — abra a pasta e edite. Também dá para marcar com LLM ou ONNX local, auditar personagens e buscar tags em chinês. A interface começa em chinês simplificado. [Licença MIT](../../LICENSE).
 
 ![Janela principal](../images/main-window-dataset-browser.png)
 
 ## Histórico de versões
 
-- **1.2.4** (atual) — Correções: o seletor de personagem na auditoria multi não avançava após Aplicar; tags de cor erradas no WD14 ONNX (ordem de canais); falha ao salvar nomes de arquivo muito longos (temp atômico longo demais); confirmação ao marcar LLM com mais de 200 imagens; a mesclagem de tags filhas raras fica desligada por padrão (caixa no módulo Teste, prévia por linha); marcação ONNX ordena por confiança em vez da ordem alfabética do CSV; nomes que terminam com `_` deixam de falhar ao marcar/salvar captions. Novidade: extração aleatória por porcentagem (distribuída ou regional, padrão 10%); ordenação do dataset por tipo (jpg / png / vídeo). [Notas da versão](../RELEASE_NOTES_v1.2.4.md)
-- **1.2.3** — Novidades: verificador de imagens corrompidas (menu Ferramentas; parede manter/excluir) e substituição de fundo transparente em lote (pasta atual / todas as imagens, no menu de contexto da pasta). Correções: substituir fundo transparente falhava com erro de memória em arquivos WebP (agora decodifica com ImageSharp e codifica pela extensão de destino), filtro de tags "clicar NOT, aplicar OR" (dropdown explícito AND/OR/NOT/XOR), refiltra na hora ao escolher outra tag, clicar de novo no modo ativo cancela o filtro. Segurança/I/O: falha do DPAPI não grava mais chaves em texto simples, vazamento GDI de imagens LLM, path traversal na renomeação de pastas, corridas de download de modelos, sanitização do nome do zip de atualização, classificação local na exclusão da auditoria, gravações atômicas Caption/ffmpeg/tema, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.3.md)
-- **1.2.2** — Novidades: localizador de imagens semelhantes (limpeza de duplicatas por grupo), auditoria de tags multi-personagem (até 4), filtros por categoria nos painéis de tags, visão plana do dataset, corretor de tags inconsistentes, CLI completa, Recarregar o dataset atual (F5). Correções: o modo "Ignorando listas de tags existentes" não descarta mais resultados em silêncio nem desperdiça créditos de LLM (P0), a cascata de falhas do Ctrl+Z ao desfazer, falhas de referência nula sem dataset carregado, tags residuais ao trocar de pasta, entre outras. [Notas da versão](../RELEASE_NOTES_v1.2.2.md)
-- **1.2.1** — segunda leva de correções da auditoria: reforço de memória e segurança de dados, primeiro carregamento mais rápido, acessibilidade e i18n completos; backend Python legado removido (configurações antigas migram automaticamente); escopo do grupo raiz e união de várias pastas no navegador do dataset; checkpoints na auditoria de dois personagens; modo de depuração opcional; correções para a pré-visualização cobrindo diálogos, dessincronização da lista de tags, cortes em DPI alto e mais. [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
-- **1.2.0** — painel do dataset reconstruído: navegador por grupos de pastas com pré-visualização incorporada; cores semânticas de tags e ordenação por categoria; correspondência com o catálogo de personagens do danbooru (cores + nomes traduzidos); reforço de publicação e segurança de dados pós-auditoria. [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
-- **1.1.3** — reforço de E/S de arquivos e segurança de dados (corrige os 8 riscos confirmados por uma auditoria interna: falhas de salvamento mantêm as edições, exclusão transacional, gravações concorrentes seguras, …); adiciona o editor de imagem, os modelos ONNX da família CL, a busca de tags com dicionário chinês e a ação rápida por clique duplo em Todas as tags. [Notas da versão](../RELEASE_NOTES_v1.1.3.md)
-- **1.1.2** — janela unificada de Marcação LLM (modos Tags / Linguagem natural); remoção de fundo dentro do processo (RMBG-1.4); proteção contra falhas, gravações atômicas, chaves criptografadas e outros reforços de robustez/segurança. [Notas da versão](../RELEASE_NOTES_v1.1.2.md)
-- **1.1.1** — salvamento mais rápido da auditoria de tags de personagem; diálogo unificado de Recortar imagem. [Notas da versão](../RELEASE_NOTES_v1.1.1.md)
-- **1.1** — catálogo WD14 completo, limites por modelo, correção do PixAI. [Notas da versão](../RELEASE_NOTES_v1.1.md)
+- **1.2.5** (atual) — Novidade: recorte em lote, recortes múltiplos, detecção YOLO, pré-buckets, filtro de categorias em dois níveis, classificar imagens em pastas por tag; configurações passam a ficar em Documentos. Correção: download ONNX apagava modelo bloqueado; tradução travava. [Notas da versão](../RELEASE_NOTES_v1.2.5.md)
+- **1.2.4** — Correção de tags de cor erradas no WD14, nomes de arquivo longos e o seletor da auditoria multi; ONNX ordena por confiança; extração aleatória por porcentagem; ordenar o dataset por tipo de arquivo. [Notas da versão](../RELEASE_NOTES_v1.2.4.md)
+- **1.2.3** — Verificador de imagens corrompidas; substituição de fundo transparente em lote (pasta / todas); correção do filtro “clicar NOT, aplicar OR”; reforço de chaves e caminhos. [Notas da versão](../RELEASE_NOTES_v1.2.3.md)
+- **1.2.2** — Imagens semelhantes, auditoria multi (até 4), filtro por categoria, visão plana, corretor de tags, CLI, F5 para recarregar; correção do modo “ignorar tags existentes” que gastava créditos LLM. [Notas da versão](../RELEASE_NOTES_v1.2.2.md)
+- **1.2.1** — Backend Python removido; seleção de várias pastas; repetir só o personagem que falhou na auditoria; carregamento inicial mais rápido e reforço de segurança. [Notas da versão](../RELEASE_NOTES_v1.2.1.md)
+- **1.2.0** — Navegador por pastas com pré-visualização; cores e ordenação por categoria; catálogo de personagens do danbooru. [Notas da versão](../RELEASE_NOTES_v1.2.0.md)
+- **1.1.3** — Editor de imagem, ONNX da família CL, busca com dicionário chinês; falhas de salvamento não perdem edições. [Notas da versão](../RELEASE_NOTES_v1.1.3.md)
+- **1.1.2** — Janela unificada de Marcação LLM; remoção de fundo RMBG local; proteção contra falhas e chaves criptografadas. [Notas da versão](../RELEASE_NOTES_v1.1.2.md)
+- **1.1.1** — Salvamento mais rápido da auditoria; diálogo unificado de recorte. [Notas da versão](../RELEASE_NOTES_v1.1.1.md)
+- **1.1** — Catálogo WD14 completo, limites por modelo, correção do PixAI. [Notas da versão](../RELEASE_NOTES_v1.1.md)
 - **1.0.5** — Tagger ONNX unificado, ferramentas de vídeo. [Notas da versão](../RELEASE_NOTES_v1.0.5.md)
 
 ## Primeiros passos
@@ -26,7 +29,7 @@ Baixe `BooruDatasetTagManagerPlus-*-win-x64.zip` em [Releases](https://github.co
 1. **Arquivo → Carregar Pasta**; *Carregar Pasta (opções de carregamento)…* permite ainda pular as miniaturas (mais rápido em datasets grandes) ou ler tags iniciais dos metadados das imagens (útil para gerações recentes ainda sem arquivos `.txt`); *Recarregar o dataset atual* (F5) atualiza a pasta carregada a partir do disco a qualquer momento
 2. Edite as tags diretamente: as caixas de busca de "Todas as tags" e "Tags da imagem" entendem o dicionário chinês (digitar 头发 encontra long hair, black hair, …); o clique duplo em uma linha de "Todas as tags" executa uma ação rápida (abre "Substituir em todas" por padrão, configurável nas Configurações); abra a Wiki do Danbooru para tags desconhecidas
 3. Antes de usar qualquer recurso LLM, configure o endpoint compatível com OpenAI e os modelos em **Configurações LLM**
-4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / Substituir fundo transparente / ferramentas de vídeo / Encontrar imagens semelhantes / Verificar imagens corrompidas**, ou **Teste → Abrir auditoria de tags** (a auditoria e o corretor de tags inconsistentes moram lá), conforme necessário
+4. Execute **Ferramentas → Marcação LLM / Tagger ONNX / Remover fundo / Substituir fundo transparente / ferramentas de vídeo / Encontrar imagens semelhantes / Verificar imagens corrompidas / Recorte em lote / Recortes múltiplos / Detectar YOLO / Pré-buckets / Classificar em pastas por tag**, ou **Teste → Abrir auditoria de tags** (a auditoria e o corretor de tags inconsistentes moram lá), conforme necessário
 5. Scripts de automação podem usar o mesmo exe pela linha de comando: `BooruDatasetTagManagerPlus.exe help` lista todos os comandos (estatísticas / edições em lote / exportação / fix-tags / onnx-tag / audit)
 
 ### Compilar a partir do código-fonte
@@ -40,26 +43,17 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 - `test_start.bat` — inicia a versão Release (ou Debug)
 - `quick_build.bat` — build local rápido para `dist/` (baixa o FFmpeg no primeiro build)
 
-A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settings.json** (chaves de API e preferências) ao lado do executável. Todos são dados locais gerados automaticamente e podem ser excluídos com segurança — as configurações voltam ao padrão e os modelos podem ser baixados novamente de dentro do aplicativo.
+A execução local cria **Models/** (pesos ONNX baixados) e **Cache/** ao lado do executável. O **settings.json** (chaves de API e preferências) fica em `Documentos\BooruDatasetTagManagerPlus` para Debug / Release / dist compartilharem a mesma config; se Documentos ainda não tiver arquivo, ele é copiado de ao lado do exe; se Documentos já tiver uma config vazia e o arquivo ao lado do exe ainda tiver uma API reconhecível (endpoint / chaves / perfis), só esses campos de API são mesclados. Todos são dados locais gerados automaticamente e podem ser excluídos com segurança — as configurações voltam ao padrão e os modelos podem ser baixados novamente de dentro do aplicativo.
 
 ## Funcionalidades
 
-| Módulo | Descrição |
+| Grupo | Inclui |
 | --- | --- |
-| **Navegador do dataset** | Navegador por grupos de pastas (busca, recolher, renomear / renomear em lote, marcação rápida por pasta); visão plana; ordenar por tipo / nome / data; pré-visualização incorporada (lado a lado na seleção múltipla); formato·pixels·tamanho na linha |
-| **Semântica de tags** | Tons claros em 18 categorias, ordenação e filtro por categoria; catálogo de personagens do danbooru embutido (correspondência exata + traduções "nome (obra)" + relações pai-filho) |
-| **Marcação LLM** | Modos Tags / Tags→Linguagem natural; endpoint compatível com OpenAI; modelos de prompt; concorrência LLM 1–100 |
-| **Auditoria de tags de personagem** | Palavra de ativação + imagem de referência + inventário do dataset; revisão por IA em duas etapas; um ou vários personagens (até 4); salvamento transacional |
-| **Tagger ONNX** | Catálogo WD14 local + PixAI + família CL; limites memorizados por modelo; download do HuggingFace |
-| **Remoção de fundo** | RMBG-1.4 ONNX embutido, totalmente local — sem serviço externo; fundo transparente ou de cor sólida |
-| **Substituir fundo transparente** | Preenche áreas transparentes com cor sólida, cor aleatória ou sorteio da sua lista de cores; uma pré-verificação mantém só os PNG / WebP que realmente têm transparência; o menu Ferramentas atua na seleção e o menu de contexto da pasta adiciona os lotes daquela pasta / todas as imagens; WebP e afins são lidos/gravados via ImageSharp |
-| **Editor de imagem** | Pincel / borracha / conta-gotas / recorte / rotação e espelhamento com atalhos no estilo Photoshop; diálogo separado de recorte de várias regiões |
-| **Imagens semelhantes** | Busca de duplicadas com hash perceptual no estilo czkawka (4 níveis de similaridade); revisão em grupos manter/excluir; manter uma por grupo; exclusão transacional |
-| **Imagens corrompidas** | Falhas de decode / vazios / ausentes numa parede de revisão; manter/excluir; exclusão transacional |
-| **Correção de tags** | Conflitos de contagem de pessoas / solo com várias pessoas / duplicatas pai-filho de personagens limpas de uma vez; mesclagem de filhas raras desligada por padrão (opcional no Teste); prévia por linha + desfazer |
-| **Ferramentas de vídeo** | Conversão de formato; extração de todos os frames / por FPS / frames específicos / porcentagem aleatória (distribuída ou regional); FFmpeg incluído |
-| **Edição de tags** | Busca com dicionário chinês, ação rápida por clique duplo em Todas as tags, revisão com seleção múltipla (Shift+T), filtrar o dataset por tags (dropdown explícito AND / OR / NOT / XOR), Wiki do Danbooru |
-| **CLI** | O mesmo exe, sem janela: estatísticas / edições em lote / exportação / fix-tags / marcação ONNX / auditoria LLM para automação |
+| **Marcação** | LLM (tags / legendas) · ONNX local (WD14 / PixAI / CL) · auditoria de personagem (até 4) |
+| **Tags** | Busca em chinês, cores e filtro L1/L2, corretor de tags, filtrar imagens por tag |
+| **Imagens** | Editor, recorte em lote, recortes múltiplos (incl. YOLO), pré-buckets, remover / preencher fundo |
+| **Organização** | Navegador + pré-visualização, classificar em pastas por tag, buckets por resolução, semelhantes, imagens corrompidas, vídeo / frames |
+| **CLI** | O mesmo exe: estatísticas, edições em lote, exportação, ONNX, auditoria |
 
 ## Guia de funcionalidades
 
@@ -68,10 +62,14 @@ A execução local cria **Models/** (pesos ONNX baixados), **Cache/** e **settin
 O painel do dataset é um navegador unificado: a caixa de busca filtra pastas e nomes de arquivo juntos; as pastas de repetição do kohya aparecem como grupos recolhíveis (datasets com várias pastas abrem totalmente recolhidos; botões de expandir/recolher tudo, visão plana e ordenação ficam ao lado da busca; a visão plana ignora os grupos de pastas e mostra o escopo + filtro atual como uma lista única), e clicar no cabeçalho de uma pasta limita o dataset a ela (contagens de Todas as tags, operações em lote e o assistente de auditoria acompanham); as linhas de imagem mostram miniatura, nome e `formato · pixels · tamanho`, com seleção no estilo gerenciador de arquivos (Ctrl / Shift / Ctrl+A / setas / menu de contexto / Delete).
 
 - **Ordenação**: o botão ao lado da busca ordena por nome, tipo ou data de alteração. O tipo agrupa por extensão (jpg / jpeg juntos; png, webp, mp4, webm, … cada um no seu grupo — imagens e vídeos seguem a mesma regra), depois por nome dentro do grupo; a escolha é lembrada
-- **Clique direito na pasta**: renomear a pasta (disco + remapeamento em memória, edições não salvas sobrevivem); renomear imagens em lote (prefixo + números / letras / nome original + sufixo, prévia ao vivo, o `.txt` acompanha); marcar a pasta com ONNX / LLM
+- **Clique direito na pasta**: renomear a pasta (disco + remapeamento em memória, edições não salvas sobrevivem); **F2** ou **clique duplo** no cabeçalho do grupo também renomeia; renomear imagens em lote (prefixo + números / letras / nome original + sufixo, prévia ao vivo, o `.txt` acompanha); marcar a pasta com ONNX / LLM
 - **Pré-visualização incorporada**: painel recolhível sob o navegador (Exibir → Mostrar pré-visualização, estado persistido); a seleção múltipla mostra as quatro primeiras imagens lado a lado, clique duplo em uma célula abre no visualizador flutuante; a janela flutuante tem zoom ancorado no cursor, arrastar para deslocar, clique duplo ajustar ↔ 100 %, Ctrl+0 / Ctrl+1
-- **Cores e ordenação por categoria**: os dois painéis de tags recebem tons claros em 18 categorias semânticas (personagem / obra / cabelo / olhos / roupas …); o botão *Ordenar por categoria* das tags da imagem é uma alternância persistente: marcado, cada imagem recém-selecionada é agrupada por categoria automaticamente (respeitando "não ordenar as primeiras N linhas"); em Todas as tags a ordenação por categoria é opcional (desligada por padrão); as duas barras de ferramentas também trazem um menu de **filtro por categoria**: escolha uma categoria semântica (cabelo / roupas / …) para mostrar só as tags dela — somando-se à busca e ao filtro de contagem — e "Todas as categorias" restaura tudo
-- **Catálogo de personagens**: ~330 mil tags de personagens do danbooru em `Data/danbooru_character_tags.csv` (incluindo ~26 mil relações pai-filho reais) para coloração exata, traduções "nome (obra)" e o agrupamento por família do corretor de tags; pode ser desativado em Configurações → Tradução
+- **Cores e ordenação por categoria**: os dois painéis de tags coloram e agrupam pela categoria **primária** (cabelo / roupas / personagem …); o botão *Ordenar por categoria* das tags da imagem é uma alternância persistente: marcado, cada imagem recém-selecionada é agrupada pela primária automaticamente (respeitando "não ordenar as primeiras N linhas"); em Todas as tags a ordenação por categoria é opcional (desligada por padrão)
+- **Filtro por categoria**: cada painel tem um menu de duas colunas. Marque uma primária à esquerda para filtrar o grupo inteiro; passar o mouse lista as secundárias à direita. Dá para marcar várias e buscar pelo nome. Soma-se à busca e ao filtro de contagem
+- **Catálogo geral**: ~100 mil tags gerais do danbooru em `Data/danbooru_dataset_general.csv` com L1/L2, carregado na inicialização; `long_hair` e `long hair` encontram a mesma entrada. Tags desconhecidas vão para Geral
+- **Catálogo de personagens**: ~330 mil tags de personagem do danbooru em `Data/danbooru_character_tags.csv` (incluindo ~26 mil relações pai/filho reais) para colorir personagens com precisão, traduções "nome (obra)" e o agrupamento familiar do corretor de tags; pode ser desligado em Configurações → Tradução. O CSV geral não tem nomes de personagem — o balde Personagem ainda vem desta tabela / da coluna de tipo Danbooru
+
+![Filtro de categorias](../images/tag-category-filter.png)
 
 ### Marcação LLM
 
@@ -100,6 +98,7 @@ Entrada: **Ferramentas → Tagger ONNX…**, ou clique com o botão direito em *
 ![Tagger ONNX](../images/onnx-tagger.png)
 
 - Modelos: catálogo WD14 completo (12 modelos) + PixAI 0.9 + família CL (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); limites e configurações memorizados por modelo; download do HuggingFace oficial ou do espelho
+- Depois do download o app verifica o modelo; um arquivo brevemente bloqueado pelo antivírus/indexador é retentado e mantido, não tratado como corrompido e apagado. Falta de runtime nativo e outros erros de ambiente também deixam o download concluído no lugar
 - O cl_tagger_v2 é um **repositório restrito (gated)** cuja licença do autor proíbe redistribuição e distribuição em pacotes — o aplicativo não o inclui; um aviso de licença aparece antes do download, e é preciso solicitar acesso no HuggingFace e informar o seu próprio Access Token (armazenado com criptografia DPAPI), ou colocar manualmente os arquivos baixados na pasta `Models`
 - Modo de gravação (substituir / acrescentar / ignorar existentes), ordenação opcional, sublinhado→espaço, tags de prefixo/sufixo; barra de progresso para execuções em lote; o modo "Ignorando listas de tags existentes" pula imagens já marcadas antes da inferência e informa as contagens de gravadas / puladas ao concluir
 
@@ -121,8 +120,30 @@ Entrada: menu de contexto do dataset → **Editar imagem**. Layout no estilo Pho
 - Atalhos consistentes com o Photoshop: **B** pincel, **E** borracha, **I** conta-gotas, **C** recorte, **H** mão (ou segure **Espaço**), `[`/`]` tamanho do pincel, **Alt+clique** amostra uma cor, zoom com a roda do mouse ancorado no cursor, **Ctrl+0** ajustar, **Ctrl+1** 100%, **Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y** desfazer/refazer (um traço = um passo, até 15), **Enter** aplicar recorte, **Ctrl+S** salvar
 - Salvar **sobrescreve o original** (gravação atômica — uma falha não corrompe o arquivo) ou grava uma **cópia `_edit`** (arquivo de tags clonado e importado para o dataset); a ação padrão é configurável em Configurações → UI
 - Há também o diálogo **Recortar imagem** no menu de contexto do dataset: desenhe várias regiões de uma vez, exporte `_r1/_r2…` para a pasta de origem, com importação automática para o dataset
+- **Recorte em lote**: menu de contexto do dataset ou **Ferramentas → Recorte em lote**; desenhe um retângulo na imagem de referência (trave 1:1 / 2:3 / 16:9 / … ou informe uma proporção) e aplique o mesmo recorte em pixels a todas as imagens dessa resolução; sobrescreva ou salve cópias `_crop` (os arquivos de tags são clonados)
 
 ![Recorte de várias regiões](../images/crop-image-multi-region.png)
+
+### Ferramenta de recortes múltiplos
+
+Entrada: menu de contexto do dataset, menu do cabeçalho da pasta, ou **Ferramentas → Recortes múltiplos…**. Não é preciso clicar numa imagem antes: a origem pode ser **imagens selecionadas**, **pasta atual** ou **todas as imagens**. Comprime imagens grandes para degraus de treino, ou corta na proporção escolhida, preservando o máximo de detalhe de alta frequência. **Os originais nunca são sobrescritos**; cada degrau marcado grava um arquivo novo, clona as tags e importa para o dataset.
+
+- **Só redimensionar**: mantém a proporção original e reduz o lado maior a cada degrau marcado
+- **Recorte central na proporção**: pega o maior retângulo centrado 1:1 / 2:3 / 16:9 / … e depois reduz
+- **Fatiar em blocos**: espalha janelas do tamanho do degrau nos pixels de origem (última linha/coluna encostada na borda); só reduz se a fatia ainda for maior que o degrau
+- **Recorte em posição aleatória**: N recortes por imagem (padrão 1, máximo 32); o retângulo da proporção cai de forma uniforme na faixa deslizante restante e depois reduz
+- **Recorte YOLO**: escolha um detector de anime deepghs na lista — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; padrão v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, não gated, YOLOv8 ONNX padrão. Cada caixa é expandida para a proporção escolhida e depois reduzida; imagens sem acerto são ignoradas. Também dá para importar o seu próprio ONNX YOLOv8; a fonte de download é a mesma do tagger ONNX (HuggingFace / hf-mirror)
+- Degraus padrão 512 / 768 / 896 / 1024 / 1280 / 1536, com multi-seleção e valores personalizados 64–8192 (alinhados para baixo em múltiplos de 64); redução Lanczos sem ampliar; imagens já menores que o degrau são ignoradas
+- Também **Ferramentas → Detectar YOLO…**: janela à parte desenha as caixas, deixa manter/descartar, opcionalmente marca ONNX os recortes mantidos e depois exporta; a mesma lista de modelos, fonte de download e o botão *Baixar modelo* estão lá
+
+### Pré-buckets
+
+Entrada: menu de contexto do dataset, menu do cabeçalho da pasta, ou **Ferramentas → Pré-buckets…**. Defina resolução / lado mínimo·máximo / passo; depois **preenche** cada imagem com bordas brancas até o tamanho exato e grava numa pasta `{largura}x{altura}` no dataset atual. As tags são clonadas. Depois de gravar, as imagens de origem e as pastas vazias são removidas.
+
+- **Por quê**: cada bucket de resolução tem o próprio lote, então muitos buckets com sobras empurram os passos reais bem acima do valor teórico. Encaixar as imagens em menos tamanhos fixos faz o treino usar a quantidade que você escolheu
+- **Configurações de buckets**: resolução (padrão 1536×1536), lado mínimo / máximo e passo (geralmente 64). *Não ampliar (só preenchimento)* vem ligado — imagens pequenas só ganham bordas brancas
+- **Número alvo**: digite um número, ou toque 4 / 8 / 12 / 16 / Todos. Todos mantém cada bucket pela proporção; N junta proporções vizinhas até N pastas
+- **Estimativa de passos**: repetições / lote / épocas geram a contagem **teórica** e a contagem **real** depois dos buckets
 
 ### Ferramentas de vídeo
 
@@ -135,6 +156,15 @@ Entrada: menu de contexto do dataset → **Editar imagem**. Layout no estilo Pho
 Selecione várias imagens e pressione **Shift+T**: a lista de tags à esquerda (com contagem de ocorrências, ordenada por frequência) troca a tag em revisão; **borda verde = tem a tag, vermelha = não tem** — clique em Y/N em uma miniatura para alternar; as edições em várias tags são aplicadas em um único salvamento.
 
 ![Editor de tags com seleção múltipla](../images/multi-select-tag-editor.png)
+
+### Classificar em pastas por tag
+
+Entrada: **Ferramentas → Classificar em pastas por tag…**. Marque tags, confirme, e as imagens que têm **todas** as tags marcadas são **movidas** para uma pasta na raiz — os arquivos `.txt` / `.caption` acompanham.
+
+- **Regras**: a imagem precisa ter todas as tags marcadas; se faltar alguma, fica no lugar
+- **Nome da pasta**: digite um, ou deixe em branco para `Mix`. Se o nome já existir, vira `Mix_2`, depois `Mix_3`
+- **Escopo**: todas as imagens ou a pasta atual. A lista de tags tem busca; a prévia mostra quantas imagens vão ser movidas
+- **Renomear**: depois, **F2** ou **clique duplo** no cabeçalho do grupo (ou clique direito para renomear) para um nome estilo kohya `10_miku`
 
 ### Localizador de imagens semelhantes
 
@@ -163,7 +193,7 @@ Entrada: a janela do menu **Teste** (a mesma da auditoria de tags), grupo "Corre
 
 O próprio `BooruDatasetTagManagerPlus.exe` é uma ferramenta de linha de comando: um primeiro argumento conhecido executa sem janela (saída redirecionável; códigos de saída 0/1/2 = ok / erro / uso), qualquer outra coisa abre a interface como sempre. `help` mostra o uso completo:
 
-- **Operações de dataset**: `stats`; consultas `list-images` / `list-tags` / `classify-tags` (filtro por tags, categoria semântica, contagem); edições em lote `add-tags` / `remove-tags` / `replace-tag` (alvo condicional, `--dry-run`); `export` para JSON
+- **Operações de dataset**: `stats`; consultas `list-images` / `list-tags` / `classify-tags` (filtro por tags, categoria L1/L2, contagem; `--category` aceita `头发` ou `Hair`, ou `头发/发色` para uma secundária); edições em lote `add-tags` / `remove-tags` / `replace-tag` (alvo condicional, `--dry-run`); `export` para JSON
 - **`fix-tags`**: o gêmeo em CLI do corretor — `--child-threshold` define o limite de confiança (padrão 0 = desligado), `--catalog` aponta para um CSV de relações personalizado
 - **`onnx-models` / `onnx-tag`**: marcação ONNX local — lista / baixa modelos automaticamente (`--hf-token` para repositórios restritos), limites e modos de gravação com a mesma semântica da interface, "ignorar existentes" filtra antes da inferência
 - **`audit`**: a auditoria LLM de tags de personagem — reutiliza a configuração de API e os prompts salvos na interface, executa a revisão em duas etapas e grava de forma transacional; `--report` emite um relatório JSON, `--dry-run` só mostra as decisões
@@ -172,7 +202,8 @@ O próprio `BooruDatasetTagManagerPlus.exe` é uma ferramenta de linha de comand
 ### Dados e privacidade
 
 - **A Marcação LLM e a auditoria de tags de personagem enviam imagens ao endpoint que você configurou**; a marcação ONNX, a remoção de fundo e as ferramentas de vídeo executam totalmente na sua máquina
-- As configurações (incluindo as chaves de API criptografadas com DPAPI) ficam no arquivo local `settings.json`; o salvamento de tags é atômico, as ferramentas de imagem em lote gravam em arquivo temporário e só substituem em caso de sucesso, e a exclusão é feita em etapas, com restauração automática se falhar no meio. Atenção: a conversão de vídeo com "substituir o original" marcado apaga o vídeo de origem após uma conversão bem-sucedida
+- O arquivo de **configurações** `settings.json` (preferências da interface + LLM/API, chaves com DPAPI) fica em `Documentos\BooruDatasetTagManagerPlus`; Configurações → Geral mostra o caminho. Debug / Release / `dist` leem o mesmo arquivo; se Documentos ainda não tiver, o arquivo ao lado do exe é copiado (incluindo `.bak`); se Documentos já existir sem API, mas o arquivo ao lado do exe ainda tiver endpoint ou chaves reconhecíveis, só esses campos de API são mesclados. O arquivo antigo não é apagado. Em outro PC as chaves precisam ser digitadas de novo
+- O salvamento de tags é atômico, as ferramentas de imagem em lote gravam em arquivo temporário e só substituem em caso de sucesso, e a exclusão é feita em etapas, com restauração automática se falhar no meio. Atenção: a conversão de vídeo com "substituir o original" marcado apaga o vídeo de origem após uma conversão bem-sucedida
 - O **modo de depuração** (Configurações → Geral, desligado por padrão) mostra um menu Debug e grava informações de execução e exceções no `debug.log` ao lado do executável (o menu abre o arquivo diretamente) — útil para anexar ao relatar problemas
 
 ## Agradecimentos e licença
