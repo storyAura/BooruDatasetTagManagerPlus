@@ -31,6 +31,8 @@ namespace BooruDatasetTagManager
         private FontSettings autocompleteFontSettings = null;
         private System.Windows.Forms.CheckBox checkBoxUseDanbooruCsv;
         private System.Windows.Forms.CheckBox checkBoxMatchCharacterTags;
+        private System.Windows.Forms.GroupBox groupTranslationService;
+        private System.Windows.Forms.GroupBox groupTranslationData;
         private System.Windows.Forms.Label labelImageEditorSaveMode;
         private System.Windows.Forms.ComboBox comboBoxImageEditorSaveMode;
         private System.Windows.Forms.Label labelAllTagsDoubleClick;
@@ -122,31 +124,92 @@ namespace BooruDatasetTagManager
 
         // The CSV-before-online-translation toggle used to live in the Test module;
         // it now belongs to the Translations settings tab (and defaults on).
+        // Runtime-added controls are parented to already-scaled designer
+        // controls so high-DPI does not stack rows.
         private void AddCsvTranslationCheckbox()
         {
             checkBoxUseDanbooruCsv = new System.Windows.Forms.CheckBox
             {
                 AutoSize = true,
-                Dock = System.Windows.Forms.DockStyle.Fill,
                 Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
                 Name = "checkBoxUseDanbooruCsv"
             };
-            translationTableLayoutPanel.RowCount = 6;
-            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
-            translationTableLayoutPanel.Controls.Add(checkBoxUseDanbooruCsv, 0, 4);
-            translationTableLayoutPanel.SetColumnSpan(checkBoxUseDanbooruCsv, 2);
-            // Character-catalog matching (coloring + 译名) lives right below
-            // the general-tag CSV toggle it complements.
             checkBoxMatchCharacterTags = new System.Windows.Forms.CheckBox
             {
                 AutoSize = true,
-                Dock = System.Windows.Forms.DockStyle.Fill,
                 Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
                 Name = "checkBoxMatchCharacterTags"
             };
-            translationTableLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle());
-            translationTableLayoutPanel.Controls.Add(checkBoxMatchCharacterTags, 0, 5);
-            translationTableLayoutPanel.SetColumnSpan(checkBoxMatchCharacterTags, 2);
+
+            tabTranslations.Controls.Remove(translationTableLayoutPanel);
+            translationTableLayoutPanel.Controls.Remove(labelTransLang);
+            translationTableLayoutPanel.Controls.Remove(comboBox1);
+            translationTableLayoutPanel.Controls.Remove(labelTranslService);
+            translationTableLayoutPanel.Controls.Remove(comboBox2);
+            translationTableLayoutPanel.Controls.Remove(labelTranslationTimeout);
+            translationTableLayoutPanel.Controls.Remove(numericUpDownTranslationTimeout);
+            translationTableLayoutPanel.Controls.Remove(checkBoxLoadOnlyManual);
+
+            groupTranslationService = new System.Windows.Forms.GroupBox
+            {
+                AutoSize = true,
+                Dock = System.Windows.Forms.DockStyle.Top,
+                Padding = new System.Windows.Forms.Padding(
+                    labelTransLang.Margin.Left,
+                    comboBox1.Height / 3,
+                    labelTransLang.Margin.Left,
+                    comboBox1.Height / 3),
+                Name = "groupTranslationService"
+            };
+            var serviceTable = new System.Windows.Forms.TableLayoutPanel
+            {
+                AutoSize = true,
+                Dock = System.Windows.Forms.DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 3
+            };
+            serviceTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.AutoSize));
+            serviceTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100f));
+            serviceTable.Controls.Add(labelTransLang, 0, 0);
+            serviceTable.Controls.Add(comboBox1, 1, 0);
+            serviceTable.Controls.Add(labelTranslService, 0, 1);
+            serviceTable.Controls.Add(comboBox2, 1, 1);
+            serviceTable.Controls.Add(labelTranslationTimeout, 0, 2);
+            serviceTable.Controls.Add(numericUpDownTranslationTimeout, 1, 2);
+            groupTranslationService.Controls.Add(serviceTable);
+
+            groupTranslationData = new System.Windows.Forms.GroupBox
+            {
+                AutoSize = true,
+                Dock = System.Windows.Forms.DockStyle.Top,
+                Padding = groupTranslationService.Padding,
+                Name = "groupTranslationData"
+            };
+            var dataFlow = new System.Windows.Forms.FlowLayoutPanel
+            {
+                AutoSize = true,
+                Dock = System.Windows.Forms.DockStyle.Fill,
+                FlowDirection = System.Windows.Forms.FlowDirection.TopDown,
+                WrapContents = false
+            };
+            checkBoxLoadOnlyManual.Dock = System.Windows.Forms.DockStyle.None;
+            dataFlow.Controls.Add(checkBoxLoadOnlyManual);
+            dataFlow.Controls.Add(checkBoxUseDanbooruCsv);
+            dataFlow.Controls.Add(checkBoxMatchCharacterTags);
+            groupTranslationData.Controls.Add(dataFlow);
+
+            var root = new System.Windows.Forms.TableLayoutPanel
+            {
+                Dock = System.Windows.Forms.DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Padding = translationTableLayoutPanel.Padding
+            };
+            root.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            root.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            root.Controls.Add(groupTranslationService, 0, 0);
+            root.Controls.Add(groupTranslationData, 0, 1);
+            tabTranslations.Controls.Add(root);
         }
 
         private void Form_settings_Load(object sender, EventArgs e)
@@ -441,6 +504,10 @@ namespace BooruDatasetTagManager
             labelHotkeysHelp.Text = I18n.GetText("SettingHotkeysHelpText");
             dataGridViewHotkeys.Columns["Command"].HeaderText = I18n.GetText("SettingHotkeysCommandColumn");
             dataGridViewHotkeys.Columns["Hotkey"].HeaderText = I18n.GetText("SettingHotkeysHotkeyColumn");
+            if (groupTranslationService != null)
+                groupTranslationService.Text = I18n.GetText("SettingTranslationServiceGroup");
+            if (groupTranslationData != null)
+                groupTranslationData.Text = I18n.GetText("SettingTranslationDataGroup");
             labelTransLang.Text = I18n.GetText("SettingTranslationLang");
             labelTranslService.Text = I18n.GetText("SettingTranslationSrv");
             labelTranslationTimeout.Text = I18n.GetText("SettingTranslationTimeout");

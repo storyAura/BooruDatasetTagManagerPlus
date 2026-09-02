@@ -75,7 +75,7 @@ namespace BooruDatasetTagManager
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = SystemFonts.MessageBoxFont;
 
-            Text = "ONNX Tagger";
+            Text = "Tag tagger";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimumSize = new Size(720, 580);
@@ -844,7 +844,7 @@ namespace BooruDatasetTagManager
                 progressBar.Value = 0;
                 UpdateModelStatus();
                 UpdateIdleStatus();
-                MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, FormatJobError(ex), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -901,7 +901,7 @@ namespace BooruDatasetTagManager
                 // file still locked after download, unsupported input): deleting
                 // the cached download cannot fix these, so keep it and surface
                 // the real error.
-                throw new InvalidOperationException(ex.Message, ex);
+                throw new InvalidOperationException(FormatJobError(ex), ex);
             }
             catch (Exception ex)
             {
@@ -993,7 +993,7 @@ namespace BooruDatasetTagManager
 
             try
             {
-                List<BatchInferenceResult> inferenceResults;
+                List<OnnxBatchItemResult> inferenceResults;
                 if (entry.Kind == OnnxTaggerModelKind.PixAi)
                 {
                     PixAiTaggerSettings settings = Program.Settings.PixAiTagger;
@@ -1005,7 +1005,7 @@ namespace BooruDatasetTagManager
                             input => pixAiService.TagImageWithTiming(input, settings.GeneralThreshold, settings.CharacterThreshold),
                             progressTracker,
                             progressReporter,
-                            value => ReportBatchProgress(value, totalImages),
+                            totalImages,
                             ref completed,
                             errors,
                             jobCancellation.Token);
@@ -1025,7 +1025,7 @@ namespace BooruDatasetTagManager
                             input => clService.TagImageWithTiming(input, generalThreshold, characterThreshold),
                             progressTracker,
                             progressReporter,
-                            value => ReportBatchProgress(value, totalImages),
+                            totalImages,
                             ref completed,
                             errors,
                             jobCancellation.Token);
@@ -1045,7 +1045,7 @@ namespace BooruDatasetTagManager
                             input => wd14Service.TagImageWithTiming(input, generalThreshold, characterThreshold),
                             progressTracker,
                             progressReporter,
-                            value => ReportBatchProgress(value, totalImages),
+                            totalImages,
                             ref completed,
                             errors,
                             jobCancellation.Token);
@@ -1087,7 +1087,7 @@ namespace BooruDatasetTagManager
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, FormatJobError(ex), I18n.GetText("UIError"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -1124,54 +1124,45 @@ namespace BooruDatasetTagManager
             }
         }
 
-        private sealed class BatchInferenceResult
+        private static string FormatJobError(Exception ex)
         {
-            public string Input { get; init; }
-            public OnnxTagResult Result { get; init; }
+            return NativeRuntimeLocator.IsNativeLoadFailure(ex)
+                ? NativeRuntimeLocator.FormatUserMessage(ex)
+                : ex?.Message;
         }
 
-        private static List<BatchInferenceResult> RunBatchInference(
+        private List<OnnxBatchItemResult> RunBatchInference(
             IReadOnlyList<string> inputs,
             Func<string, OnnxTagResult> tagImage,
             OnnxTaggerProgressTracker progressTracker,
             VideoProgressReporter progressReporter,
-            Action<int> reportProgress,
+            int totalImages,
             ref int completed,
             List<string> errors,
             CancellationToken cancellationToken)
         {
-            var results = new List<BatchInferenceResult>(inputs.Count);
-            foreach (string input in inputs)
-            {
-                // Stop instead of throwing so results computed so far survive a
-                // cancel/close and still get applied and saved by the caller.
-                if (cancellationToken.IsCancellationRequested)
-                    break;
-
-                try
+            int done = 0;
+            List<OnnxBatchItemResult> results = OnnxBatchRunner.Run(
+                inputs,
+                tagImage,
+                errors,
+                cancellationToken,
+                (count, input) =>
                 {
-                    OnnxTagResult result = tagImage(input);
-                    progressTracker.RecordInference(result.ElapsedMilliseconds);
-                    results.Add(new BatchInferenceResult { Input = input, Result = result });
-                }
-                catch (Exception ex)
-                {
-                    errors.Add(input + ": " + ex.Message);
-                }
-
-                completed++;
-                reportProgress(completed);
-                progressReporter.Report(progressTracker.FormatStatusLine(
-                    Path.GetFileName(input),
-                    completed,
-                    inputs.Count));
-            }
-
+                    done = count;
+                    ReportBatchProgress(count, totalImages);
+                    progressReporter.Report(progressTracker.FormatStatusLine(
+                        Path.GetFileName(input),
+                        count,
+                        totalImages));
+                },
+                progressTracker);
+            completed = done;
             return results;
         }
 
         private void ApplyBatchInferenceResults<TSettings>(
-            IReadOnlyList<BatchInferenceResult> results,
+            IReadOnlyList<OnnxBatchItemResult> results,
             Func<TSettings> getSettings,
             List<string> errors)
             where TSettings : TaggerSettings
@@ -1185,7 +1176,7 @@ namespace BooruDatasetTagManager
             {
                 Program.DataManager.ExecuteBulkMutation(() =>
                 {
-                    foreach (BatchInferenceResult item in results)
+                    foreach (OnnxBatchItemResult item in results)
                     {
                         if (!TryGetDataItem(item.Input, out DataItem dataItem))
                         {

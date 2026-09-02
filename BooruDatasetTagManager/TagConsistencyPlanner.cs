@@ -51,12 +51,16 @@ namespace BooruDatasetTagManager
         /// child variant needs to be trusted; a rarer child folds into its
         /// nearest trusted ancestor (0 disables the rule). Needs
         /// <paramref name="getParentTag"/> to have any effect.</param>
+        /// <param name="fixCharacterVariants">When false, skip every
+        /// character-family rule (same-image variant conflicts and rare-child
+        /// folds). Subject-count and solo rules still run.</param>
         public static IReadOnlyList<TagConsistencyIssue> Plan(
             IEnumerable<(string ImagePath, IReadOnlyList<string> Tags)> images,
             Func<string, bool> isCharacterTag,
             IReadOnlyDictionary<string, int> datasetTagCounts,
             Func<string, string> getParentTag = null,
-            int childCountThreshold = 0)
+            int childCountThreshold = 0,
+            bool fixCharacterVariants = true)
         {
             if (images == null)
                 throw new ArgumentNullException(nameof(images));
@@ -69,8 +73,11 @@ namespace BooruDatasetTagManager
                 if (tags == null || tags.Count == 0)
                     continue;
                 PlanSubjectCounts(path, tags, issues);
-                PlanCharacterVariants(path, tags, isCharacterTag, datasetTagCounts,
-                    getParentTag, childCountThreshold, issues);
+                if (fixCharacterVariants)
+                {
+                    PlanCharacterVariants(path, tags, isCharacterTag, datasetTagCounts,
+                        getParentTag, childCountThreshold, issues);
+                }
             }
             return issues;
         }

@@ -1,16 +1,17 @@
-# BooruDatasetTagManager+ 1.2.5
+# BooruDatasetTagManager+ 1.2.6
 
 [简体中文](README.md) | [Português do Brasil](docs/pt-BR/README_pt_BR.md)
 
 A Windows tagger for LoRA and character datasets, forked from **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**.
 
-Each image has a matching `.txt` file for its tags — load a folder and edit them. You can also auto-tag with an LLM or local ONNX, run a character audit, and search tags in Chinese. The UI defaults to Simplified Chinese. [MIT License](LICENSE).
+Each image has a matching `.txt` file for its tags — load a folder and edit them. You can also auto-tag with an LLM or the local **Tag tagger** (formerly ONNX tagger; still WD14 / PixAI / CL), run a character audit, and search tags in Chinese. The UI defaults to Simplified Chinese. [MIT License](LICENSE).
 
 ![Main window](docs/images/main-window-dataset-browser.png)
 
 ## Changelog
 
-- **1.2.5** (current) — New: batch crop, multi-crop, YOLO detect, pre-bucket, two-level category filter, classify images into folders by tag; settings now live in Documents. Fixed: ONNX download deleting a locked model, translation hanging. [Release notes](docs/RELEASE_NOTES_v1.2.5.md)
+- **1.2.6** (current) — **ONNX tagger renamed Tag tagger** (Tools menu, window title, and right-click; the engine is still local ONNX); tag fixer can skip character-family replacements; YOLO detect aspect can auto-match per image; image-tags Shift/Ctrl multi-select works again; Win10 native-library load failures and large-batch tagging memory spikes are hardened. Most of the rest is UI/workflow polish: grouped Tools menu, standalone quick replace, pre-bucket pad-to-batch and Gradient, tighter window copy and layouts. [Release notes](docs/RELEASE_NOTES_v1.2.6.md)
+- **1.2.5** — New: batch crop, multi-crop, YOLO detect, pre-bucket, two-level category filter, classify images into folders by tag; settings now live in Documents. Fixed: ONNX download deleting a locked model, translation hanging. [Release notes](docs/RELEASE_NOTES_v1.2.5.md)
 - **1.2.4** — Fixed WD14 wrong-color tags, saves on very long filenames, and the multi-character audit dropdown; ONNX results sort by confidence; random-percentage frame extraction; sort the dataset by file type. [Release notes](docs/RELEASE_NOTES_v1.2.4.md)
 - **1.2.3** — Corrupted-image scanner; folder / all-images batch transparent-background fill; fixed tag filter “click NOT, get OR”; key and path hardening. [Release notes](docs/RELEASE_NOTES_v1.2.3.md)
 - **1.2.2** — Similar-image finder, multi-character audit (up to 4), category filters, flat view, tag consistency fixer, CLI, F5 reload; fixed “skip existing tags” burning LLM credits. [Release notes](docs/RELEASE_NOTES_v1.2.2.md)
@@ -27,9 +28,9 @@ Each image has a matching `.txt` file for its tags — load a folder and edit th
 Download `BooruDatasetTagManagerPlus-*-win-x64.zip` from [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases), extract, and run `BooruDatasetTagManagerPlus.exe` (self-contained; no separate .NET install required).
 
 1. **File → Load Folder**; *Load Folder (Custom Options)…* can additionally skip thumbnails (faster for large datasets) or read initial tags from image metadata (handy for fresh generations without `.txt` files yet); *Reload current dataset* (F5) refreshes the loaded folder from disk at any time
-2. Edit tags directly: the All Tags and Image Tags search boxes understand the Chinese dictionary (typing 头发 finds long hair, black hair, …); double-clicking an All Tags row runs a quick action (opens "Replace all" by default, configurable in Settings); open the Danbooru Wiki for unfamiliar tags
+2. Edit tags directly: the All Tags and Image Tags search boxes understand the Chinese dictionary (typing 头发 finds long hair, black hair, …); Shift/Ctrl multi-select on Image Tags applies delete, copy, and weight edits to every selected row; double-clicking an All Tags row runs a quick action (opens "Replace all" by default, configurable in Settings); open the Danbooru Wiki for unfamiliar tags
 3. Before using any LLM feature, configure your OpenAI-compatible endpoint and models in **LLM Settings**
-4. Run **Tools → LLM tagging / ONNX tagger / Remove background / Replace transparent background / video tools / Find similar images / Scan corrupted images / Batch crop / Multi-crop / YOLO detect / Pre-bucket / Classify into folders by tag**, or **Test → Open character tag audit** (the character tag audit and the tag consistency fixer both live there), as needed
+4. Open **Tools** as needed: **Processing tools** (replace transparent background / video tools / remove background / batch crop / multi-crop / YOLO detect), **Tagging tools** (Tag tagger / LLM tagging / character tag audit / quick replace), **Preprocessing tools** (find similar images / scan corrupted images / classify into folders by tag / pre-bucket); the **Test functions** window still hosts the tag consistency fixer
 5. Automation scripts can drive the very same exe from the command line: `BooruDatasetTagManagerPlus.exe help` lists every verb (stats / bulk tag edits / export / fix-tags / onnx-tag / audit)
 
 ### Build from source
@@ -49,11 +50,11 @@ Running locally creates **Models/** (downloaded ONNX weights) and **Cache/** bes
 
 | Group | Includes |
 | --- | --- |
-| **Tagging** | LLM (tags / captions) · local ONNX (WD14 / PixAI / CL) · character audit (up to 4) |
+| **Tagging** | LLM (tags / captions) · **Tag tagger** (local ONNX: WD14 / PixAI / CL) · character audit (up to 4) |
 | **Tags** | Chinese search, category tints and L1/L2 filter, consistency fixer, filter images by tag |
 | **Images** | Editor, batch crop, multi-crop (incl. YOLO), pre-bucket, background removal / fill |
 | **Cleanup** | Folder browser + preview, classify into folders by tag, bucket-by-resolution, similar images, corrupted-file scan, video convert / frames |
-| **CLI** | Same exe: stats, bulk edits, export, ONNX, audit |
+| **CLI** | Same exe: stats, bulk edits, export, Tag tagger (`onnx-tag`), audit |
 
 ## Feature guide
 
@@ -62,7 +63,7 @@ Running locally creates **Models/** (downloaded ONNX weights) and **Cache/** bes
 The dataset panel is one unified browser: the search box filters folders and file names together; kohya repeat folders render as collapsible groups (multi-folder datasets open fully collapsed; expand-all / collapse-all, flat-view and sort buttons sit next to the search box; flat view ignores the folder groups and renders the current scope + filter as one list), and clicking a folder header scopes the dataset to it (All Tags counts, bulk operations and the audit wizard follow); image rows show the thumbnail, the name and `format · pixels · size`, with file-manager-style selection (Ctrl / Shift / Ctrl+A / arrows / context menu / Delete).
 
 - **Sort**: the button next to the search box orders by name, type, or modification date. Type groups by extension (jpg / jpeg together; png, webp, mp4, webm, … each their own group — images and videos use the same rule), then by name within the group; the choice is remembered
-- **Folder right-click**: rename the folder (disk + in-memory remap, unsaved edits survive); **F2** or **double-click** a group header also renames; batch rename images (prefix + numeric / letters / original name + suffix, live preview, `.txt` follows); tag the folder with ONNX / LLM
+- **Folder right-click**: rename the folder (disk + in-memory remap, unsaved edits survive); **F2** or **double-click** a group header also renames; batch rename images (prefix + numeric / letters / original name + suffix, live preview, `.txt` follows); **Tag folder with Tag tagger…** / tag the folder with LLM
 - **Embedded preview**: collapsible panel under the browser (View → Show preview, state persisted); multi-select tiles the first four images, double-click a cell to open it in the floating viewer; the floating window supports cursor-anchored zoom, drag pan, double-click fit ↔ 100 %, Ctrl+0 / Ctrl+1
 - **Tag colors & category sort**: both tag panes tint and group by the **primary** category (hair / clothing / character …); the image-tags toolbar's *Category sort* is a sticky toggle: while checked, every newly selected image is grouped by primary automatically (honoring "don't sort first N rows"), and the state persists; the All Tags category sort is opt-in (off by default)
 - **Category filter**: each pane has a two-column menu. Tick a primary on the left to filter that whole group; hover lists its secondaries on the right. Multi-select and search by category name. Stacks with text and count filters
@@ -70,6 +71,16 @@ The dataset panel is one unified browser: the search box filters folders and fil
 - **Character catalog**: ~330 k danbooru character tags ship in `Data/danbooru_character_tags.csv` (including ~26 k real parent/child relations) for exact character coloring, "name (franchise)" translations and the tag fixer's family grouping; can be disabled in Settings → Translation. The general CSV has no character names — the Character bucket still comes from this table / the Danbooru type column
 
 ![Tag category filter](docs/images/tag-category-filter.png)
+
+### Tools menu
+
+**Tools** is one flat dropdown split into three pale-tinted section bars (not clickable; the wash uses the same blend as tag-category row tints, so light and dark themes both stay readable):
+
+- **Processing tools**: replace transparent background, video convert, frame extract, remove background, batch crop, multi-crop, YOLO detect
+- **Tagging tools**: Tag tagger, LLM tagging, character tag audit, quick replace
+- **Preprocessing tools**: find similar images, scan corrupted images, classify into folders by tag, pre-bucket
+
+The tag consistency fixer still lives in the **Test functions** window; character tag audit can be opened from Tagging tools or from that window.
 
 ### LLM tagging
 
@@ -81,26 +92,32 @@ Entry: **Tools → LLM tagging…**, the dataset context menu, or the tag-toolba
 
 - **Tags mode** — image → tags, written back to the dataset per the write mode (replace / append / skip existing), with sort, prefix/suffix, and underscore post-processing; four built-in prompt templates (Danbooru Tag / Natural language / Hybrid / Natural language 2), custom templates export as JSON without credentials
 - **Tags → Natural-language mode** (formerly TAG2NL) — tags + image → a natural-language caption; output format **Tags+NL / NL only**; saves a copy to `dataset_captioned/` by default (source `.txt` read-only, existing skippable) or writes in place into the image's own `.txt`
-- **ONNX first if untagged** — images with no tags are first tagged by the local ONNX tagger, then handed to the LLM — an automatic tags → natural-language pipeline
+- **Run Tag tagger first if untagged** — images with no tags go through **Tag tagger** (the same local ONNX models) first, then the LLM — an automatic tags → natural-language pipeline
 
 ### Character tag audit
 
-Entry: **Test → Open character tag audit…**. Set the locked trigger word (always kept), the tagging style (**sparse** keeps core features / **full** keeps every correct detail), a minimum occurrence threshold, and a reference image; the AI then runs a text screening followed by a visual review (no step back — cancel and reopen to change parameters); finally review each decision (keep / delete / replace / unsure), preview the resulting character prompt, and **Apply & Save** writes transactionally with rollback on failure.
+Entry: **Tools → Character tag audit…** (the **Test functions** window still has the same entry). Set the locked trigger word (always kept), the tagging style (**sparse** keeps core features / **full** keeps every correct detail), a minimum occurrence threshold, and a reference image; the AI then runs a text screening followed by a visual review (no step back — cancel and reopen to change parameters); finally review each decision (keep / delete / replace / unsure), preview the resulting character prompt, and **Apply & Save** writes transactionally with rollback on failure.
 
 **Multi-character datasets** (up to 4) are supported: pick the Dual or Multi subject mode and give each character its own trigger word, reference image and gender (empty rows are skipped, so three-character datasets work too); images are attributed by trigger word, then by folder, shared images automatically receive subject-count tags (`2girls`, `multiple girls` and the like), the AI review, per-tag review and apply all run character by character, and a failed character can be retried alone (finished characters keep their results).
 
 ![Audit review](docs/images/character-tag-audit-review.png)
 
-### ONNX tagger
+### Tag tagger
 
-Entry: **Tools → ONNX tagger…**, or right-click **Retag with ONNX** on selected images (starts automatically); the folder right-click **Tag folder with ONNX…** preselects the *Current folder* source and starts after you confirm the settings.
+Formerly **ONNX tagger**. From 1.2.6 the UI says **Tag tagger** (Simplified Chinese: **Tag 推标**) on the **Tools → Tagging** menu, the window title, dataset right-click **Retag with Tag tagger**, and folder right-click **Tag folder with Tag tagger…**. The engine is unchanged: local ONNX (WD14 / PixAI / CL), weights still land in `Models/`, and the CLI verbs stay `onnx-tag` / `onnx-models`.
 
-![ONNX tagger](docs/images/onnx-tagger.png)
+Entry: **Tools → Tag tagger…**, or right-click **Retag with Tag tagger** on selected images (starts automatically); the folder right-click **Tag folder with Tag tagger…** preselects the *Current folder* source and starts after you confirm the settings.
+
+![Tag tagger](docs/images/onnx-tagger.png)
 
 - Models: full WD14 catalog (12 models) + PixAI 0.9 + CL family (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); thresholds and settings remembered per model; download from HuggingFace official or mirror
 - After download the app checks the model; a file briefly locked by antivirus/indexer is retried and kept, not treated as corrupt and deleted. Missing native runtime and other environment errors also leave a finished download in place
 - cl_tagger_v2 is a **gated repo** whose author license forbids redistribution and bundling — the app does not ship it; a license notice shows before download, and you must request access on HuggingFace and enter your own access token (stored DPAPI-encrypted), or place manually downloaded files into the `Models` folder
 - Write mode (replace / append / skip existing), optional sort, underscore→space, prefix/suffix tags; progress bar for batch runs; the "Skipping existing tag lists" mode skips already-tagged images before inference and reports written / skipped counts on completion
+
+### Quick replace
+
+Entry: **Tools → Quick replace…**. Pick the keeper on the left, set the threshold, preview same-suffix low-count tags on the right, and read the short status on the bottom-left before confirming a dataset-wide replace. "Same category" means the last word (`black shoes` → `shoes`); only tags below the threshold are replaced.
 
 ### Background removal
 
@@ -135,24 +152,25 @@ Entry: dataset context menu → **Edit image**. Photoshop-style layout: compact 
 
 ### Multi-crop tool
 
-Entry: dataset context menu, folder-header context menu, or **Tools → Multi-crop…**. You do not have to click an image first: the source can be **selected images**, **current folder**, or **all images**. Downscale large images to training gears, or cut them to a chosen ratio, keeping high-frequency detail where possible. **Originals are never overwritten**; each ticked gear writes a new file, clones the caption, and imports it into the dataset.
+Entry: dataset context menu, folder-header context menu, or **Tools → Multi-crop…**. You do not have to click an image first: the source can be **selected images**, **current folder**, or **all images**. The left pane previews crop boxes on the first source image (YOLO mode does not run detect here). Downscale large images to training gears, or cut them to a chosen ratio, keeping high-frequency detail where possible. **Originals are never overwritten**; each ticked gear writes a new file, clones the caption, and imports it into the dataset.
 
 - **Scale only**: keep the original aspect and shrink the long edge to each ticked gear
 - **Center-crop to ratio**: take the largest centered 1:1 / 2:3 / 16:9 / … rectangle, then downscale
 - **Split into tiles**: lay gear-sized windows on the source pixels (last row/column flush to the edge); downscale only when a tile is still larger than the gear
 - **Random-position crop**: N crops per image (default 1, max 32); the aspect rectangle is placed uniformly in the remaining slide range, then downscaled
-- **YOLO detect crop**: pick a deepghs anime detector from the dropdown — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; default v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, not gated, standard YOLOv8 ONNX. Each box is expanded to the chosen ratio then geared; images with no hit are skipped. You can also import your own YOLOv8 ONNX; download source is shared with the ONNX tagger (HuggingFace / hf-mirror)
+- **YOLO detect crop**: pick a deepghs anime detector from the dropdown — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; default v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, not gated, standard YOLOv8 ONNX. Each box is expanded to the chosen ratio then geared; images with no hit are skipped. You can also import your own YOLOv8 ONNX; download source is shared with **Tag tagger** (HuggingFace / hf-mirror)
 - Default gears 512 / 768 / 896 / 1024 / 1280 / 1536, multi-select, plus custom values 64–8192 (snapped down to a multiple of 64); Lanczos downscale with no upscaling; images already smaller than a gear are skipped
-- Also **Tools → YOLO detect…**: a separate window draws boxes, lets you keep/drop them, optionally ONNX-tags the kept crops, then exports; the same model dropdown, download source and *Download model* button live there
+- Also **Tools → YOLO detect…**: a separate window draws boxes, lets you keep/drop them, optionally **Open in Tag tagger** for the kept crops, then exports; the same model dropdown, download source and *Download model* button live there. Aspect defaults to **Auto** (nearest preset from each image's width/height: 1:1 / 2:3 / 16:9 / …); you can still lock a ratio
 
 ### Pre-bucket
 
-Entry: dataset context menu, folder-header context menu, or **Tools → Pre-bucket…**. Set resolution / min·max side / step, then **letterbox** each image with white borders onto that exact size and write it into a `{width}x{height}` folder under the current dataset. Captions are cloned. After writing, the source images and any emptied source folders are removed.
+Entry: dataset context menu, folder-header context menu, or **Tools → Pre-bucket…**. Source is the current folder or all images. Set resolution / min·max side / step, then **letterbox** each image with white borders onto that exact size and write it into a `{width}x{height}` folder under the current dataset. Captions are cloned. After writing, the source images and any emptied source folders are removed.
 
 - **Why**: each resolution bucket is batched on its own, so many leftover-heavy buckets can push actual steps well above the theoretical figure. Snapping images onto fewer fixed sizes makes the trainer use the count you chose
 - **Bucket settings**: resolution (default 1536×1536), min / max side, and step (usually 64). *Do not upscale (pad only)* is on by default — small images get white borders only
-- **Target count**: type a number, or tap 4 / 8 / 12 / 16 / All. All keeps every aspect-assigned bucket; N merges neighboring ratios down to N folders
-- **Step estimate**: repeats / batch / epochs produce a **theoretical** count and the **actual** count after bucketing
+- **Target count**: type a number, or tap 4 / 8 / 12 / 16. 0 keeps every aspect-assigned bucket; N merges neighboring ratios down to N folders
+- **Added (配平)**: copies existing images until each bucket is divisible by batch, and the column shows **how many extras** (23 + batch 5 → +2, total 25). Does not pad to batch × Gradient
+- **Step estimate**: repeats / batch / Gradient / epochs produce a **theoretical** count and the **actual** count after bucketing. Gradient only affects optimizer steps: batch 2 and Gradient 2 is effective BS 4, but each step still reads 2 images
 
 ### Video tools
 
@@ -192,25 +210,25 @@ Entry: **Tools → Scan corrupted images…**. Walks the loaded dataset (honorin
 
 ### Tag consistency fixer
 
-Entry: the **Test** menu window (the same one hosting the character tag audit), "Tag consistency fixer" group. It scans the current dataset (or the active folder scope), lists every planned change as an "image / remove / keep / reason" preview, and applies only after confirmation — as normal edits (per-image undo works, nothing auto-saves).
+Entry: the **Test functions** menu window, "Tag consistency fixer" group. It scans the current dataset (or the active folder scope), lists every planned change as an "image / remove / keep / reason" preview, and applies only after confirmation — as normal edits (per-image undo works, nothing auto-saves).
 
 - **Subject-count conflicts**: `1boy` next to `2boys` drops the lower count (the highest per gender survives); `solo` on multi-subject images is removed too, while the semantically different `solo focus` is never touched
-- **Character parent/child duplicates**: when several tags of one character family appear on the same image, dataset-wide counts vote for the survivor; families come from the catalog's real parent relations (`racing miku` ↔ `hatsune miku` renamed variants pair up, while different characters sharing a base name never merge)
-- **Rare-child fold** (checkbox in the Test module; off by default): when enabled, a child variant with fewer dataset occurrences than the threshold (default 30) is not trusted and folds into its nearest trusted ancestor — scattered rare variants consolidate onto the main tag for more focused training. The preview table lets you tick which rows to apply.
+- **Character parent/child duplicates** (checkbox in the Test module; on by default): when several tags of one character family appear on the same image, dataset-wide counts vote for the survivor; families come from the catalog's real parent relations (`racing miku` ↔ `hatsune miku` renamed variants pair up, while different characters sharing a base name never merge). Uncheck it to leave character names alone; subject-count and `solo` fixes still run
+- **Rare-child fold** (available while character-family fix is on; off by default): when enabled, a child variant with fewer dataset occurrences than the threshold (default 30) is not trusted and folds into its nearest trusted ancestor — scattered rare variants consolidate onto the main tag for more focused training. Turning character-family fix off also turns this off. The preview table lets you tick which rows to apply.
 
 ### Command line (CLI)
 
 `BooruDatasetTagManagerPlus.exe` itself is a command-line tool: a known first argument runs windowless (redirectable output; exit codes 0/1/2 = ok / error / usage), anything else starts the GUI as usual. `help` shows the full usage:
 
 - **Dataset operations**: `stats`; `list-images` / `list-tags` / `classify-tags` queries (filter by tags, L1/L2 category, count; `--category` accepts `头发` or `Hair`, or `头发/发色` for a secondary); `add-tags` / `remove-tags` / `replace-tag` bulk edits (conditional targeting, `--dry-run`); `export` to JSON
-- **`fix-tags`**: the consistency fixer's CLI twin — `--child-threshold` sets the trust threshold (default 0 = off), `--catalog` points at a custom relations CSV
-- **`onnx-models` / `onnx-tag`**: local ONNX tagging — list / auto-download models (`--hf-token` for gated repos), thresholds and write modes with GUI-equal semantics, "skip existing" filters before inference
+- **`fix-tags`**: the consistency fixer's CLI twin — `--no-character-variants` skips character-family replacements, `--child-threshold` sets the trust threshold (default 0 = off; ignored with `--no-character-variants`), `--catalog` points at a custom relations CSV
+- **`onnx-models` / `onnx-tag`**: CLI twin of **Tag tagger** (local ONNX) — list / auto-download models (`--hf-token` for gated repos), thresholds and write modes with GUI-equal semantics, "skip existing" filters before inference. The verb names are unchanged so old scripts keep working
 - **`audit`**: the LLM character tag audit — reuses the API configuration and audit prompts saved in the GUI, runs the two-stage review, writes back transactionally; `--report` emits a JSON report, `--dry-run` shows decisions only
 - Every write is an atomic replace; the tag format (comma-separated, lowercase, deduplicated) matches the GUI, so CLI and manual edits mix freely
 
 ### Data & privacy
 
-- **LLM tagging and the character tag audit send images to your configured endpoint**; ONNX tagging, background removal, and video tools run entirely on your machine
+- **LLM tagging and the character tag audit send images to your configured endpoint**; **Tag tagger**, background removal, and video tools run entirely on your machine
 - **Settings file** `settings.json` (UI preferences + LLM/API, keys DPAPI-encrypted) is written to `Documents\BooruDatasetTagManagerPlus`; Settings → General shows the path. Debug / Release / `dist` copies share that file; a missing Documents file is copied from beside the exe (including `.bak`); if Documents already exists without API config but the exe-adjacent file still has a recognizable endpoint or keys, only those API fields are merged in. The old file is left in place. A different PC still needs keys re-entered
 - Tag saves are atomic, batch image tools write to a temp file and only swap it in on success, and deletion is staged so a mid-way failure restores the files. Note: video conversion with "replace original" checked deletes the source video after a successful conversion
 - **Debug mode** (Settings → General, off by default) shows a Debug menu and writes runtime info and exceptions to `debug.log` next to the executable (the menu can open it directly) — handy to attach when reporting issues

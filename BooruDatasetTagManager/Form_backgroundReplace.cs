@@ -42,9 +42,14 @@ namespace BooruDatasetTagManager
 
         private void SwitchLanguage()
         {
-            this.Text = I18n.GetText("UIAutoTagForm");
+            Text = I18n.GetText("UIAutoBackRepForm");
             radioButton1.Text = I18n.GetText("UIAutoBackRepReplacementColor");
             radioButton2.Text = I18n.GetText("UIAutoBackRepRandomColor");
+            radioButton3.Text = I18n.GetText("UIAutoBackRepRandomFromSet");
+            button1.Text = I18n.GetText("BtnOK");
+            button2.Text = I18n.GetText("BtnCancel");
+            button3.Text = I18n.GetText("UIAutoBackRepAdd");
+            button4.Text = I18n.GetText("UIAutoBackRepRemove");
         }
 
         private void button3_Click(object sender, EventArgs e)

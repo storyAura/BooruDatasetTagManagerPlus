@@ -35,7 +35,7 @@ namespace BooruDatasetTagManager
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle3 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle4 = new System.Windows.Forms.DataGridViewCellStyle();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
-            gridViewTags = new System.Windows.Forms.DataGridView();
+            gridViewTags = new ImageTagDataGridView();
             ImageTags = new CustomTextBoxColumn();
             Translation = new System.Windows.Forms.DataGridViewTextBoxColumn();
             ImageName = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -237,8 +237,9 @@ namespace BooruDatasetTagManager
             gridViewTags.Dock = System.Windows.Forms.DockStyle.Fill;
             gridViewTags.Location = new System.Drawing.Point(0, 0);
             gridViewTags.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
-            gridViewTags.MultiSelect = false;
+            gridViewTags.MultiSelect = true;
             gridViewTags.Name = "gridViewTags";
+            gridViewTags.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
             gridViewTags.RowHeadersVisible = false;
             gridViewTags.RowHeadersWidth = 72;
             gridViewTags.RowTemplate.Height = 29;

@@ -288,6 +288,42 @@ public sealed class TagConsistencyPlannerTests
     }
 
     [Fact]
+    public void FixCharacterVariantsOffLeavesCharacterTagsAlone()
+    {
+        Func<string, bool> isCharacter = tag => tag.EndsWith("miku");
+        Func<string, string?> parentOf = tag =>
+            tag is "racing miku" or "snow miku" ? "hatsune miku" : null;
+        var counts = new Dictionary<string, int>
+        {
+            ["hatsune miku"] = 5,
+            ["racing miku"] = 20
+        };
+
+        var issues = TagConsistencyPlanner.Plan(
+            new[]
+            {
+                ("img.png", (IReadOnlyList<string>)new[]
+                {
+                    "1boy", "2boys", "solo", "hatsune miku", "racing miku"
+                })
+            },
+            isCharacter,
+            counts,
+            parentOf!,
+            childCountThreshold: 30,
+            fixCharacterVariants: false);
+
+        Assert.Equal(2, issues.Count);
+        Assert.Contains(issues, issue => issue.RemoveTag == "1boy"
+            && issue.Reason == TagConsistencyReason.SubjectCountConflict);
+        Assert.Contains(issues, issue => issue.RemoveTag == "solo"
+            && issue.Reason == TagConsistencyReason.SoloWithMultipleSubjects);
+        Assert.DoesNotContain(issues, issue =>
+            issue.Reason == TagConsistencyReason.CharacterVariantConflict
+            || issue.Reason == TagConsistencyReason.ChildBelowThreshold);
+    }
+
+    [Fact]
     public void BaseNameStripsAllTrailingQualifiers()
     {
         Assert.Equal("surtr", TagConsistencyPlanner.GetCharacterBaseName(

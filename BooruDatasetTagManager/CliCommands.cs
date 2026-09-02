@@ -139,7 +139,9 @@ namespace BooruDatasetTagManager
             output.WriteLine("  fix-tags <folder>                   fix inconsistent tags (subject-count");
             output.WriteLine("      conflicts, solo on multi-subject images, character parent/child dupes;");
             output.WriteLine("      child variants rarer than the threshold fold into their parent)");
-            output.WriteLine("      [--child-threshold N (default 0 = off; e.g. 30 to enable)] [--catalog FILE]");
+            output.WriteLine("      [--child-threshold N (default 0 = off; e.g. 30 to enable;");
+            output.WriteLine("        ignored with --no-character-variants)]");
+            output.WriteLine("      [--no-character-variants] [--catalog FILE]");
             output.WriteLine("  export <folder> [--out FILE]        JSON {image: [tags]} to file or stdout");
             output.WriteLine("  onnx-models                         local ONNX tagger models and their status");
             output.WriteLine("  onnx-tag <folder>                   auto-tag images with a local ONNX model");
@@ -351,12 +353,16 @@ namespace BooruDatasetTagManager
                 ? $"character catalog: {catalog.Count} tags"
                 : "character catalog: not found, only subject-count rules apply");
 
+            bool fixCharacterVariants = !options.HasFlag("no-character-variants");
+            if (!fixCharacterVariants && childThreshold > 0)
+                output.WriteLine("note: --child-threshold has no effect with --no-character-variants");
             IReadOnlyList<TagConsistencyIssue> issues = TagConsistencyPlanner.Plan(
                 dataset.Items.Select(item => (item.ImagePath, (IReadOnlyList<string>)item.Tags)),
                 isCharacterTag,
                 dataset.CountTags(),
                 getParentTag,
-                childThreshold);
+                childThreshold,
+                fixCharacterVariants);
             if (issues.Count == 0)
             {
                 output.WriteLine("no inconsistent tags found");
@@ -441,7 +447,7 @@ namespace BooruDatasetTagManager
         {
             private static readonly HashSet<string> Flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "dry-run", "untagged", "only-untagged", "no-download"
+                "dry-run", "untagged", "only-untagged", "no-download", "no-character-variants"
             };
 
             private readonly Dictionary<string, string> values =

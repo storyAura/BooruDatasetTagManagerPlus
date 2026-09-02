@@ -149,6 +149,31 @@ namespace BooruDatasetTagManager
             return BatchCropMath.ApplyAspect(expanded, image, BatchCropAspect.Preset(aspectWidth, aspectHeight));
         }
 
+        /// <summary>
+        /// Closest <see cref="BatchCropMath.Presets"/> entry to
+        /// <paramref name="width"/>:<paramref name="height"/>. Ties keep the
+        /// earlier preset. Invalid sizes fall back to the first preset.
+        /// </summary>
+        public static (int Width, int Height) NearestAspectPreset(int width, int height)
+        {
+            (int Width, int Height) fallback = BatchCropMath.Presets[0];
+            if (width < 1 || height < 1)
+                return fallback;
+            double imageAr = (double)width / height;
+            (int Width, int Height) best = fallback;
+            double bestDelta = double.PositiveInfinity;
+            foreach ((int presetW, int presetH) in BatchCropMath.Presets)
+            {
+                double delta = Math.Abs(imageAr - (double)presetW / presetH);
+                if (delta < bestDelta)
+                {
+                    bestDelta = delta;
+                    best = (presetW, presetH);
+                }
+            }
+            return best;
+        }
+
         public static List<(Rectangle Box, float Score)> ParseYoloOutput(
             float[] data,
             int[] dimensions,

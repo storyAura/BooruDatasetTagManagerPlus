@@ -7,14 +7,9 @@ namespace BooruDatasetTagManager
     public sealed class Form_TestModule : Form
     {
         private readonly MainForm owner;
-        private GroupBox groupQuickReplace;
-        private Label labelThreshold;
-        private NumericUpDown numericThreshold;
-        private Button buttonQuickReplace;
         private bool suppressSave;
-        private GroupBox groupCharacterTagAudit;
-        private Button buttonCharacterTagAudit;
         private GroupBox groupTagFix;
+        private CheckBox checkTagFixCharacterVariants;
         private CheckBox checkTagFixFoldRareChildren;
         private Button buttonTagFix;
 
@@ -33,8 +28,8 @@ namespace BooruDatasetTagManager
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Text = "Test";
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(580, 330);
-            MinimumSize = new Size(500, 220);
+            ClientSize = new Size(580, 180);
+            MinimumSize = new Size(500, 160);
             ShowInTaskbar = false;
 
             TableLayoutPanel root = new TableLayoutPanel
@@ -43,60 +38,33 @@ namespace BooruDatasetTagManager
                 AutoSize = true,
                 Padding = new Padding(12),
                 ColumnCount = 1,
-                RowCount = 3
+                RowCount = 1
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
 
-            groupQuickReplace = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10) };
-            root.Controls.Add(groupQuickReplace, 0, 0);
-            TableLayoutPanel quickReplaceLayout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                ColumnCount = 3,
-                RowCount = 1
-            };
-            quickReplaceLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            quickReplaceLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
-            quickReplaceLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            labelThreshold = new Label { AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 8, 12, 3) };
-            numericThreshold = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 1, Maximum = 99999, Value = 30, Margin = new Padding(3, 5, 12, 3) };
-            numericThreshold.ValueChanged += (_, _) => SaveSettingsImmediate();
-            buttonQuickReplace = new Button { AutoSize = true, MinimumSize = new Size(160, 30), Anchor = AnchorStyles.Right };
-            buttonQuickReplace.Click += (_, _) =>
-            {
-                SaveSettingsImmediate();
-                owner.TryQuickReplaceSelectedTag((int)numericThreshold.Value);
-            };
-            quickReplaceLayout.Controls.Add(labelThreshold, 0, 0);
-            quickReplaceLayout.Controls.Add(numericThreshold, 1, 0);
-            quickReplaceLayout.Controls.Add(buttonQuickReplace, 2, 0);
-            groupQuickReplace.Controls.Add(quickReplaceLayout);
-
-            groupCharacterTagAudit = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10), Margin = new Padding(3, 10, 3, 3) };
-            buttonCharacterTagAudit = new Button { AutoSize = true, MinimumSize = new Size(220, 32) };
-            buttonCharacterTagAudit.Click += (_, _) =>
-            {
-                using Form_CharacterTagAuditWizard form = new Form_CharacterTagAuditWizard(owner);
-                form.ShowDialog(this);
-            };
-            groupCharacterTagAudit.Controls.Add(buttonCharacterTagAudit);
-            root.Controls.Add(groupCharacterTagAudit, 0, 1);
-
-            groupTagFix = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10), Margin = new Padding(3, 10, 3, 3) };
+            groupTagFix = new GroupBox { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10) };
             TableLayoutPanel tagFixLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 ColumnCount = 2,
-                RowCount = 1
+                RowCount = 2
             };
             tagFixLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             tagFixLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            checkTagFixCharacterVariants = new CheckBox
+            {
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(3, 8, 12, 3)
+            };
+            checkTagFixCharacterVariants.CheckedChanged += (_, _) =>
+            {
+                UpdateTagFixChildEnabled();
+                SaveSettingsImmediate();
+            };
             checkTagFixFoldRareChildren = new CheckBox
             {
                 AutoSize = true,
@@ -110,21 +78,19 @@ namespace BooruDatasetTagManager
                 SaveSettingsImmediate();
                 owner.RunTagConsistencyFix();
             };
-            tagFixLayout.Controls.Add(checkTagFixFoldRareChildren, 0, 0);
+            tagFixLayout.Controls.Add(checkTagFixCharacterVariants, 0, 0);
             tagFixLayout.Controls.Add(buttonTagFix, 1, 0);
+            tagFixLayout.SetRowSpan(buttonTagFix, 2);
+            tagFixLayout.Controls.Add(checkTagFixFoldRareChildren, 0, 1);
             groupTagFix.Controls.Add(tagFixLayout);
-            root.Controls.Add(groupTagFix, 0, 2);
+            root.Controls.Add(groupTagFix, 0, 0);
         }
 
         private void ApplyLanguage()
         {
             Text = I18n.GetText("MenuTestModule");
-            groupQuickReplace.Text = I18n.GetText("TestQuickReplace");
-            labelThreshold.Text = I18n.GetText("TestQuickReplaceThreshold");
-            buttonQuickReplace.Text = I18n.GetText("TestQuickReplaceRun");
-            groupCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditGroup");
-            buttonCharacterTagAudit.Text = I18n.GetText("CharacterTagAuditOpen");
             groupTagFix.Text = I18n.GetText("TestTagFixGroup");
+            checkTagFixCharacterVariants.Text = I18n.GetText("TestTagFixCharacterVariants");
             checkTagFixFoldRareChildren.Text = I18n.GetText("TestTagFixChildThreshold");
             buttonTagFix.Text = I18n.GetText("TestTagFixRun");
         }
@@ -132,9 +98,20 @@ namespace BooruDatasetTagManager
         private void LoadSettings()
         {
             suppressSave = true;
-            numericThreshold.Value = Math.Clamp(Program.Settings.QuickReplaceThreshold, (int)numericThreshold.Minimum, (int)numericThreshold.Maximum);
+            checkTagFixCharacterVariants.Checked = Program.Settings.TagFixCharacterVariants;
             checkTagFixFoldRareChildren.Checked = Program.Settings.TagFixFoldRareChildren;
+            UpdateTagFixChildEnabled();
             suppressSave = false;
+        }
+
+        private void UpdateTagFixChildEnabled()
+        {
+            bool on = checkTagFixCharacterVariants.Checked;
+            checkTagFixFoldRareChildren.Enabled = on;
+            bool previousSuppress = suppressSave;
+            suppressSave = true;
+            checkTagFixFoldRareChildren.Checked = on && Program.Settings.TagFixFoldRareChildren;
+            suppressSave = previousSuppress;
         }
 
         private void SaveSettingsImmediate()
@@ -142,8 +119,9 @@ namespace BooruDatasetTagManager
             if (suppressSave)
                 return;
 
-            Program.Settings.QuickReplaceThreshold = (int)numericThreshold.Value;
-            Program.Settings.TagFixFoldRareChildren = checkTagFixFoldRareChildren.Checked;
+            Program.Settings.TagFixCharacterVariants = checkTagFixCharacterVariants.Checked;
+            if (checkTagFixCharacterVariants.Checked)
+                Program.Settings.TagFixFoldRareChildren = checkTagFixFoldRareChildren.Checked;
             Program.Settings.SaveSettings();
             owner.SetStatus(I18n.GetText("StatusSettingsSaved"));
         }

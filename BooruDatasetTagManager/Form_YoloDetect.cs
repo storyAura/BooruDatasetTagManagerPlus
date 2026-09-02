@@ -241,24 +241,17 @@ namespace BooruDatasetTagManager
             {
                 AutoSize = true,
                 Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 2
+                ColumnCount = 6,
+                RowCount = 3,
+                Padding = new Padding(0, LogicalToDeviceUnits(4), 0, 0)
             };
-            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            panel.Controls.Add(BuildModelRow(), 0, 0);
-            panel.Controls.Add(BuildAspectRow(), 0, 1);
-            return panel;
-        }
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34f));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28f));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38f));
 
-        private FlowLayoutPanel BuildModelRow()
-        {
-            var row = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                Dock = DockStyle.Fill,
-                WrapContents = true
-            };
             var labelModel = new Label
             {
                 Text = I18n.GetText("YoloDetectModel"),
@@ -266,7 +259,7 @@ namespace BooruDatasetTagManager
                 Anchor = AnchorStyles.Left
             };
             comboModel.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboModel.Width = LogicalToDeviceUnits(220);
+            comboModel.Dock = DockStyle.Fill;
             foreach (YoloDetectorModelEntry model in YoloDetectorCatalog.AllModels)
                 comboModel.Items.Add(model);
             comboModel.SelectedIndexChanged += (_, _) => OnSelectedModelChanged();
@@ -278,7 +271,7 @@ namespace BooruDatasetTagManager
                 Anchor = AnchorStyles.Left
             };
             comboDownloadSource.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboDownloadSource.Width = LogicalToDeviceUnits(160);
+            comboDownloadSource.Dock = DockStyle.Fill;
             comboDownloadSource.Items.AddRange(Extensions.GetFriendlyEnumValues<HuggingFaceDownloadSource>());
             comboDownloadSource.SelectedIndexChanged += (_, _) =>
             {
@@ -295,23 +288,13 @@ namespace BooruDatasetTagManager
             labelModelStatus.Anchor = AnchorStyles.Left;
             labelModelStatus.Padding = new Padding(LogicalToDeviceUnits(8), LogicalToDeviceUnits(6), 0, 0);
 
-            row.Controls.Add(labelModel);
-            row.Controls.Add(comboModel);
-            row.Controls.Add(labelSource);
-            row.Controls.Add(comboDownloadSource);
-            row.Controls.Add(buttonDownload);
-            row.Controls.Add(labelModelStatus);
-            return row;
-        }
+            panel.Controls.Add(labelModel, 0, 0);
+            panel.Controls.Add(comboModel, 1, 0);
+            panel.Controls.Add(labelSource, 2, 0);
+            panel.Controls.Add(comboDownloadSource, 3, 0);
+            panel.Controls.Add(buttonDownload, 4, 0);
+            panel.Controls.Add(labelModelStatus, 5, 0);
 
-        private FlowLayoutPanel BuildAspectRow()
-        {
-            var row = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                Dock = DockStyle.Fill,
-                WrapContents = true
-            };
             var labelAspect = new Label
             {
                 Text = I18n.GetText("ResolutionPrepAspect"),
@@ -319,7 +302,7 @@ namespace BooruDatasetTagManager
                 Anchor = AnchorStyles.Left
             };
             comboAspect.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboAspect.Width = LogicalToDeviceUnits(140);
+            comboAspect.Dock = DockStyle.Fill;
             var labelConf = new Label
             {
                 Text = I18n.GetText("ResolutionPrepYoloConfidence"),
@@ -332,25 +315,27 @@ namespace BooruDatasetTagManager
             numYoloConfidence.Maximum = 1.00m;
             numYoloConfidence.Value = 0.30m;
             numYoloConfidence.Width = LogicalToDeviceUnits(60);
+            panel.Controls.Add(labelAspect, 0, 1);
+            panel.Controls.Add(comboAspect, 1, 1);
+            panel.Controls.Add(labelConf, 2, 1);
+            panel.Controls.Add(numYoloConfidence, 3, 1);
+
             labelStatus.AutoSize = true;
             labelStatus.Anchor = AnchorStyles.Left;
-            labelStatus.Padding = new Padding(LogicalToDeviceUnits(12), LogicalToDeviceUnits(6), 0, 0);
-            row.Controls.Add(labelAspect);
-            row.Controls.Add(comboAspect);
-            row.Controls.Add(labelConf);
-            row.Controls.Add(numYoloConfidence);
-            row.Controls.Add(labelStatus);
-            return row;
+            labelStatus.Padding = new Padding(0, LogicalToDeviceUnits(6), 0, LogicalToDeviceUnits(2));
+            panel.Controls.Add(labelStatus, 0, 2);
+            panel.SetColumnSpan(labelStatus, 6);
+            return panel;
         }
 
-        private FlowLayoutPanel BuildButtons()
+        private TableLayoutPanel BuildButtons()
         {
-            var row = new FlowLayoutPanel
+            var wrap = new TableLayoutPanel
             {
                 AutoSize = true,
                 Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = true
+                ColumnCount = 1,
+                RowCount = 2
             };
             buttonDetect.Text = I18n.GetText("YoloDetectRun");
             buttonOnnx.Text = I18n.GetText("YoloDetectOnnx");
@@ -369,16 +354,32 @@ namespace BooruDatasetTagManager
             buttonExport.Click += async (_, _) => await RunExportAsync();
             buttonImport.Click += (_, _) => ImportYoloModel();
             buttonCancel.Click += ButtonCancel_Click;
-            row.Controls.AddRange(new Control[]
+
+            var primary = new FlowLayoutPanel
             {
-                buttonDetect, buttonOnnx, buttonOpenOnnx, buttonExport, buttonImport, buttonCancel
-            });
-            return row;
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true
+            };
+            primary.Controls.AddRange(new Control[] { buttonDetect, buttonExport });
+            var secondary = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true
+            };
+            secondary.Controls.AddRange(new Control[] { buttonOnnx, buttonOpenOnnx, buttonImport, buttonCancel });
+            wrap.Controls.Add(primary, 0, 0);
+            wrap.Controls.Add(secondary, 0, 1);
+            return wrap;
         }
 
         private void LoadAspectPresets()
         {
             comboAspect.Items.Clear();
+            comboAspect.Items.Add(new AspectItem(I18n.GetText("YoloDetectAspectAuto"), 0, 0, auto: true));
             foreach ((int width, int height) in BatchCropMath.Presets)
                 comboAspect.Items.Add(new AspectItem($"{width}:{height}", width, height));
             comboAspect.DisplayMember = nameof(AspectItem.Text);
@@ -399,15 +400,27 @@ namespace BooruDatasetTagManager
                     ?? HuggingFaceDownloadSource.HfMirror);
                 decimal confidence = (decimal)(settings?.YoloPersonConfidence ?? entry.DefaultConfidence);
                 numYoloConfidence.Value = Math.Clamp(confidence, numYoloConfidence.Minimum, numYoloConfidence.Maximum);
-                int aspectW = settings == null || settings.ResolutionPrepAspectWidth <= 0 ? 1 : settings.ResolutionPrepAspectWidth;
-                int aspectH = settings == null || settings.ResolutionPrepAspectHeight <= 0 ? 1 : settings.ResolutionPrepAspectHeight;
-                for (int i = 0; i < comboAspect.Items.Count; i++)
+                if (settings == null || settings.YoloDetectAspectAuto)
                 {
-                    if (comboAspect.Items[i] is AspectItem item && item.Width == aspectW && item.Height == aspectH)
+                    comboAspect.SelectedIndex = 0;
+                }
+                else
+                {
+                    int aspectW = settings.ResolutionPrepAspectWidth <= 0 ? 1 : settings.ResolutionPrepAspectWidth;
+                    int aspectH = settings.ResolutionPrepAspectHeight <= 0 ? 1 : settings.ResolutionPrepAspectHeight;
+                    int lockedIndex = 0;
+                    for (int i = 0; i < comboAspect.Items.Count; i++)
                     {
-                        comboAspect.SelectedIndex = i;
-                        break;
+                        if (comboAspect.Items[i] is AspectItem item
+                            && !item.Auto
+                            && item.Width == aspectW
+                            && item.Height == aspectH)
+                        {
+                            lockedIndex = i;
+                            break;
+                        }
                     }
+                    comboAspect.SelectedIndex = lockedIndex;
                 }
             }
             finally
@@ -421,9 +434,14 @@ namespace BooruDatasetTagManager
         {
             if (Program.Settings == null)
                 return;
-            GetAspect(out int aspectW, out int aspectH);
-            Program.Settings.ResolutionPrepAspectWidth = aspectW;
-            Program.Settings.ResolutionPrepAspectHeight = aspectH;
+            bool auto = comboAspect.SelectedItem is AspectItem selected && selected.Auto;
+            Program.Settings.YoloDetectAspectAuto = auto;
+            if (!auto)
+            {
+                GetLockedAspect(out int aspectW, out int aspectH);
+                Program.Settings.ResolutionPrepAspectWidth = aspectW;
+                Program.Settings.ResolutionPrepAspectHeight = aspectH;
+            }
             Program.Settings.YoloPersonConfidence = (float)numYoloConfidence.Value;
             Program.Settings.YoloPersonModelId = GetSelectedModel().Id;
             if (Program.Settings.Wd14Tagger != null)
@@ -471,16 +489,26 @@ namespace BooruDatasetTagManager
             return size;
         }
 
-        private void GetAspect(out int width, out int height)
+        private void GetLockedAspect(out int width, out int height)
         {
-            if (comboAspect.SelectedItem is AspectItem item)
+            if (comboAspect.SelectedItem is AspectItem item && !item.Auto)
             {
-                width = item.Width;
-                height = item.Height;
+                width = Math.Max(1, item.Width);
+                height = Math.Max(1, item.Height);
                 return;
             }
             width = 1;
             height = 1;
+        }
+
+        private void ResolveAspect(Size image, out int width, out int height)
+        {
+            if (comboAspect.SelectedItem is AspectItem item && item.Auto)
+            {
+                (width, height) = YoloDetectionMath.NearestAspectPreset(image.Width, image.Height);
+                return;
+            }
+            GetLockedAspect(out width, out height);
         }
 
         private void UpdateStatus()
@@ -706,10 +734,18 @@ namespace BooruDatasetTagManager
         {
             if (running)
                 return;
-            var crops = new List<(string Path, Size Size, IReadOnlyList<Rectangle> Crops)>();
-            GetAspect(out int aspectW, out int aspectH);
+            IReadOnlyList<int> gears = ResolutionPrepMath.NormalizeSelectedGears(
+                Program.Settings?.ResolutionPrepSelectedGears);
+            if (gears.Count == 0)
+                gears = new[] { 1024 };
+
+            var jobs = new List<ResolutionPrepJob>();
+            int imageCount = 0;
+            int skippedImages = 0;
+            int skippedGears = 0;
             foreach (ImageDetection item in detections)
             {
+                ResolveAspect(item.Size, out int aspectW, out int aspectH);
                 var rects = new List<Rectangle>();
                 foreach (BoxItem box in item.Boxes.Where(b => b.Keep))
                 {
@@ -717,26 +753,29 @@ namespace BooruDatasetTagManager
                     if (expanded.Width > 0 && expanded.Height > 0)
                         rects.Add(expanded);
                 }
-                crops.Add((item.Path, item.Size, rects));
-            }
-
-            var request = new ResolutionPrepRequest
-            {
-                Mode = ResolutionPrepMode.YoloPerson,
-                AspectWidth = aspectW,
-                AspectHeight = aspectH,
-                Gears = ResolutionPrepMath.NormalizeSelectedGears(Program.Settings?.ResolutionPrepSelectedGears)
-            };
-            if (request.Gears.Count == 0)
-                request = new ResolutionPrepRequest
+                var request = new ResolutionPrepRequest
                 {
-                    Mode = request.Mode,
+                    Mode = ResolutionPrepMode.YoloPerson,
                     AspectWidth = aspectW,
                     AspectHeight = aspectH,
-                    Gears = new[] { 1024 }
+                    Gears = gears
                 };
+                ResolutionPrepPlan part = ResolutionPrepMath.PlanFromCrops(
+                    new[] { (item.Path, item.Size, (IReadOnlyList<Rectangle>)rects) },
+                    request);
+                jobs.AddRange(part.Jobs);
+                imageCount += part.ImageCount;
+                skippedImages += part.SkippedImages;
+                skippedGears += part.SkippedGears;
+            }
 
-            ResolutionPrepPlan plan = ResolutionPrepMath.PlanFromCrops(crops, request);
+            ResolutionPrepPlan plan = new ResolutionPrepPlan
+            {
+                Jobs = jobs,
+                ImageCount = imageCount,
+                SkippedImages = skippedImages,
+                SkippedGears = skippedGears
+            };
             if (plan.Jobs.Count == 0)
             {
                 MessageBox.Show(this, I18n.GetText("YoloDetectNoKeep"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1156,16 +1195,18 @@ namespace BooruDatasetTagManager
 
         private sealed class AspectItem
         {
-            public AspectItem(string text, int width, int height)
+            public AspectItem(string text, int width, int height, bool auto = false)
             {
                 Text = text;
                 Width = width;
                 Height = height;
+                Auto = auto;
             }
 
             public string Text { get; }
             public int Width { get; }
             public int Height { get; }
+            public bool Auto { get; }
 
             public override string ToString() => Text;
         }

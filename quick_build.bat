@@ -47,6 +47,10 @@ echo Building BooruDatasetTagManagerPlus [%CONFIG%]...
 echo.
 > "%LOG%" echo Building BooruDatasetTagManagerPlus [%CONFIG%]...
 
+rem A running GUI locks bin\<Config>\...\BooruDatasetTagManagerPlus.exe
+rem (MSB3027 / MSB3021). Close only copies launched from this checkout.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root = (Resolve-Path -LiteralPath '%~dp0').Path; $procs = Get-Process -Name 'BooruDatasetTagManagerPlus' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) }; foreach ($p in $procs) { Write-Host ('Closing running app (PID ' + $p.Id + ') so the exe can be overwritten.'); Stop-Process -Id $p.Id -Force }; if ($procs) { Start-Sleep -Seconds 1 }" >> "%LOG%" 2>&1
+
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
 rem test_start.bat launches from bin\<Configuration>\net8.0-windows first,

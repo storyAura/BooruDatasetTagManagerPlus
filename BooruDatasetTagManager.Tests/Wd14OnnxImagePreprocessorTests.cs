@@ -33,4 +33,22 @@ public sealed class Wd14OnnxImagePreprocessorTests
         Assert.Equal(expectG, tensor[0, y, x, 1]);
         Assert.Equal(expectR, tensor[0, y, x, 2]);
     }
+
+    [Fact]
+    public void CreateInputTensor_accepts_already_scaled_source()
+    {
+        const int size = 8;
+        using var source = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(source))
+        {
+            graphics.Clear(Color.FromArgb(255, 255, 0, 0));
+        }
+
+        DenseTensor<float> tensor = Wd14OnnxImagePreprocessor.CreateInputTensor(source, size);
+
+        Assert.Equal(new[] { 1, size, size, 3 }, tensor.Dimensions.ToArray());
+        Assert.Equal(0f, tensor[0, size / 2, size / 2, 0]);
+        Assert.Equal(0f, tensor[0, size / 2, size / 2, 1]);
+        Assert.Equal(255f, tensor[0, size / 2, size / 2, 2]);
+    }
 }

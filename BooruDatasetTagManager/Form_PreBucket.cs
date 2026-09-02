@@ -22,6 +22,7 @@ namespace BooruDatasetTagManager
 
         private const int SliderRepeatsMax = 100;
         private const int SliderBatchMax = 64;
+        private const int SliderGradientMax = 32;
         private const int SliderEpochsMax = 100;
 
         private readonly RadioButton radioSourceSelected = new RadioButton();
@@ -37,15 +38,16 @@ namespace BooruDatasetTagManager
         private readonly Button buttonQuick8 = new Button();
         private readonly Button buttonQuick12 = new Button();
         private readonly Button buttonQuick16 = new Button();
-        private readonly Button buttonQuickAll = new Button();
         private readonly CheckBox chkNoUpscale = new CheckBox();
         private readonly ListView listBuckets = new ListView();
         private readonly Label labelSummary = new Label();
         private readonly TrackBar trackRepeats = new TrackBar();
         private readonly TrackBar trackBatch = new TrackBar();
+        private readonly TrackBar trackGradient = new TrackBar();
         private readonly TrackBar trackEpochs = new TrackBar();
         private readonly Label labelRepeatsValue = new Label();
         private readonly Label labelBatchValue = new Label();
+        private readonly Label labelGradientValue = new Label();
         private readonly Label labelEpochsValue = new Label();
         private readonly Label labelHint = new Label();
         private readonly Label labelStatus = new Label();
@@ -71,8 +73,8 @@ namespace BooruDatasetTagManager
             MinimizeBox = false;
             ShowInTaskbar = false;
             KeyPreview = true;
-            MinimumSize = new Size(LogicalToDeviceUnits(580), LogicalToDeviceUnits(720));
-            Size = new Size(LogicalToDeviceUnits(660), LogicalToDeviceUnits(820));
+            MinimumSize = new Size(LogicalToDeviceUnits(680), LogicalToDeviceUnits(760));
+            Size = new Size(LogicalToDeviceUnits(780), LogicalToDeviceUnits(860));
             Text = I18n.GetText("PreBucketTitle");
             Padding = new Padding(LogicalToDeviceUnits(12));
 
@@ -96,9 +98,9 @@ namespace BooruDatasetTagManager
             layout.Controls.Add(BuildSettingsGroup(), 0, 1);
             layout.Controls.Add(BuildTargetRow(), 0, 2);
             layout.Controls.Add(BuildBucketList(), 0, 3);
-            layout.Controls.Add(BuildSummary(), 0, 4);
-            layout.Controls.Add(BuildOutputRow(), 0, 5);
-            layout.Controls.Add(BuildStatus(), 0, 6);
+            layout.Controls.Add(BuildStatus(), 0, 4);
+            layout.Controls.Add(BuildSummary(), 0, 5);
+            layout.Controls.Add(BuildOutputRow(), 0, 6);
             layout.Controls.Add(BuildButtons(), 0, 7);
             Controls.Add(layout);
 
@@ -151,9 +153,7 @@ namespace BooruDatasetTagManager
 
         private void ApplyAutoSource()
         {
-            if (owner.GetSelectedDatasetImagePaths().Count > 0)
-                radioSourceSelected.Checked = true;
-            else if (folderSourceAvailable)
+            if (folderSourceAvailable)
                 radioSourceFolder.Checked = true;
             else
                 radioSourceAllImages.Checked = true;
@@ -184,6 +184,7 @@ namespace BooruDatasetTagManager
                 radio.CheckedChanged += (_, _) => RefreshPreview();
             }
             radioSourceFolder.Enabled = folderSourceAvailable;
+            radioSourceSelected.Visible = false;
             flow.Controls.AddRange(new Control[] { radioSourceSelected, radioSourceFolder, radioSourceAllImages });
             group.Controls.Add(flow);
             return group;
@@ -290,7 +291,7 @@ namespace BooruDatasetTagManager
             };
             SetupNumeric(numTarget, PreBucketMath.MinTarget, PreBucketMath.MaxTarget, 1);
             numTarget.ValueChanged += (_, _) => OnSettingsChanged();
-            foreach (Button button in new[] { buttonQuick4, buttonQuick8, buttonQuick12, buttonQuick16, buttonQuickAll })
+            foreach (Button button in new[] { buttonQuick4, buttonQuick8, buttonQuick12, buttonQuick16 })
             {
                 button.AutoSize = true;
                 button.MinimumSize = new Size(LogicalToDeviceUnits(40), LogicalToDeviceUnits(26));
@@ -299,18 +300,15 @@ namespace BooruDatasetTagManager
             buttonQuick8.Text = "8";
             buttonQuick12.Text = "12";
             buttonQuick16.Text = "16";
-            buttonQuickAll.Text = I18n.GetText("PreBucketTargetAll");
             buttonQuick4.Click += (_, _) => SetTarget(4);
             buttonQuick8.Click += (_, _) => SetTarget(8);
             buttonQuick12.Click += (_, _) => SetTarget(12);
             buttonQuick16.Click += (_, _) => SetTarget(16);
-            buttonQuickAll.Click += (_, _) => SetTarget(0);
             flow.Controls.Add(numTarget);
             flow.Controls.Add(buttonQuick4);
             flow.Controls.Add(buttonQuick8);
             flow.Controls.Add(buttonQuick12);
             flow.Controls.Add(buttonQuick16);
-            flow.Controls.Add(buttonQuickAll);
             box.Controls.Add(flow);
             return box;
         }
@@ -323,8 +321,10 @@ namespace BooruDatasetTagManager
             listBuckets.HeaderStyle = ColumnHeaderStyle.Nonclickable;
             listBuckets.HideSelection = false;
             listBuckets.Columns.Add(I18n.GetText("PreBucketColReso"), LogicalToDeviceUnits(140));
-            listBuckets.Columns.Add(I18n.GetText("PreBucketColAspect"), LogicalToDeviceUnits(90));
-            listBuckets.Columns.Add(I18n.GetText("PreBucketColCount"), LogicalToDeviceUnits(80));
+            listBuckets.Columns.Add(I18n.GetText("PreBucketColAspect"), LogicalToDeviceUnits(70));
+            listBuckets.Columns.Add(I18n.GetText("PreBucketColCount"), LogicalToDeviceUnits(64));
+            listBuckets.Columns.Add(I18n.GetText("PreBucketColPad"), LogicalToDeviceUnits(64));
+            listBuckets.Columns.Add(I18n.GetText("PreBucketColTotal"), LogicalToDeviceUnits(64));
             return listBuckets;
         }
 
@@ -337,7 +337,7 @@ namespace BooruDatasetTagManager
                 ColumnCount = 2,
                 RowCount = 1,
                 Padding = new Padding(0, LogicalToDeviceUnits(4), 0, LogicalToDeviceUnits(4)),
-                MinimumSize = new Size(0, LogicalToDeviceUnits(128))
+                MinimumSize = new Size(0, LogicalToDeviceUnits(148))
             };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
@@ -348,7 +348,7 @@ namespace BooruDatasetTagManager
                 Dock = DockStyle.Fill,
                 AutoSize = true,
                 ColumnCount = 3,
-                RowCount = 3
+                RowCount = 4
             };
             sliders.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             sliders.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -356,13 +356,16 @@ namespace BooruDatasetTagManager
             sliders.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             sliders.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             sliders.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            sliders.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             SetupSlider(trackRepeats, PreBucketMath.MinRepeats, SliderRepeatsMax);
             SetupSlider(trackBatch, PreBucketMath.MinBatch, SliderBatchMax);
+            SetupSlider(trackGradient, PreBucketMath.MinGradient, SliderGradientMax);
             SetupSlider(trackEpochs, PreBucketMath.MinEpochs, SliderEpochsMax);
             AddSliderRow(sliders, 0, "PreBucketRepeats", trackRepeats, labelRepeatsValue);
             AddSliderRow(sliders, 1, "PreBucketBatch", trackBatch, labelBatchValue);
-            AddSliderRow(sliders, 2, "PreBucketEpochs", trackEpochs, labelEpochsValue);
+            AddSliderRow(sliders, 2, "PreBucketGradient", trackGradient, labelGradientValue);
+            AddSliderRow(sliders, 3, "PreBucketEpochs", trackEpochs, labelEpochsValue);
             UpdateSliderValueLabels();
 
             labelSummary.AutoSize = false;
@@ -387,9 +390,10 @@ namespace BooruDatasetTagManager
 
         private Control BuildStatus()
         {
-            labelStatus.AutoSize = false;
-            labelStatus.Dock = DockStyle.Fill;
-            labelStatus.Height = LogicalToDeviceUnits(36);
+            labelStatus.AutoSize = true;
+            labelStatus.Dock = DockStyle.Top;
+            labelStatus.Font = new Font(Font, FontStyle.Bold);
+            labelStatus.Padding = new Padding(0, LogicalToDeviceUnits(8), 0, LogicalToDeviceUnits(4));
             return labelStatus;
         }
 
@@ -459,6 +463,7 @@ namespace BooruDatasetTagManager
         {
             labelRepeatsValue.Text = trackRepeats.Value.ToString();
             labelBatchValue.Text = trackBatch.Value.ToString();
+            labelGradientValue.Text = trackGradient.Value.ToString();
             labelEpochsValue.Text = trackEpochs.Value.ToString();
         }
 
@@ -496,7 +501,6 @@ namespace BooruDatasetTagManager
             buttonQuick8.Enabled = enabled;
             buttonQuick12.Enabled = enabled;
             buttonQuick16.Enabled = enabled;
-            buttonQuickAll.Enabled = enabled;
         }
 
         private void OnSettingsChanged()
@@ -526,6 +530,7 @@ namespace BooruDatasetTagManager
                     Repeats = settings?.PreBucketRepeats ?? 1,
                     BatchSize = settings?.PreBucketBatchSize ?? 4,
                     Epochs = settings?.PreBucketEpochs ?? 1,
+                    GradientAccumulation = settings?.PreBucketGradient ?? 1,
                     OutputRoot = DefaultOutputRoot()
                 });
                 SetNumeric(numResoW, normalized.ResolutionWidth);
@@ -537,8 +542,11 @@ namespace BooruDatasetTagManager
                 chkNoUpscale.Checked = !normalized.AllowUpscale;
                 SetSlider(trackRepeats, normalized.Repeats);
                 SetSlider(trackBatch, normalized.BatchSize);
+                SetSlider(trackGradient, normalized.GradientAccumulation);
                 SetSlider(trackEpochs, normalized.Epochs);
-                ResolutionPrepSource source = settings?.PreBucketSource ?? ResolutionPrepSource.Selected;
+                ResolutionPrepSource source = settings?.PreBucketSource ?? ResolutionPrepSource.AllImages;
+                if (source == ResolutionPrepSource.Selected)
+                    source = ResolutionPrepSource.AllImages;
                 if (Enum.IsDefined(typeof(ResolutionPrepSource), source))
                     SelectSource(source);
             }
@@ -565,6 +573,7 @@ namespace BooruDatasetTagManager
             Program.Settings.PreBucketRepeats = current.Repeats;
             Program.Settings.PreBucketBatchSize = current.BatchSize;
             Program.Settings.PreBucketEpochs = current.Epochs;
+            Program.Settings.PreBucketGradient = current.GradientAccumulation;
             Program.Settings.PreBucketOutputFolder = string.Empty;
             Program.Settings.SaveSettings();
         }
@@ -604,6 +613,8 @@ namespace BooruDatasetTagManager
                 Repeats = trackRepeats.Value,
                 BatchSize = trackBatch.Value,
                 Epochs = trackEpochs.Value,
+                GradientAccumulation = trackGradient.Value,
+                PadToBatch = true,
                 OutputRoot = DefaultOutputRoot()
             });
         }
@@ -669,6 +680,8 @@ namespace BooruDatasetTagManager
                 {
                     var item = new ListViewItem(group.FolderName);
                     item.SubItems.Add(group.AspectRatio.ToString("0.###"));
+                    item.SubItems.Add(group.OriginalCount.ToString());
+                    item.SubItems.Add(group.PaddedCopies > 0 ? "+" + group.PaddedCopies : "0");
                     item.SubItems.Add(group.Count.ToString());
                     listBuckets.Items.Add(item);
                 }
@@ -698,7 +711,9 @@ namespace BooruDatasetTagManager
             }
             else
             {
-                labelStatus.Text = string.Format(I18n.GetText("PreBucketStatus"), plan.Jobs.Count, plan.Groups.Count);
+                int originalCount = plan.Jobs.Count - plan.PaddedCopies;
+                labelStatus.Text = string.Format(I18n.GetText("PreBucketStatus"), originalCount, plan.Groups.Count)
+                    + "  " + string.Format(I18n.GetText("PreBucketTotals"), plan.PaddedCopies, plan.Jobs.Count);
                 if (plan.SkippedImages > 0)
                 {
                     labelStatus.Text += Environment.NewLine
@@ -828,6 +843,7 @@ namespace BooruDatasetTagManager
             chkNoUpscale.Enabled = !locked;
             trackRepeats.Enabled = !locked;
             trackBatch.Enabled = !locked;
+            trackGradient.Enabled = !locked;
             trackEpochs.Enabled = !locked;
             buttonStart.Enabled = !locked;
             UpdateBucketControls();

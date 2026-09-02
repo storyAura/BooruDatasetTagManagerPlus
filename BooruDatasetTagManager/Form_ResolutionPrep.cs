@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -49,10 +50,19 @@ namespace BooruDatasetTagManager
         private readonly Button buttonAddGear = new Button();
         private readonly CheckBox chkSharpen = new CheckBox();
         private readonly Label labelStatus = new Label();
+        private readonly Label labelHelp = new Label();
+        private readonly Panel previewCanvas = new Panel();
         private readonly Button buttonStart = new Button();
         private readonly Button buttonCancel = new Button();
+        private readonly ToolTip modeTips = new ToolTip();
+        private FlowLayoutPanel randomRow;
+        private FlowLayoutPanel yoloRow;
 
         private readonly List<int> customGears = new List<int>();
+        private readonly List<Rectangle> previewRects = new List<Rectangle>();
+        private Image previewImage;
+        private string previewLoadedPath;
+        private string previewCaption = string.Empty;
         private bool running;
         private bool closeAfterRun;
         private bool loadingSettings;
@@ -67,36 +77,49 @@ namespace BooruDatasetTagManager
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScaleDimensions = new SizeF(96F, 96F);
             StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
             MinimizeBox = false;
             ShowInTaskbar = false;
             KeyPreview = true;
-            MinimumSize = new Size(LogicalToDeviceUnits(420), LogicalToDeviceUnits(720));
-            ClientSize = new Size(LogicalToDeviceUnits(440), LogicalToDeviceUnits(780));
+            MinimumSize = new Size(LogicalToDeviceUnits(880), LogicalToDeviceUnits(620));
+            ClientSize = new Size(LogicalToDeviceUnits(980), LogicalToDeviceUnits(700));
             Text = I18n.GetText("ResolutionPrepTitle");
             Padding = new Padding(LogicalToDeviceUnits(12));
 
-            var layout = new TableLayoutPanel
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 3
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46f));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54f));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            previewCanvas.Dock = DockStyle.Fill;
+            previewCanvas.BackColor = Color.Black;
+            previewCanvas.Paint += PreviewCanvas_Paint;
+            previewCanvas.Resize += (_, _) => previewCanvas.Invalidate();
+
+            var settings = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 9
+                RowCount = 6,
+                Padding = new Padding(LogicalToDeviceUnits(8), 0, 0, 0)
             };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-            layout.Controls.Add(BuildSourceGroup(), 0, 0);
-            layout.Controls.Add(BuildModeGroup(), 0, 1);
-            layout.Controls.Add(BuildAspectRow(), 0, 2);
+            settings.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            settings.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            settings.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            settings.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            settings.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            settings.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            settings.Controls.Add(BuildSourceGroup(), 0, 0);
+            settings.Controls.Add(BuildModeGroup(), 0, 1);
+            settings.Controls.Add(BuildAspectRow(), 0, 2);
 
             var gearBox = new GroupBox
             {
@@ -109,7 +132,7 @@ namespace BooruDatasetTagManager
             flowGears.FlowDirection = FlowDirection.TopDown;
             flowGears.WrapContents = false;
             gearBox.Controls.Add(flowGears);
-            layout.Controls.Add(gearBox, 0, 3);
+            settings.Controls.Add(gearBox, 0, 3);
 
             var addRow = new FlowLayoutPanel
             {
@@ -127,18 +150,35 @@ namespace BooruDatasetTagManager
             buttonAddGear.Click += (_, _) => AddCustomGear();
             addRow.Controls.Add(numCustomGear);
             addRow.Controls.Add(buttonAddGear);
-            layout.Controls.Add(addRow, 0, 4);
+            settings.Controls.Add(addRow, 0, 4);
 
             chkSharpen.Text = I18n.GetText("ResolutionPrepSharpen");
             chkSharpen.AutoSize = true;
             chkSharpen.Checked = true;
-            layout.Controls.Add(chkSharpen, 0, 5);
+            settings.Controls.Add(chkSharpen, 0, 5);
 
+            root.Controls.Add(previewCanvas, 0, 0);
+            root.Controls.Add(settings, 1, 0);
+
+            labelHelp.AutoSize = true;
+            labelHelp.MaximumSize = new Size(LogicalToDeviceUnits(920), 0);
+            labelHelp.Text = I18n.GetText("ResolutionPrepHelp");
+            labelHelp.Padding = new Padding(0, LogicalToDeviceUnits(6), 0, LogicalToDeviceUnits(4));
+            root.Controls.Add(labelHelp, 0, 1);
+            root.SetColumnSpan(labelHelp, 2);
+
+            var footer = new TableLayoutPanel
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1
+            };
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             labelStatus.AutoSize = false;
             labelStatus.Dock = DockStyle.Fill;
-            labelStatus.Height = LogicalToDeviceUnits(40);
-            layout.Controls.Add(labelStatus, 0, 6);
-
+            labelStatus.Height = LogicalToDeviceUnits(36);
             var buttons = new FlowLayoutPanel
             {
                 AutoSize = true,
@@ -156,8 +196,11 @@ namespace BooruDatasetTagManager
             buttonStart.Click += async (_, _) => await RunAsync();
             buttons.Controls.Add(buttonCancel);
             buttons.Controls.Add(buttonStart);
-            layout.Controls.Add(buttons, 0, 7);
-            Controls.Add(layout);
+            footer.Controls.Add(labelStatus, 0, 0);
+            footer.Controls.Add(buttons, 1, 0);
+            root.Controls.Add(footer, 0, 2);
+            root.SetColumnSpan(footer, 2);
+            Controls.Add(root);
 
             LoadPresets();
             LoadSettings();
@@ -270,6 +313,11 @@ namespace BooruDatasetTagManager
             radioSplit.Text = I18n.GetText("ResolutionPrepModeSplit");
             radioRandom.Text = I18n.GetText("ResolutionPrepModeRandom");
             radioYolo.Text = I18n.GetText("ResolutionPrepModeYolo");
+            modeTips.SetToolTip(radioScale, I18n.GetText("ResolutionPrepTipScale"));
+            modeTips.SetToolTip(radioCenter, I18n.GetText("ResolutionPrepTipCenter"));
+            modeTips.SetToolTip(radioSplit, I18n.GetText("ResolutionPrepTipSplit"));
+            modeTips.SetToolTip(radioRandom, I18n.GetText("ResolutionPrepTipRandom"));
+            modeTips.SetToolTip(radioYolo, I18n.GetText("ResolutionPrepTipYolo"));
             foreach (RadioButton radio in new[] { radioScale, radioCenter, radioSplit, radioRandom, radioYolo })
             {
                 radio.AutoSize = true;
@@ -280,15 +328,22 @@ namespace BooruDatasetTagManager
             return modeBox;
         }
 
-        private TableLayoutPanel BuildAspectRow()
+        private Control BuildAspectRow()
         {
-            var aspectRow = new TableLayoutPanel
+            var stack = new FlowLayoutPanel
             {
                 AutoSize = true,
                 Dock = DockStyle.Top,
-                ColumnCount = 4,
-                RowCount = 4,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
                 Padding = new Padding(0, LogicalToDeviceUnits(8), 0, 0)
+            };
+
+            var aspectRow = new TableLayoutPanel
+            {
+                AutoSize = true,
+                ColumnCount = 4,
+                RowCount = 2
             };
             aspectRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             aspectRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -319,6 +374,7 @@ namespace BooruDatasetTagManager
             aspectRow.SetColumnSpan(comboAspect, 2);
             aspectRow.Controls.Add(numAspectW, 2, 1);
             aspectRow.Controls.Add(numAspectH, 3, 1);
+            stack.Controls.Add(aspectRow);
 
             labelRandomCount.Text = I18n.GetText("ResolutionPrepRandomCount");
             labelRandomCount.AutoSize = true;
@@ -328,6 +384,17 @@ namespace BooruDatasetTagManager
             numRandomCount.Value = 1;
             numRandomCount.Width = LogicalToDeviceUnits(56);
             numRandomCount.ValueChanged += (_, _) => UpdateStatus();
+            randomRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                WrapContents = true,
+                Visible = false,
+                Padding = new Padding(0, LogicalToDeviceUnits(4), 0, 0)
+            };
+            randomRow.Controls.Add(labelRandomCount);
+            randomRow.Controls.Add(numRandomCount);
+            stack.Controls.Add(randomRow);
+
             labelYoloConfidence.Text = I18n.GetText("ResolutionPrepYoloConfidence");
             labelYoloConfidence.AutoSize = true;
             labelYoloConfidence.Anchor = AnchorStyles.Left;
@@ -366,37 +433,24 @@ namespace BooruDatasetTagManager
             labelYoloModelStatus.AutoSize = true;
             labelYoloModelStatus.Anchor = AnchorStyles.Left;
 
-            var extra = new FlowLayoutPanel
+            yoloRow = new FlowLayoutPanel
             {
                 AutoSize = true,
-                Dock = DockStyle.Fill,
                 WrapContents = true,
-                Padding = new Padding(0, LogicalToDeviceUnits(6), 0, 0)
-            };
-            extra.Controls.Add(labelRandomCount);
-            extra.Controls.Add(numRandomCount);
-            extra.Controls.Add(labelYoloConfidence);
-            extra.Controls.Add(numYoloConfidence);
-            extra.Controls.Add(buttonImportYolo);
-            aspectRow.Controls.Add(extra, 0, 2);
-            aspectRow.SetColumnSpan(extra, 4);
-
-            var yoloRow = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                Dock = DockStyle.Fill,
-                WrapContents = true,
+                Visible = false,
                 Padding = new Padding(0, LogicalToDeviceUnits(4), 0, 0)
             };
+            yoloRow.Controls.Add(labelYoloConfidence);
+            yoloRow.Controls.Add(numYoloConfidence);
+            yoloRow.Controls.Add(buttonImportYolo);
             yoloRow.Controls.Add(labelYoloModel);
             yoloRow.Controls.Add(comboYoloModel);
             yoloRow.Controls.Add(labelYoloDownloadSource);
             yoloRow.Controls.Add(comboYoloDownloadSource);
             yoloRow.Controls.Add(buttonDownloadYolo);
             yoloRow.Controls.Add(labelYoloModelStatus);
-            aspectRow.Controls.Add(yoloRow, 0, 3);
-            aspectRow.SetColumnSpan(yoloRow, 4);
-            return aspectRow;
+            stack.Controls.Add(yoloRow);
+            return stack;
         }
 
         private void LoadPresets()
@@ -606,6 +660,10 @@ namespace BooruDatasetTagManager
             numAspectH.Enabled = needsAspect && custom;
             bool random = CurrentMode() == ResolutionPrepMode.RandomCrop;
             bool yolo = CurrentMode() == ResolutionPrepMode.YoloPerson;
+            if (randomRow != null)
+                randomRow.Visible = random;
+            if (yoloRow != null)
+                yoloRow.Visible = yolo;
             labelRandomCount.Enabled = random;
             numRandomCount.Enabled = random;
             labelYoloConfidence.Enabled = yolo;
@@ -700,6 +758,7 @@ namespace BooruDatasetTagManager
             if (gears.Count == 0)
             {
                 labelStatus.Text = I18n.GetText("ResolutionPrepNoGears");
+                RefreshPreview();
                 return;
             }
 
@@ -707,6 +766,7 @@ namespace BooruDatasetTagManager
             {
                 int count = TargetPaths().Count;
                 labelStatus.Text = string.Format(I18n.GetText("ResolutionPrepYoloStatus"), count);
+                RefreshPreview();
                 return;
             }
 
@@ -717,6 +777,8 @@ namespace BooruDatasetTagManager
                 labelStatus.Text += Environment.NewLine
                     + string.Format(I18n.GetText("ResolutionPrepSkipped"), plan.SkippedImages + plan.SkippedGears);
             }
+
+            RefreshPreview();
         }
 
         private void ImportYoloModel()
@@ -1108,6 +1170,7 @@ namespace BooruDatasetTagManager
             else
             {
                 PersistSettings();
+                DisposePreviewImage();
                 yoloService.Dispose();
             }
             base.OnFormClosing(e);
@@ -1122,6 +1185,131 @@ namespace BooruDatasetTagManager
                 return;
             }
             base.OnKeyDown(e);
+        }
+
+        private void RefreshPreview()
+        {
+            string path = TargetPaths().FirstOrDefault();
+            LoadPreviewImage(path);
+            previewRects.Clear();
+            previewCaption = string.Empty;
+
+            if (CurrentMode() == ResolutionPrepMode.YoloPerson)
+            {
+                previewCaption = I18n.GetText("ResolutionPrepYoloPreview");
+                previewCanvas.Invalidate();
+                return;
+            }
+
+            if (previewImage == null)
+            {
+                previewCanvas.Invalidate();
+                return;
+            }
+
+            Size imageSize = previewImage.Size;
+            GetAspect(out int aspectW, out int aspectH);
+            IReadOnlyList<int> gears = GetCheckedGears();
+            ResolutionPrepMode mode = CurrentMode();
+            if (mode == ResolutionPrepMode.ScaleOnly)
+            {
+                previewRects.Add(new Rectangle(0, 0, imageSize.Width, imageSize.Height));
+                previewCaption = string.Join(" / ", gears);
+            }
+            else if (mode == ResolutionPrepMode.CenterCrop)
+            {
+                Rectangle? crop = ResolutionPrepMath.CenterCrop(imageSize, aspectW, aspectH);
+                if (crop != null)
+                    previewRects.Add(crop.Value);
+            }
+            else if (mode == ResolutionPrepMode.SplitTiles)
+            {
+                foreach (int gear in gears)
+                {
+                    Size? tile = ResolutionPrepMath.TileSize(gear, aspectW, aspectH);
+                    if (tile == null)
+                        continue;
+                    previewRects.AddRange(ResolutionPrepMath.PlaceTiles(imageSize, tile.Value));
+                }
+            }
+            else if (mode == ResolutionPrepMode.RandomCrop)
+            {
+                var random = new Random(1);
+                int count = ResolutionPrepMath.ClampRandomCount((int)numRandomCount.Value);
+                for (int i = 0; i < count; i++)
+                {
+                    Rectangle? crop = ResolutionPrepMath.RandomCrop(imageSize, aspectW, aspectH, random);
+                    if (crop != null)
+                        previewRects.Add(crop.Value);
+                }
+            }
+
+            previewCanvas.Invalidate();
+        }
+
+        private void LoadPreviewImage(string path)
+        {
+            if (string.Equals(path, previewLoadedPath, StringComparison.OrdinalIgnoreCase)
+                && (previewImage != null || string.IsNullOrEmpty(path)))
+            {
+                return;
+            }
+
+            DisposePreviewImage();
+            previewLoadedPath = path;
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return;
+            try
+            {
+                previewImage = ImageLoader.GetImageFromFile(path);
+            }
+            catch
+            {
+                previewImage = null;
+            }
+        }
+
+        private void DisposePreviewImage()
+        {
+            previewImage?.Dispose();
+            previewImage = null;
+            previewLoadedPath = null;
+        }
+
+        private void PreviewCanvas_Paint(object sender, PaintEventArgs e)
+        {
+            e.Graphics.Clear(previewCanvas.BackColor);
+            if (previewImage == null)
+            {
+                if (!string.IsNullOrEmpty(previewCaption))
+                {
+                    using var font = new Font(Font.FontFamily, 10f, FontStyle.Bold);
+                    using var brush = new SolidBrush(Color.White);
+                    e.Graphics.DrawString(previewCaption, font, brush, LogicalToDeviceUnits(12), LogicalToDeviceUnits(12));
+                }
+                return;
+            }
+
+            Size imageSize = previewImage.Size;
+            Size viewport = previewCanvas.ClientSize;
+            Rectangle dest = CropCanvasHelper.CalcImageLocation(imageSize, viewport);
+            e.Graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            e.Graphics.DrawImage(previewImage, dest);
+
+            for (int i = 0; i < previewRects.Count; i++)
+            {
+                Rectangle screen = CropCanvasHelper.ImageRectToScreenRect(previewRects[i], imageSize, viewport);
+                Color color = CropCanvasHelper.RegionColors[i % CropCanvasHelper.RegionColors.Length];
+                using var pen = new Pen(color, LogicalToDeviceUnits(2));
+                e.Graphics.DrawRectangle(pen, screen);
+            }
+
+            if (!string.IsNullOrEmpty(previewCaption))
+            {
+                using var font = new Font(Font.FontFamily, 10f, FontStyle.Bold);
+                using var brush = new SolidBrush(Color.White);
+                e.Graphics.DrawString(previewCaption, font, brush, dest.X + LogicalToDeviceUnits(8), dest.Y + LogicalToDeviceUnits(8));
+            }
         }
 
         private sealed class AspectItem

@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
@@ -22,6 +23,48 @@ namespace BooruDatasetTagManager
                 // Bake the EXIF orientation into the pixels: GDI+ ignores the
                 // tag, so camera photos showed (and saved) sideways otherwise.
                 image.Mutate(context => context.AutoOrient());
+                return ToDrawingImage(image);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Decode for ONNX tagging: shrink in ImageSharp before the GDI bitmap
+        /// exists so a 4K–8K source does not materialize a full-resolution
+        /// 32bpp copy hundreds of times in a batch.
+        /// </summary>
+        public static System.Drawing.Image GetImageForInference(string imagePath, int maxDimension)
+        {
+            if (!File.Exists(imagePath) || maxDimension <= 0)
+                return null;
+
+            try
+            {
+                ImageInfo info = SixLabors.ImageSharp.Image.Identify(imagePath);
+                // Decode-to-size only when the source is already larger.
+                // Passing TargetSize for a smaller image upscales it (ImageSharp 3.1).
+                bool shrinkOnDecode = info != null && Math.Max(info.Width, info.Height) > maxDimension;
+                var options = new DecoderOptions
+                {
+                    TargetSize = shrinkOnDecode
+                        ? new SixLabors.ImageSharp.Size(maxDimension, maxDimension)
+                        : null
+                };
+
+                using var image = SixLabors.ImageSharp.Image.Load(options, imagePath);
+                image.Mutate(context => context.AutoOrient());
+                if (Math.Max(image.Width, image.Height) > maxDimension)
+                {
+                    image.Mutate(context => context.Resize(new ResizeOptions
+                    {
+                        Mode = ResizeMode.Max,
+                        Size = new SixLabors.ImageSharp.Size(maxDimension, maxDimension)
+                    }));
+                }
+
                 return ToDrawingImage(image);
             }
             catch

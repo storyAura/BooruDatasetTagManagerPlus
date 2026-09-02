@@ -225,6 +225,31 @@ public sealed class CliCommandsTests : IDisposable
         (_, string helpOut, _) = Run("help");
         Assert.Contains("fix-tags", helpOut);
         Assert.Contains("default 0", helpOut);
+        Assert.Contains("--no-character-variants", helpOut);
+    }
+
+    [Fact]
+    public void FixTagsNoCharacterVariantsKeepsFamilyTags()
+    {
+        string folder = Path.Combine(root, "fix-no-char");
+        Directory.CreateDirectory(folder);
+        string catalogPath = Path.Combine(folder, "relations.csv");
+        File.WriteAllText(catalogPath,
+            "character_tag,other_names,copyright,parent_tag,post_count\n"
+            + "hatsune_miku,,vocaloid,,100\n"
+            + "racing_miku,,vocaloid,hatsune_miku,50\n");
+        File.WriteAllText(Path.Combine(folder, "d.png"), "x");
+        File.WriteAllText(Path.Combine(folder, "d.txt"), "1boy, 2boys, solo, racing miku, hatsune miku");
+
+        (int code, string output, _) = Run(
+            "fix-tags", folder, "--catalog", catalogPath, "--child-threshold", "30",
+            "--no-character-variants");
+        Assert.Equal(CliCommands.ExitOk, code);
+        Assert.Contains("note: --child-threshold has no effect with --no-character-variants", output);
+        Assert.Contains("remove\td.png\t1boy\t2boys", output);
+        Assert.Contains("remove\td.png\tsolo\t2boys", output);
+        Assert.DoesNotContain("racing miku", output);
+        Assert.Equal("2boys, racing miku, hatsune miku", File.ReadAllText(Path.Combine(folder, "d.txt")));
     }
 
     [Fact]

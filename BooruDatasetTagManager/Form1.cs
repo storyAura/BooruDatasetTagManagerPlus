@@ -22,6 +22,10 @@ namespace BooruDatasetTagManager
         public MainForm()
         {
             InitializeComponent();
+            // Designer used to ship MultiSelect=false, which silently ate
+            // Shift/Ctrl range-select on this grid (All Tags still worked).
+            gridViewTags.MultiSelect = true;
+            gridViewTags.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             previewPicBox = new PictureBox();
             previewPicBox.Name = "previewPicBox";
             allTagsFilter = new Form_filter();
@@ -94,6 +98,11 @@ namespace BooruDatasetTagManager
         private ToolStripMenuItem menuResolutionPrep;
         private ToolStripMenuItem menuContextDSYoloDetect;
         private ToolStripMenuItem menuYoloDetect;
+        private ToolStripMenuItem menuCharacterTagAudit;
+        private ToolStripMenuItem menuQuickReplace;
+        private ToolsCategoryHeaderItem menuToolsProcessingHeader;
+        private ToolsCategoryHeaderItem menuToolsTaggingHeader;
+        private ToolsCategoryHeaderItem menuToolsPreprocessHeader;
         private ToolStripMenuItem menuTagFolderClassify;
         private ToolStripMenuItem menuContextDSPreBucket;
         private ToolStripMenuItem menuPreBucket;
@@ -988,7 +997,7 @@ namespace BooruDatasetTagManager
                 form.ShowDialog(this);
             };
 
-            menuOnnxTagger = new ToolStripMenuItem { Name = "menuOnnxTagger", Text = "ONNX tagger" };
+            menuOnnxTagger = new ToolStripMenuItem { Name = "menuOnnxTagger", Text = "Tag tagger" };
             menuOnnxTagger.Click += (_, _) => ShowOnnxTaggerForSelectedImages();
 
             menuReloadDataset = new ToolStripMenuItem { Name = "menuReloadDataset", Text = "Reload current dataset" };
@@ -1036,7 +1045,7 @@ namespace BooruDatasetTagManager
                 form.ShowDialog(this);
             };
 
-            menuContextDSRetagOnnx = new ToolStripMenuItem { Name = "menuContextDSRetagOnnx", Text = "Retag ONNX" };
+            menuContextDSRetagOnnx = new ToolStripMenuItem { Name = "menuContextDSRetagOnnx", Text = "Retag with Tag tagger" };
             menuContextDSRetagOnnx.Click += (_, _) => ShowOnnxTaggerForSelectedImages();
 
             menuContextDSRetagLlm = new ToolStripMenuItem { Name = "menuContextDSRetagLlm", Text = "LLM tagging" };
@@ -1064,34 +1073,65 @@ namespace BooruDatasetTagManager
             contextMenuStrip1.Items.Add(menuContextDSVideoTools);
             contextMenuStrip1.Opening += ContextMenuStrip1_Opening;
 
-            toolsToolStripMenuItem.DropDownItems.Add(menuVideoConvert);
-            toolsToolStripMenuItem.DropDownItems.Add(menuVideoExtract);
-            toolsToolStripMenuItem.DropDownItems.Add(menuOnnxTagger);
-            toolsToolStripMenuItem.DropDownItems.Add(backgroundRemovalWithRMBG20ToolStripMenuItem);
-            toolsToolStripMenuItem.DropDownItems.Add(menuLlmTagger);
-            toolsToolStripMenuItem.DropDownItems.Add(menuSimilarImages);
-            toolsToolStripMenuItem.DropDownItems.Add(menuCorruptedImages);
             menuBatchCrop = new ToolStripMenuItem { Name = "menuBatchCrop" };
             menuBatchCrop.Click += (_, _) => OpenBatchCrop();
-            toolsToolStripMenuItem.DropDownItems.Add(menuBatchCrop);
             menuResolutionPrep = new ToolStripMenuItem { Name = "menuResolutionPrep" };
             menuResolutionPrep.Click += (_, _) => OpenResolutionPrep();
-            toolsToolStripMenuItem.DropDownItems.Add(menuResolutionPrep);
             menuYoloDetect = new ToolStripMenuItem { Name = "menuYoloDetect" };
             menuYoloDetect.Click += (_, _) => OpenYoloDetect();
-            toolsToolStripMenuItem.DropDownItems.Add(menuYoloDetect);
+            menuCharacterTagAudit = new ToolStripMenuItem { Name = "menuCharacterTagAudit" };
+            menuCharacterTagAudit.Click += (_, _) => OpenCharacterTagAudit();
+            menuQuickReplace = new ToolStripMenuItem { Name = "menuQuickReplace" };
+            menuQuickReplace.Click += (_, _) => OpenQuickReplace();
             menuTagFolderClassify = new ToolStripMenuItem { Name = "menuTagFolderClassify" };
             menuTagFolderClassify.Click += (_, _) => OpenTagFolderClassify();
-            toolsToolStripMenuItem.DropDownItems.Add(menuTagFolderClassify);
             menuPreBucket = new ToolStripMenuItem { Name = "menuPreBucket" };
             menuPreBucket.Click += (_, _) => OpenPreBucket();
-            toolsToolStripMenuItem.DropDownItems.Add(menuPreBucket);
+            menuToolsProcessingHeader = CreateToolsCategoryHeader("menuToolsProcessingHeader", ToolsCategoryHeaderItem.ProcessingAccent);
+            menuToolsTaggingHeader = CreateToolsCategoryHeader("menuToolsTaggingHeader", ToolsCategoryHeaderItem.TaggingAccent);
+            menuToolsPreprocessHeader = CreateToolsCategoryHeader("menuToolsPreprocessHeader", ToolsCategoryHeaderItem.PreprocessAccent);
+
+            toolsToolStripMenuItem.DropDownItems.Clear();
+            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[]
+            {
+                menuToolsProcessingHeader,
+                replaceTransparentBackgroundToolStripMenuItem,
+                menuVideoConvert,
+                menuVideoExtract,
+                backgroundRemovalWithRMBG20ToolStripMenuItem,
+                menuBatchCrop,
+                menuResolutionPrep,
+                menuYoloDetect,
+                new ToolStripSeparator(),
+                menuToolsTaggingHeader,
+                menuOnnxTagger,
+                menuLlmTagger,
+                menuCharacterTagAudit,
+                menuQuickReplace,
+                new ToolStripSeparator(),
+                menuToolsPreprocessHeader,
+                menuSimilarImages,
+                menuCorruptedImages,
+                menuTagFolderClassify,
+                menuPreBucket
+            });
 
             int insertIndex = menuStrip1.Items.IndexOf(toolsToolStripMenuItem) + 1;
             if (insertIndex <= 0 || insertIndex > menuStrip1.Items.Count)
                 insertIndex = menuStrip1.Items.Count;
             menuStrip1.Items.Insert(insertIndex, menuAiServerSet);
             menuStrip1.Items.Insert(insertIndex + 1, menuTestModule);
+        }
+
+        private static ToolsCategoryHeaderItem CreateToolsCategoryHeader(string name, Color accent)
+        {
+            return new ToolsCategoryHeaderItem(name, accent);
+        }
+
+        internal void OpenCharacterTagAudit(IWin32Window dialogOwner = null)
+        {
+            using Form_CharacterTagAuditWizard form = new Form_CharacterTagAuditWizard(this);
+            form.ShowDialog(dialogOwner ?? this);
         }
 
         internal string GetSelectedDatasetDirectory()
@@ -1232,41 +1272,32 @@ namespace BooruDatasetTagManager
             form.ShowDialog(this);
         }
 
-        internal bool TryQuickReplaceSelectedTag(int threshold)
+        internal void OpenQuickReplace()
         {
-            if (Program.DataManager == null)
+            if (Program.DataManager == null || Program.DataManager.DataSet.Count == 0)
             {
                 MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
-                return false;
+                return;
             }
+
+            using Form_QuickReplace form = new Form_QuickReplace(this, GetSelectedAllTagsTag());
+            form.ShowDialog(this);
+        }
+
+        internal string GetSelectedAllTagsTag()
+        {
             if (gridViewAllTags.SelectedCells.Count == 0)
-            {
-                MessageBox.Show(I18n.GetText("TipImgOrTagNotSelect"));
-                return false;
-            }
-
+                return string.Empty;
             int rowIndex = gridViewAllTags.SelectedCells[0].RowIndex;
-            string selectedTag = (string)gridViewAllTags.Rows[rowIndex].Cells["TagsColumn"].Value;
-            var sourceTags = QuickTagReplaceService.GetReplacementSourceTags(
-                Program.DataManager.AllTags.Cast<AllTagsItem>(),
-                selectedTag,
-                threshold);
+            return gridViewAllTags.Rows[rowIndex].Cells["TagsColumn"].Value as string ?? string.Empty;
+        }
 
-            if (sourceTags.Count == 0)
-            {
-                MessageBox.Show(I18n.GetText("TipQuickReplaceNoCandidates"));
-                return false;
-            }
-
-            string message = string.Format(I18n.GetText("TipQuickReplaceConfirm"), sourceTags.Count, selectedTag);
-            if (MessageBox.Show(message, I18n.GetText("TestQuickReplace"), MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
-                return false;
-
+        internal void ApplyQuickReplace(IList<string> sourceTags, string selectedTag, int threshold)
+        {
             Program.DataManager.ReplaceTagsInAll(sourceTags, selectedTag);
             Program.Settings.QuickReplaceThreshold = threshold;
             Program.Settings.SaveSettings();
             LoadSelectedImageToGrid();
-            return true;
         }
 
         internal void ReloadTranslationManagerForCurrentSettings()
@@ -2132,23 +2163,30 @@ namespace BooruDatasetTagManager
         private int rowIndexOfItemUnderMouseToDrop;
         private void dataGridView1_MouseMove(object sender, MouseEventArgs e)
         {
-            if ((e.Button & MouseButtons.Left) == MouseButtons.Left)
+            if (!ImageTagGridSelection.ShouldBeginRowDrag(
+                ModifierKeys,
+                e.Button,
+                dragBoxFromMouseDown,
+                e.Location,
+                gridViewTags.SelectedRows.Count))
             {
-                // If the mouse moves outside the rectangle, start the drag.
-                if (dragBoxFromMouseDown != Rectangle.Empty &&
-                    !dragBoxFromMouseDown.Contains(e.X, e.Y))
-                {
-
-                    // Proceed with the drag and drop, passing in the list item.                    
-                    DragDropEffects dropEffect = gridViewTags.DoDragDrop(
-                    gridViewTags.Rows[rowIndexFromMouseDown],
-                    DragDropEffects.Move);
-                }
+                return;
             }
+
+            if (rowIndexFromMouseDown < 0 || rowIndexFromMouseDown >= gridViewTags.Rows.Count)
+                return;
+            DragDropEffects dropEffect = gridViewTags.DoDragDrop(
+                gridViewTags.Rows[rowIndexFromMouseDown],
+                DragDropEffects.Move);
         }
 
         private void dataGridView1_MouseDown(object sender, MouseEventArgs e)
         {
+            if ((ModifierKeys & (Keys.Shift | Keys.Control)) != 0)
+            {
+                dragBoxFromMouseDown = Rectangle.Empty;
+                return;
+            }
             // Get the index of the item the mouse is below.
             rowIndexFromMouseDown = gridViewTags.HitTest(e.X, e.Y).RowIndex;
             if (rowIndexFromMouseDown != -1)
@@ -2371,11 +2409,37 @@ namespace BooruDatasetTagManager
             return dgv.SelectedCells[0].RowIndex;
         }
 
+        private int[] GetSelectedImageTagRowIndexes(bool descending)
+        {
+            var indexes = new List<int>(gridViewTags.SelectedCells.Count);
+            foreach (DataGridViewCell cell in gridViewTags.SelectedCells)
+                indexes.Add(cell.RowIndex);
+            return ImageTagGridSelection.UniqueRowIndexes(indexes, descending);
+        }
+
         private void BtnTagDelete_Click(object sender, EventArgs e)
         {
-            if (gridViewTags.SelectedCells.Count == 0)
+            if (gridViewTags.DataSource == null || gridViewTags.SelectedCells.Count == 0)
                 return;
-            gridViewTags.Rows.RemoveAt(gridViewTags.SelectedCells[0].RowIndex);
+            if (gridViewTags.IsCurrentCellInEditMode)
+                gridViewTags.EndEdit();
+            (gridViewTags.DataSource as EditableTagList)?.EndEdit();
+            int[] rows = GetSelectedImageTagRowIndexes(true);
+            if (rows.Length == 0)
+                return;
+            gridViewTags.SuspendLayout();
+            try
+            {
+                foreach (int i in rows)
+                {
+                    if (i >= 0 && i < gridViewTags.Rows.Count)
+                        gridViewTags.Rows.RemoveAt(i);
+                }
+            }
+            finally
+            {
+                gridViewTags.ResumeLayout();
+            }
         }
 
         private void toolStripButton4_Click(object sender, EventArgs e)
@@ -2843,7 +2907,14 @@ namespace BooruDatasetTagManager
                 if (gridViewTags.CurrentCell != null && !gridViewTags.CurrentCell.IsInEditMode)
                 {
                     List<string> tagsToCopy = new List<string>();
-                    tagsToCopy.Add((string)gridViewTags["ImageTags", gridViewTags.CurrentCell.RowIndex].Value);
+                    foreach (int rowIndex in GetSelectedImageTagRowIndexes(false))
+                    {
+                        string tag = GetImageTagRowText(rowIndex);
+                        if (!string.IsNullOrEmpty(tag))
+                            tagsToCopy.Add(tag);
+                    }
+                    if (tagsToCopy.Count == 0)
+                        return;
                     DataObject d = new DataObject();
                     d.SetText(string.Join("\r\n", tagsToCopy));
                     d.SetData("PartTagList", tagsToCopy);
@@ -4315,7 +4386,8 @@ namespace BooruDatasetTagManager
             // danbooru parent/child relations; otherwise the textual
             // base-name heuristic still applies. Folding rare children into
             // the parent is opt-in (测试模块 checkbox; default off).
-            int childThreshold = Program.Settings.TagFixFoldRareChildren
+            bool fixCharacterVariants = Program.Settings.TagFixCharacterVariants;
+            int childThreshold = fixCharacterVariants && Program.Settings.TagFixFoldRareChildren
                 ? Program.Settings.TagFixChildThreshold
                 : 0;
             IReadOnlyList<TagConsistencyIssue> issues = TagConsistencyPlanner.Plan(
@@ -4323,7 +4395,8 @@ namespace BooruDatasetTagManager
                 tag => ClassifyTagCached(tag).L1 == TagCategoryTaxonomy.Character,
                 datasetCounts,
                 Program.CharacterTagLookup == null ? null : Program.CharacterTagLookup.GetParentTag,
-                childThreshold);
+                childThreshold,
+                fixCharacterVariants);
             if (issues.Count == 0)
             {
                 MessageBox.Show(this, I18n.GetText("TagFixNoIssues"), I18n.GetText("TagFixTitle"),
@@ -4740,6 +4813,16 @@ namespace BooruDatasetTagManager
                 menuContextDSYoloDetect.Text = I18n.GetText("MenuContextDSYoloDetect");
             if (menuYoloDetect != null)
                 menuYoloDetect.Text = I18n.GetText("MenuToolsYoloDetect");
+            if (menuCharacterTagAudit != null)
+                menuCharacterTagAudit.Text = I18n.GetText("MenuToolsCharacterTagAudit");
+            if (menuQuickReplace != null)
+                menuQuickReplace.Text = I18n.GetText("MenuToolsQuickReplace");
+            if (menuToolsProcessingHeader != null)
+                menuToolsProcessingHeader.Text = I18n.GetText("MenuToolsProcessing");
+            if (menuToolsTaggingHeader != null)
+                menuToolsTaggingHeader.Text = I18n.GetText("MenuToolsTagging");
+            if (menuToolsPreprocessHeader != null)
+                menuToolsPreprocessHeader.Text = I18n.GetText("MenuToolsPreprocess");
             if (menuTagFolderClassify != null)
                 menuTagFolderClassify.Text = I18n.GetText("MenuToolsTagFolderClassify");
             if (menuContextDSPreBucket != null)
@@ -4939,22 +5022,53 @@ namespace BooruDatasetTagManager
 
         private async void replaceTransparentBackgroundToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (gridViewDS.SelectedRows.Count == 0 || Program.DataManager == null)
-                return;
-            List<DataItem> selectedItems = new List<DataItem>();
-            for (int i = 0; i < gridViewDS.SelectedRows.Count; i++)
+            if (Program.DataManager == null)
             {
-                if (Program.DataManager.DataSet.TryGetValue((string)gridViewDS.SelectedRows[i].Cells["ImageFilePath"].Value, out DataItem selectedItem))
-                    selectedItems.Add(selectedItem);
+                MessageBox.Show(this, I18n.GetText("TipDatasetNoLoad"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
             }
+
+            List<DataItem> selectedItems = GetSelectedReplaceTransparentItems();
+            if (selectedItems.Count == 0)
+            {
+                MessageBox.Show(this, I18n.GetText("TipImgOrTagNotSelect"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             await ReplaceTransparentBackgroundAsync(selectedItems, confirmBulk: false);
+        }
+
+        /// <summary>
+        /// Images the user currently has selected in the dataset browser (the
+        /// visible list). Falls back to the hidden grid so a stale browser
+        /// handle cannot empty the batch.
+        /// </summary>
+        private List<DataItem> GetSelectedReplaceTransparentItems()
+        {
+            var items = new List<DataItem>();
+            if (Program.DataManager == null)
+                return items;
+
+            IReadOnlyList<string> browserPaths = datasetBrowserView?.GetSelectedImagePaths();
+            IEnumerable<string> paths = browserPaths != null && browserPaths.Count > 0
+                ? browserPaths
+                : GetSelectedDatasetImagePaths();
+            foreach (string path in paths)
+            {
+                if (!string.IsNullOrEmpty(path)
+                    && Program.DataManager.DataSet.TryGetValue(path, out DataItem item))
+                {
+                    items.Add(item);
+                }
+            }
+            return items;
         }
 
         private async void menuFolderReplaceTransp_Click(object sender, EventArgs e)
         {
             if (Program.DataManager == null)
             {
-                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                MessageBox.Show(this, I18n.GetText("TipDatasetNoLoad"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             // The folder(s) actually right-clicked, not the active scope: the
@@ -4966,7 +5080,7 @@ namespace BooruDatasetTagManager
         {
             if (Program.DataManager == null)
             {
-                MessageBox.Show(I18n.GetText("TipDatasetNoLoad"));
+                MessageBox.Show(this, I18n.GetText("TipDatasetNoLoad"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             await ReplaceTransparentBackgroundAsync(Program.DataManager.DataSet.Values.ToList(), confirmBulk: true);
@@ -5003,13 +5117,17 @@ namespace BooruDatasetTagManager
         /// entries (selection / folder / whole dataset). A pre-pass first keeps
         /// only alpha-capable files (png / webp / gif) that really contain
         /// transparent pixels, so opaque or alpha-less images are never
-        /// rewritten. Decoding goes through <see cref="ImageLoader"/> and
-        /// encoding through <see cref="ImageEditorSaveService"/>, so webp -
-        /// which GDI+ can neither decode (it threw OutOfMemoryException) nor
-        /// encode - is handled like every other format.
+        /// rewritten. Fill and encode stay on ImageSharp
+        /// (<see cref="TransparentBackgroundReplacer"/>) so the batch does not
+        /// touch GDI+ on a worker thread.
         /// </summary>
         private async Task ReplaceTransparentBackgroundAsync(List<DataItem> items, bool confirmBulk)
         {
+            // Click runs while the Tools / folder menu is still closing.
+            // LockEdit disables the menu strip; doing that mid-dropdown made
+            // the color dialog never appear, so the command looked dead.
+            await Task.Yield();
+
             // Extension pre-filter: videos and alpha-less formats (jpg, bmp, …)
             // cannot have a transparent background, so they never get decoded.
             List<DataItem> candidates = (items ?? new List<DataItem>())
@@ -5020,6 +5138,7 @@ namespace BooruDatasetTagManager
             if (candidates.Count == 0)
             {
                 SetStatus(I18n.GetText("TipBackgrRepNoImages"));
+                MessageBox.Show(this, I18n.GetText("TipBackgrRepNoImages"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             // Decode pass: a png/webp with an alpha channel is still usually
@@ -5050,7 +5169,9 @@ namespace BooruDatasetTagManager
             }
             if (targets.Count == 0)
             {
-                SetStatus(string.Format(I18n.GetText("TipBackgrRepNoTransparent"), candidates.Count));
+                string none = string.Format(I18n.GetText("TipBackgrRepNoTransparent"), candidates.Count);
+                SetStatus(none);
+                MessageBox.Show(this, none, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             if (confirmBulk)
@@ -5062,7 +5183,7 @@ namespace BooruDatasetTagManager
                     return;
             }
             using Form_backgroundReplace backgroundReplace = new Form_backgroundReplace();
-            if (backgroundReplace.ShowDialog() != DialogResult.OK)
+            if (backgroundReplace.ShowDialog(this) != DialogResult.OK)
                 return;
             LockEdit(true);
             try
@@ -5076,9 +5197,7 @@ namespace BooruDatasetTagManager
                 List<Color> selectedColors = new List<Color>();
                 foreach (ListViewItem lvItem in backgroundReplace.listView1.Items)
                     selectedColors.Add(lvItem.BackColor);
-                // Old thumbnails are collected and disposed on the UI thread after the
-                // background work: the grid may still paint them while the loop runs.
-                List<Image> replacedThumbs = new List<Image>();
+                List<DataItem> replaced = new List<DataItem>();
                 List<string> errors = new List<string>();
                 IProgress<int> progress = new Progress<int>(done =>
                     SetStatus(string.Format(I18n.GetText("InProgressCount"), done, targets.Count)));
@@ -5098,30 +5217,14 @@ namespace BooruDatasetTagManager
                             {
                                 replColor = selectedColors[r.Next(selectedColors.Count)];
                             }
-                            // ImageSharp-based load: keeps webp/tiff/exif-rotated
-                            // files working where Bitmap.FromFile fails.
-                            using Bitmap bmp = ImageLoader.GetImageFromFile(item.ImageFilePath) as Bitmap;
-                            if (bmp == null)
-                            {
-                                errors.Add($"{item.ImageFilePath}: {I18n.GetText("TipImgLoadError")}");
-                                continue;
-                            }
-                            byte[] encoded;
-                            using (Bitmap bmpRes = Extensions.Transparent2Color(bmp, replColor))
-                            {
-                                // Encode by target extension instead of GDI+
-                                // RawFormat, which cannot write webp at all.
-                                encoded = ImageEditorSaveService.Encode(bmpRes, Path.GetExtension(item.ImageFilePath));
-                            }
+                            byte[] encoded = TransparentBackgroundReplacer.Replace(item.ImageFilePath, replColor);
                             // Write-to-temp + atomic replace: a failure mid-write
                             // must not destroy the original image.
                             SafeFile.WriteAllBytes(item.ImageFilePath, encoded);
                             // The full-size preview cache still holds the old
                             // pixels; drop it before rebuilding the thumbnail.
                             Program.DataManager.RemoveFromCache(item.ImageFilePath);
-                            if (item.Img != null)
-                                replacedThumbs.Add(item.Img);
-                            item.Img = Extensions.MakeThumb(item.ImageFilePath, Program.Settings.PreviewSize);
+                            replaced.Add(item);
                         }
                         catch (Exception ex)
                         {
@@ -5135,9 +5238,20 @@ namespace BooruDatasetTagManager
                         }
                     }
                 });
-                gridViewDS.Refresh();
-                foreach (Image oldThumb in replacedThumbs)
-                    oldThumb.Dispose();
+                foreach (DataItem item in replaced)
+                {
+                    Image oldThumb = item.Img;
+                    try
+                    {
+                        item.Img = Extensions.MakeThumb(item.ImageFilePath, Program.Settings.PreviewSize);
+                    }
+                    catch (Exception)
+                    {
+                        item.Img = null;
+                    }
+                    oldThumb?.Dispose();
+                }
+                RefreshDatasetGrid();
                 RefreshEmbeddedPreviewFromSelection();
                 if (errors.Count > 0)
                 {
@@ -5147,7 +5261,7 @@ namespace BooruDatasetTagManager
                     string message = string.Join("\n", errors.Take(maxShownErrors));
                     if (errors.Count > maxShownErrors)
                         message += $"\n... (+{errors.Count - maxShownErrors})";
-                    MessageBox.Show(message);
+                    MessageBox.Show(this, message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
                 // Say how many files the scan filtered out: with a folder full of
                 // opaque images "complete" alone looks like nothing happened.
@@ -5711,17 +5825,28 @@ namespace BooruDatasetTagManager
 
             if (gridViewTags.SelectedCells.Count == 0)
                 return;
-            int rowIndex = gridViewTags.SelectedCells[0].RowIndex;
             var dsType = GetTagsDataSourceType();
-
-            if (dsType == DataSourceType.Single)
+            foreach (int rowIndex in GetSelectedImageTagRowIndexes(false))
             {
-                ((EditableTagList)gridViewTags.DataSource)[rowIndex].Weight = weight;
-            }
-            else if (dsType == DataSourceType.Multi)
-            {
-                var dataItem = (DataItem)((MultiSelectDataRow)((MultiSelectDataTable)gridViewTags.DataSource).Rows[rowIndex]).GetDataItem();
-                dataItem.Tags[((MultiSelectDataRow)((MultiSelectDataTable)gridViewTags.DataSource).Rows[rowIndex]).GetTagIndex()].Weight = weight;
+                if (dsType == DataSourceType.Single)
+                {
+                    if (rowIndex < ((EditableTagList)gridViewTags.DataSource).Count)
+                        ((EditableTagList)gridViewTags.DataSource)[rowIndex].Weight = weight;
+                }
+                else if (dsType == DataSourceType.Multi)
+                {
+                    var table = (MultiSelectDataTable)gridViewTags.DataSource;
+                    if (rowIndex >= table.Rows.Count)
+                        continue;
+                    var row = (MultiSelectDataRow)table.Rows[rowIndex];
+                    if (row == null
+                        || row.RowState == DataRowState.Deleted
+                        || row.RowState == DataRowState.Detached)
+                    {
+                        continue;
+                    }
+                    row.GetDataItem().Tags[row.GetTagIndex()].Weight = weight;
+                }
             }
         }
 

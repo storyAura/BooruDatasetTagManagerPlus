@@ -22,6 +22,10 @@ namespace BooruDatasetTagManager
         [STAThread]
         static int Main(string[] args)
         {
+            // Published builds keep onnxruntime.dll in win-x64/. This must run
+            // before the CLI path too — onnx-tag used to skip the search-path hook.
+            NativeRuntimeLocator.ConfigureSearchPath();
+
             // Headless automation path: known verbs run without any UI and
             // return a process exit code. Unknown/empty arguments start the
             // GUI exactly as before.
@@ -67,7 +71,7 @@ namespace BooruDatasetTagManager
             AppPath = Application.StartupPath;
             Settings = new AppSettings(AppSettings.ResolveUserSettingsDirectory(Application.StartupPath));
             DebugLog.Enabled = Settings.DebugMode;
-            DebugLog.Write("App", $"Started v{Application.ProductVersion}, OS: {Environment.OSVersion}, 64-bit: {Environment.Is64BitProcess}");
+            DebugLog.Write("App", $"Started v{Application.ProductVersion}, {NativeRuntimeLocator.FormatStartupLogLine()}");
             EditableTagListLocker = new SemaphoreSlim(1,1);
             ListChangeLocker = new object();
             ColorManager = new ColorSchemeManager();
@@ -219,27 +223,15 @@ namespace BooruDatasetTagManager
 
         static void PreloadDotnetDependenciesFromSubdirectoryManually()
         {
-            // https://www.lostindetails.com/articles/Native-Bindings-in-CSharp
-            // https://www.meziantou.net/load-native-libraries-from-a-dynamic-location.htm
-            // None of the above worked but approach is inspired by it.
-            // First, ensure sub-directory with native libraries is 
-            // added to dll directories
-            var dllDirectory = Path.Combine(AppContext.BaseDirectory,
-                Environment.Is64BitProcess ? "win-x64" : "win-x86");
-            var r = AddDllDirectory(dllDirectory);
-            Trace.WriteLine($"AddDllDirectory {dllDirectory} {r}");
-
-            // Then, try manually loading the .NET 6 WPF 
-            // native library dependencies
+            // Search path for win-x64\ was already set by NativeRuntimeLocator.
+            // These WPF / WinForms native helpers still need an explicit load
+            // after a single-file publish moves them out of the exe directory.
             TryManuallyLoad("D3DCompiler_47_cor3");
             TryManuallyLoad("PenImc_cor3");
             TryManuallyLoad("PresentationNative_cor3");
             TryManuallyLoad("vcruntime140_cor3");
             TryManuallyLoad("wpfgfx_cor3");
         }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        static extern int AddDllDirectory(string NewDirectory);
 
         static void TryManuallyLoad(string libraryName)
         {

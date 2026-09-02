@@ -13,12 +13,12 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>1.2.5.0</ApplicationVersion>
-    <Version>1.2.5</Version>
-    <ProductVersion>1.2.5</ProductVersion>
-    <AssemblyVersion>1.2.5.0</AssemblyVersion>
-    <FileVersion>1.2.5.0</FileVersion>
-    <InformationalVersion>1.2.5</InformationalVersion>
+    <ApplicationVersion>1.2.6.0</ApplicationVersion>
+    <Version>1.2.6</Version>
+    <ProductVersion>1.2.6</ProductVersion>
+    <AssemblyVersion>1.2.6.0</AssemblyVersion>
+    <FileVersion>1.2.6.0</FileVersion>
+    <InformationalVersion>1.2.6</InformationalVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -29,12 +29,12 @@
     <ApplicationIcon>BDTM.ico</ApplicationIcon>
 	<PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <!-- TabControl 2.1.2 (and its PagedControl dependency) ship as netfx WinForms packages. -->
-    <NoWarn>$(NoWarn);NU1701</NoWarn>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- TabControl 2.1.2 (and its PagedControl dependency) ship as netfx WinForms packages.
+         WFAC010 wants DPI only via SetHighDpiMode; a custom manifest must still
+         declare PerMonitorV2 or the process starts DPI-unaware. -->
+    <NoWarn>$(NoWarn);NU1701;WFAC010</NoWarn>
   </PropertyGroup>
-  <ItemGroup>
-    <AdditionalFiles Remove="app.manifest" />
-  </ItemGroup>
   <ItemGroup>
     <Compile Update="AutoCompleteTextBox.cs">
       <SubType>Component</SubType>
@@ -133,6 +133,20 @@
   <ItemGroup>
     <Folder Include="Languages\" />
   </ItemGroup>
+
+  <Target Name="CopyVcRuntimeSidecar" AfterTargets="Publish" BeforeTargets="MoveNativeDllsToSubDirectory">
+    <PropertyGroup>
+      <_VcCrtSrc Condition="Exists('$(SystemRoot)\System32\msvcp140.dll')">$(SystemRoot)\System32</_VcCrtSrc>
+    </PropertyGroup>
+    <ItemGroup>
+      <_VcCrt Include="$(_VcCrtSrc)\msvcp140.dll" Condition="'$(_VcCrtSrc)' != '' AND Exists('$(_VcCrtSrc)\msvcp140.dll')" />
+      <_VcCrt Include="$(_VcCrtSrc)\msvcp140_1.dll" Condition="'$(_VcCrtSrc)' != '' AND Exists('$(_VcCrtSrc)\msvcp140_1.dll')" />
+      <_VcCrt Include="$(_VcCrtSrc)\vcruntime140.dll" Condition="'$(_VcCrtSrc)' != '' AND Exists('$(_VcCrtSrc)\vcruntime140.dll')" />
+      <_VcCrt Include="$(_VcCrtSrc)\vcruntime140_1.dll" Condition="'$(_VcCrtSrc)' != '' AND Exists('$(_VcCrtSrc)\vcruntime140_1.dll')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_VcCrt)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" Condition="'@(_VcCrt)' != ''" />
+    <Warning Text="VC++ CRT sidecar not found on the build machine (msvcp140.dll). Publish will not bundle it; users need the VC++ 2015-2022 x64 redistributable." Condition="'$(_VcCrtSrc)' == ''" />
+  </Target>
 
   <Target Name="MoveNativeDllsToSubDirectory" AfterTargets="Publish">
     <PropertyGroup>

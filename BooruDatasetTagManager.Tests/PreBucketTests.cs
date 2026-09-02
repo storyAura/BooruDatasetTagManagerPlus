@@ -197,6 +197,10 @@ public sealed class PreBucketMathTests
         Assert.Equal(1, PreBucketMath.TheoreticalSteps(23, 1, 26, 1));
         Assert.Equal(12, PreBucketMath.BucketedSteps(new[] { 1, 1, 1 }, 1, 4, 4));
         Assert.Equal(4, PreBucketMath.BucketedSteps(new[] { 10, 5, 5, 3 }, 1, 26, 1));
+        // BS=2 / gradient=2 still reads 2 images; 6 images → 3 microbatches → 2 optimizer steps.
+        Assert.Equal(2, PreBucketMath.TheoreticalSteps(6, 1, 2, 1, 2));
+        Assert.Equal(2, PreBucketMath.BucketedSteps(new[] { 6 }, 1, 2, 1, 2));
+        Assert.Equal(2, PreBucketMath.BucketedSteps(new[] { 3, 3 }, 1, 2, 1, 2));
     }
 
     [Fact]
@@ -229,6 +233,124 @@ public sealed class PreBucketMathTests
     public void FolderName_isWidthXHeight()
     {
         Assert.Equal("1024x1536", PreBucketMath.FolderName(new Size(1024, 1536)));
+    }
+
+    [Fact]
+    public void PadNeeded_isExtraCopiesToReachNextBatch()
+    {
+        Assert.Equal(2, PreBucketMath.PadNeeded(23, 5));
+        Assert.Equal(1, PreBucketMath.PadNeeded(24, 5));
+        Assert.Equal(1, PreBucketMath.PadNeeded(9, 5));
+        Assert.Equal(4, PreBucketMath.PadNeeded(11, 5));
+        Assert.Equal(0, PreBucketMath.PadNeeded(25, 5));
+        Assert.Equal(1, PreBucketMath.PadNeeded(3, 4));
+        Assert.Equal(7, PreBucketMath.PadNeeded(9, 8));
+    }
+
+    [Fact]
+    public void Plan_padsByReadBatchAndReportsAddedCopies()
+    {
+        var items = new (string Path, Size? Size)[5];
+        for (int i = 0; i < items.Length; i++)
+            items[i] = (@"C:\ds\" + i + ".png", new Size(512, 512));
+        var settings = new PreBucketSettings
+        {
+            ResolutionWidth = 512,
+            ResolutionHeight = 512,
+            EnableBucket = true,
+            MinBucketReso = 256,
+            MaxBucketReso = 1024,
+            BucketResoSteps = 64,
+            TargetBucketCount = 0,
+            BatchSize = 4,
+            GradientAccumulation = 2,
+            PadToBatch = true
+        };
+
+        PreBucketPlan plan = PreBucketMath.Plan(items, settings);
+        PreBucketGroup group = Assert.Single(plan.Groups);
+
+        Assert.Equal(8, plan.Jobs.Count);
+        Assert.Equal(3, plan.PaddedCopies);
+        Assert.Equal(5, group.OriginalCount);
+        Assert.Equal(3, group.PaddedCopies);
+        Assert.Equal(8, group.Count);
+    }
+
+    [Fact]
+    public void PadToDivisibleBatch_addsPerBucketRemainder()
+    {
+        var jobs = new List<PreBucketJob>();
+        AddJobs(jobs, new Size(1536, 1536), 23);
+        AddJobs(jobs, new Size(1600, 1472), 24);
+        AddJobs(jobs, new Size(1920, 1216), 9);
+        AddJobs(jobs, new Size(2048, 1152), 11);
+
+        int added = PreBucketMath.PadToDivisibleBatch(jobs, 5);
+
+        Assert.Equal(8, added);
+        Assert.Equal(25, jobs.Count(job => job.BucketSize == new Size(1536, 1536)));
+        Assert.Equal(25, jobs.Count(job => job.BucketSize == new Size(1600, 1472)));
+        Assert.Equal(10, jobs.Count(job => job.BucketSize == new Size(1920, 1216)));
+        Assert.Equal(15, jobs.Count(job => job.BucketSize == new Size(2048, 1152)));
+    }
+
+    [Fact]
+    public void Plan_padToBatch_usesReadBatchNotEffectiveBatch()
+    {
+        var items = new (string Path, Size? Size)[5];
+        for (int i = 0; i < items.Length; i++)
+            items[i] = (@"C:\ds\" + i + ".png", new Size(512, 512));
+        var settings = new PreBucketSettings
+        {
+            ResolutionWidth = 512,
+            ResolutionHeight = 512,
+            EnableBucket = true,
+            MinBucketReso = 256,
+            MaxBucketReso = 1024,
+            BucketResoSteps = 64,
+            TargetBucketCount = 0,
+            BatchSize = 2,
+            GradientAccumulation = 2,
+            PadToBatch = true
+        };
+
+        PreBucketPlan plan = PreBucketMath.Plan(items, settings);
+
+        // 5 images, read 2 at a time → +1 to 6, not to effective BS 4 (8).
+        Assert.Equal(6, plan.Jobs.Count);
+        Assert.Equal(1, plan.PaddedCopies);
+        Assert.Equal(0, plan.Jobs.Count % 2);
+        Assert.Equal(2, plan.Jobs.Count % 4);
+    }
+
+    [Fact]
+    public void Plan_padToBatch_leavesDivisibleBucketsAlone()
+    {
+        var items = new (string Path, Size? Size)[]
+        {
+            (@"C:\ds\a.png", new Size(512, 512)),
+            (@"C:\ds\b.png", new Size(512, 512)),
+            (@"C:\ds\c.png", new Size(512, 512)),
+            (@"C:\ds\d.png", new Size(512, 512))
+        };
+        var settings = new PreBucketSettings
+        {
+            ResolutionWidth = 512,
+            ResolutionHeight = 512,
+            EnableBucket = true,
+            MinBucketReso = 256,
+            MaxBucketReso = 1024,
+            BucketResoSteps = 64,
+            TargetBucketCount = 0,
+            BatchSize = 4
+        };
+
+        PreBucketPlan plan = PreBucketMath.Plan(items, settings);
+
+        Assert.Equal(4, plan.Jobs.Count);
+        Assert.Equal(0, plan.PaddedCopies);
+        Assert.Equal(4, Assert.Single(plan.Groups).UsableCount);
     }
 
     [Fact]
@@ -288,6 +410,21 @@ public sealed class PreBucketMathTests
         Assert.Equal(2, dirs.Count);
         Assert.Contains(Path.Combine(root, "10_char"), dirs);
         Assert.Contains(Path.Combine(root, "other"), dirs);
+    }
+
+    private static void AddJobs(List<PreBucketJob> jobs, Size bucket, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            jobs.Add(new PreBucketJob
+            {
+                SourcePath = @"C:\ds\" + bucket.Width + "x" + bucket.Height + "-" + i + ".png",
+                SourceSize = bucket,
+                BucketSize = bucket,
+                FittedSize = bucket,
+                DrawOffset = Point.Empty
+            });
+        }
     }
 }
 

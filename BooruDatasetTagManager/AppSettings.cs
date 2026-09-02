@@ -82,6 +82,10 @@ namespace BooruDatasetTagManager
         // disables the rule even if this is checked.
         public bool TagFixFoldRareChildren { get; set; } = false;
         public int TagFixChildThreshold { get; set; } = 30;
+        // When false, the tag-consistency fixer never touches character-family
+        // tags (same-image variant conflicts and rare-child folds). Subject
+        // counts and solo still run. Default on so existing runs stay the same.
+        public bool TagFixCharacterVariants { get; set; } = true;
         // Sticky category sort for the image-tags pane: while on, every newly
         // selected image's tags are re-sorted on load (mutates tag order, so
         // visited images whose order changes become modified).
@@ -162,9 +166,13 @@ namespace BooruDatasetTagManager
         public string YoloPersonModelId { get; set; } = string.Empty;
         public string YoloPersonImportPath { get; set; } = string.Empty;
         public float YoloPersonConfidence { get; set; } = YoloPersonDetectorService.DefaultConfidence;
+        // YOLO detect window: pick the nearest BatchCropMath preset from each
+        // image's size instead of forcing one global ratio. Dedicated bool so
+        // we never write 0:0 into the shared ResolutionPrepAspect* fields.
+        public bool YoloDetectAspectAuto { get; set; } = true;
 
         // Last-used state of Tools → Pre-bucket.
-        public ResolutionPrepSource PreBucketSource { get; set; } = ResolutionPrepSource.Selected;
+        public ResolutionPrepSource PreBucketSource { get; set; } = ResolutionPrepSource.AllImages;
         public int PreBucketResolutionWidth { get; set; } = PreBucketMath.DefaultResolution;
         public int PreBucketResolutionHeight { get; set; } = PreBucketMath.DefaultResolution;
         public bool PreBucketEnableBucket { get; set; } = true;
@@ -176,6 +184,8 @@ namespace BooruDatasetTagManager
         public int PreBucketRepeats { get; set; } = 1;
         public int PreBucketBatchSize { get; set; } = 4;
         public int PreBucketEpochs { get; set; } = 1;
+        public int PreBucketGradient { get; set; } = 1;
+        public bool PreBucketPadBatch { get; set; } = true;
         public string PreBucketOutputFolder { get; set; } = string.Empty;
 
         // HuggingFace access token used for gated model repos (e.g. cl_tagger_v2).
@@ -495,6 +505,7 @@ namespace BooruDatasetTagManager
                     : DatasetManager.OrderType.Name;
                 TagFixFoldRareChildren = tempSettings.TagFixFoldRareChildren;
                 TagFixChildThreshold = Math.Max(0, tempSettings.TagFixChildThreshold);
+                TagFixCharacterVariants = tempSettings.TagFixCharacterVariants;
                 ImageTagsCategorySort = tempSettings.ImageTagsCategorySort;
                 DebugMode = tempSettings.DebugMode;
                 DatasetHiddenColumns = tempSettings.DatasetHiddenColumns ?? GetDefaultDatasetHiddenColumns();
@@ -553,6 +564,7 @@ namespace BooruDatasetTagManager
                 YoloPersonConfidence = tempSettings.YoloPersonConfidence <= 0f || tempSettings.YoloPersonConfidence > 1f
                     ? YoloPersonDetectorService.DefaultConfidence
                     : tempSettings.YoloPersonConfidence;
+                YoloDetectAspectAuto = tempSettings.YoloDetectAspectAuto;
                 PreBucketSettings preBucket = PreBucketMath.Normalize(new PreBucketSettings
                 {
                     ResolutionWidth = tempSettings.PreBucketResolutionWidth,
@@ -566,11 +578,15 @@ namespace BooruDatasetTagManager
                     Repeats = tempSettings.PreBucketRepeats,
                     BatchSize = tempSettings.PreBucketBatchSize,
                     Epochs = tempSettings.PreBucketEpochs,
+                    GradientAccumulation = tempSettings.PreBucketGradient,
                     OutputRoot = tempSettings.PreBucketOutputFolder
                 });
-                PreBucketSource = Enum.IsDefined(typeof(ResolutionPrepSource), tempSettings.PreBucketSource)
-                    ? tempSettings.PreBucketSource
-                    : ResolutionPrepSource.Selected;
+                PreBucketSource = tempSettings.PreBucketSource == ResolutionPrepSource.Selected
+                    || !Enum.IsDefined(typeof(ResolutionPrepSource), tempSettings.PreBucketSource)
+                    ? ResolutionPrepSource.AllImages
+                    : tempSettings.PreBucketSource;
+                PreBucketPadBatch = tempSettings.PreBucketPadBatch;
+                PreBucketGradient = preBucket.GradientAccumulation;
                 PreBucketResolutionWidth = preBucket.ResolutionWidth;
                 PreBucketResolutionHeight = preBucket.ResolutionHeight;
                 PreBucketEnableBucket = preBucket.EnableBucket;

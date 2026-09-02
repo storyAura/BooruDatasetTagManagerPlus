@@ -35,6 +35,9 @@ public class LocalizationAndImageLoaderTests
     [InlineData("MenuOnnxTagger")]
     [InlineData("MenuContextDSRetagOnnx")]
     [InlineData("TaggerModelCorrupt")]
+    [InlineData("TaggerOnnxNativeMissing")]
+    [InlineData("TaggerOnnxVcRedistMissing")]
+    [InlineData("TaggerOnnxCompatModeHint")]
     public void ChineseLanguageFileLocalizesCriticalUiText(string key)
     {
         var en = LoadLanguage("en-US");
@@ -107,6 +110,46 @@ public class LocalizationAndImageLoaderTests
         Assert.NotNull(preview);
         Assert.Equal(expectedWidth, preview.Width);
         Assert.Equal(expectedHeight, preview.Height);
+    }
+
+    [Fact]
+    public void GetImageForInferenceDownscalesBeforeGdiConversion()
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "large.png");
+        SaveSampleImage(imagePath, 2000, 1000);
+
+        using var image = ImageLoader.GetImageForInference(imagePath, 448);
+
+        Assert.NotNull(image);
+        Assert.True(image.Width <= 448);
+        Assert.True(image.Height <= 448);
+        Assert.Equal(448, Math.Max(image.Width, image.Height));
+    }
+
+    [Fact]
+    public void GetImageForInferenceDoesNotUpscale()
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "small.png");
+        SaveSampleImage(imagePath, 80, 40);
+
+        using var image = ImageLoader.GetImageForInference(imagePath, 448);
+
+        Assert.NotNull(image);
+        Assert.Equal(80, image.Width);
+        Assert.Equal(40, image.Height);
+    }
+
+    [Fact]
+    public void GetImageForInferenceReturnsNullWhenMaxDimensionIsInvalid()
+    {
+        using var temp = new TemporaryDirectory();
+        string imagePath = Path.Combine(temp.Path, "sample.png");
+        SaveSampleImage(imagePath);
+
+        Assert.Null(ImageLoader.GetImageForInference(imagePath, 0));
+        Assert.Null(ImageLoader.GetImageForInference(imagePath, -1));
     }
 
     [Fact]

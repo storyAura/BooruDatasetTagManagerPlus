@@ -18,6 +18,8 @@ namespace BooruDatasetTagManager
         public int Repeats { get; set; } = 1;
         public int BatchSize { get; set; } = 4;
         public int Epochs { get; set; } = 1;
+        public int GradientAccumulation { get; set; } = 1;
+        public bool PadToBatch { get; set; }
         public string OutputRoot { get; set; } = string.Empty;
     }
 
@@ -37,6 +39,9 @@ namespace BooruDatasetTagManager
     {
         public Size Size { get; init; }
         public int Count { get; init; }
+        public int OriginalCount { get; init; }
+        public int UsableCount { get; init; }
+        public int PaddedCopies => Count > OriginalCount ? Count - OriginalCount : 0;
         public double AspectRatio => Size.Height == 0 ? 0 : (double)Size.Width / Size.Height;
         public string FolderName => PreBucketMath.FolderName(Size);
     }
@@ -52,6 +57,8 @@ namespace BooruDatasetTagManager
         public int KohyaUsedCount { get; init; }
         public int TheoreticalSteps { get; init; }
         public int BucketedSteps { get; init; }
+        public int PaddedCopies { get; init; }
+        public int UsableCount { get; init; }
     }
 
     /// <summary>
@@ -76,6 +83,8 @@ namespace BooruDatasetTagManager
         public const int MaxBatch = 256;
         public const int MinEpochs = 1;
         public const int MaxEpochs = 10000;
+        public const int MinGradient = 1;
+        public const int MaxGradient = 64;
 
         public static IReadOnlyList<string> ResolveSourcePaths(
             ResolutionPrepSource source,
@@ -185,6 +194,8 @@ namespace BooruDatasetTagManager
                 Repeats = ClampRange(settings.Repeats, MinRepeats, MaxRepeats),
                 BatchSize = ClampRange(settings.BatchSize, MinBatch, MaxBatch),
                 Epochs = ClampRange(settings.Epochs, MinEpochs, MaxEpochs),
+                GradientAccumulation = ClampRange(settings.GradientAccumulation, MinGradient, MaxGradient),
+                PadToBatch = settings.PadToBatch,
                 OutputRoot = settings.OutputRoot ?? string.Empty
             };
         }
@@ -335,34 +346,61 @@ namespace BooruDatasetTagManager
             return size.Width + "x" + size.Height;
         }
 
-        public static int TheoreticalSteps(int images, int repeats, int batch, int epochs)
+        public static int TheoreticalSteps(int images, int repeats, int batch, int epochs, int gradient = 1)
         {
             repeats = ClampRange(repeats, MinRepeats, MaxRepeats);
             batch = ClampRange(batch, MinBatch, MaxBatch);
             epochs = ClampRange(epochs, MinEpochs, MaxEpochs);
+            int accum = ClampRange(gradient, MinGradient, MaxGradient);
             if (images <= 0)
                 return 0;
-            // ceil((images × repeats) / batch) × epochs — integer division
-            // would show 0 whenever batch is larger than the image count.
-            return (images * repeats + batch - 1) / batch * epochs;
+            // Microbatches still read `batch` images; optimizer steps divide by gradient.
+            int micro = (images * repeats + batch - 1) / batch;
+            return (micro + accum - 1) / accum * epochs;
         }
 
-        public static int BucketedSteps(IEnumerable<int> bucketCounts, int repeats, int batch, int epochs)
+        public static int BucketedSteps(IEnumerable<int> bucketCounts, int repeats, int batch, int epochs, int gradient = 1)
         {
             repeats = ClampRange(repeats, MinRepeats, MaxRepeats);
             batch = ClampRange(batch, MinBatch, MaxBatch);
             epochs = ClampRange(epochs, MinEpochs, MaxEpochs);
+            int accum = ClampRange(gradient, MinGradient, MaxGradient);
             if (bucketCounts == null)
                 return 0;
 
-            int perEpoch = 0;
+            int micro = 0;
             foreach (int count in bucketCounts)
             {
                 if (count <= 0)
                     continue;
-                perEpoch += (count * repeats + batch - 1) / batch;
+                micro += (count * repeats + batch - 1) / batch;
             }
-            return perEpoch * epochs;
+            return (micro + accum - 1) / accum * epochs;
+        }
+
+        /// <summary>
+        /// Images that fill complete reads of <paramref name="batch"/>.
+        /// 16 images / batch 2 → 16; 9 / batch 8 → 8 (do not round up to 16).
+        /// </summary>
+        public static int UsableImageCount(int count, int batch)
+        {
+            if (count <= 0)
+                return 0;
+            batch = ClampRange(batch, MinBatch, MaxBatch);
+            return count / batch * batch;
+        }
+
+        /// <summary>
+        /// Extra copies to make <paramref name="count"/> divisible by
+        /// <paramref name="batch"/> (images read per step). 23 + batch 5 → 2.
+        /// </summary>
+        public static int PadNeeded(int count, int batch)
+        {
+            if (count <= 0)
+                return 0;
+            batch = ClampRange(batch, MinBatch, MaxBatch);
+            int rem = count % batch;
+            return rem == 0 ? 0 : batch - rem;
         }
 
         public static string AllocateOutputPath(
@@ -562,7 +600,6 @@ namespace BooruDatasetTagManager
                 imageSizes,
                 normalized.EnableBucket ? normalized.TargetBucketCount : 1);
 
-            var counts = new Dictionary<(int, int), int>();
             foreach ((string path, Size imageSize) in validItems)
             {
                 Size bucket = SelectClosest(imageSize, selected.Count > 0 ? selected : predefined);
@@ -579,10 +616,6 @@ namespace BooruDatasetTagManager
                     continue;
                 }
 
-                (int, int) key = (bucket.Width, bucket.Height);
-                counts.TryGetValue(key, out int count);
-                counts[key] = count + 1;
-
                 jobs.Add(new PreBucketJob
                 {
                     SourcePath = path,
@@ -593,19 +626,50 @@ namespace BooruDatasetTagManager
                 });
             }
 
+            var originalCounts = new Dictionary<(int, int), int>();
+            foreach (PreBucketJob job in jobs)
+            {
+                (int, int) key = (job.BucketSize.Width, job.BucketSize.Height);
+                originalCounts.TryGetValue(key, out int count);
+                originalCounts[key] = count + 1;
+            }
+
+            int padded = 0;
+            if (normalized.PadToBatch)
+                padded = PadToDivisibleBatch(jobs, normalized.BatchSize);
+
+            var counts = new Dictionary<(int, int), int>();
+            foreach (PreBucketJob job in jobs)
+            {
+                (int, int) key = (job.BucketSize.Width, job.BucketSize.Height);
+                counts.TryGetValue(key, out int count);
+                counts[key] = count + 1;
+            }
+
             var groups = new List<PreBucketGroup>();
             foreach (Size reso in selected)
             {
                 counts.TryGetValue((reso.Width, reso.Height), out int count);
                 if (count <= 0)
                     continue;
-                groups.Add(new PreBucketGroup { Size = reso, Count = count });
+                originalCounts.TryGetValue((reso.Width, reso.Height), out int original);
+                groups.Add(new PreBucketGroup
+                {
+                    Size = reso,
+                    Count = count,
+                    OriginalCount = original,
+                    UsableCount = count
+                });
             }
             groups.Sort((a, b) => CompareByAspect(a.Size, b.Size));
 
             var groupCounts = new List<int>();
+            int usableTotal = 0;
             foreach (PreBucketGroup group in groups)
+            {
                 groupCounts.Add(group.Count);
+                usableTotal += group.Count;
+            }
 
             return new PreBucketPlan
             {
@@ -617,10 +681,62 @@ namespace BooruDatasetTagManager
                 SkippedImages = skipped,
                 KohyaUsedCount = kohyaUsed.Count,
                 TheoreticalSteps = TheoreticalSteps(
-                    jobs.Count, normalized.Repeats, normalized.BatchSize, normalized.Epochs),
+                    jobs.Count, normalized.Repeats, normalized.BatchSize, normalized.Epochs,
+                    normalized.GradientAccumulation),
                 BucketedSteps = BucketedSteps(
-                    groupCounts, normalized.Repeats, normalized.BatchSize, normalized.Epochs)
+                    groupCounts, normalized.Repeats, normalized.BatchSize, normalized.Epochs,
+                    normalized.GradientAccumulation),
+                PaddedCopies = padded,
+                UsableCount = usableTotal
             };
+        }
+
+        /// <summary>
+        /// Clone jobs until each bucket's count is divisible by
+        /// <paramref name="batch"/> (images read per step). Gradient is
+        /// not used: BS=2 / gradient=2 still reads 2.
+        /// </summary>
+        public static int PadToDivisibleBatch(List<PreBucketJob> jobs, int batch)
+        {
+            if (jobs == null || jobs.Count == 0)
+                return 0;
+            batch = ClampRange(batch, MinBatch, MaxBatch);
+
+            var byBucket = new Dictionary<(int, int), List<PreBucketJob>>();
+            foreach (PreBucketJob job in jobs)
+            {
+                if (job == null)
+                    continue;
+                (int, int) key = (job.BucketSize.Width, job.BucketSize.Height);
+                if (!byBucket.TryGetValue(key, out List<PreBucketJob> list))
+                {
+                    list = new List<PreBucketJob>();
+                    byBucket[key] = list;
+                }
+                list.Add(job);
+            }
+
+            int added = 0;
+            var extras = new List<PreBucketJob>();
+            foreach (KeyValuePair<(int, int), List<PreBucketJob>> pair in byBucket)
+            {
+                int needed = PadNeeded(pair.Value.Count, batch);
+                for (int i = 0; i < needed; i++)
+                {
+                    PreBucketJob source = pair.Value[i % pair.Value.Count];
+                    extras.Add(new PreBucketJob
+                    {
+                        SourcePath = source.SourcePath,
+                        SourceSize = source.SourceSize,
+                        BucketSize = source.BucketSize,
+                        FittedSize = source.FittedSize,
+                        DrawOffset = source.DrawOffset
+                    });
+                    added++;
+                }
+            }
+            jobs.AddRange(extras);
+            return added;
         }
 
         private static int FindCheapestAdjacentMerge(IReadOnlyList<Size> buckets, IReadOnlyList<int> assigned)

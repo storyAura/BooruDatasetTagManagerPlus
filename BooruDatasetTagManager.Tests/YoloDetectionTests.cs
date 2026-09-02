@@ -34,6 +34,34 @@ public sealed class YoloDetectionMathTests
         Assert.True(box.Bottom <= 1080);
     }
 
+    [Theory]
+    [InlineData(1920, 1080, 16, 9)]
+    [InlineData(1080, 1920, 9, 16)]
+    [InlineData(1024, 1024, 1, 1)]
+    [InlineData(1200, 900, 4, 3)]
+    public void NearestAspectPreset_picks_the_closest_listed_ratio(
+        int width, int height, int expectedW, int expectedH)
+    {
+        (int presetW, int presetH) = YoloDetectionMath.NearestAspectPreset(width, height);
+        Assert.Equal(expectedW, presetW);
+        Assert.Equal(expectedH, presetH);
+    }
+
+    [Fact]
+    public void NearestAspectPreset_invalid_size_falls_back_to_first_preset()
+    {
+        (int width, int height) = YoloDetectionMath.NearestAspectPreset(0, 10);
+        Assert.Equal(BatchCropMath.Presets[0], (width, height));
+    }
+
+    [Fact]
+    public void NearestAspectPreset_equal_distance_keeps_the_earlier_preset()
+    {
+        // Midpoint between 2:1 (index 2) and 16:9. Equal delta keeps 2:1.
+        (int width, int height) = YoloDetectionMath.NearestAspectPreset(1700, 900);
+        Assert.Equal((2, 1), (width, height));
+    }
+
     [Fact]
     public void ExpandToAspect_grows_bbox_to_square_around_the_person()
     {

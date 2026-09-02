@@ -18,9 +18,10 @@ namespace BooruDatasetTagManager
     /// the main form mirrors it into the hidden dataset grid, which stays
     /// the authority all existing operations read. Clicking a folder header
     /// scopes the dataset (SetActiveFolder) exactly like the old sidebar;
-    /// the chevron only collapses the group visually. Single-folder datasets
-    /// render as a flat image list. All colors derive from the current
-    /// Back/ForeColor pair, so the scheme recolor pass is enough.
+    /// the chevron only collapses the group visually. Single-folder and flat
+    /// views still pin the "All" row so folder-scope commands stay reachable.
+    /// All colors derive from the current Back/ForeColor pair, so the scheme
+    /// recolor pass is enough.
     /// </summary>
     public sealed class DatasetBrowserView : UserControl
     {
@@ -215,6 +216,7 @@ namespace BooruDatasetTagManager
             foreach (string path in selectedImagePaths ?? Enumerable.Empty<string>())
                 selectedPaths.Add(path);
             Rebuild();
+            LayoutSearchBox();
         }
 
         public void Clear()
@@ -420,6 +422,7 @@ namespace BooruDatasetTagManager
 
         private void BuildFlatRows(string filter)
         {
+            AddAllRow();
             foreach (DataItem item in items)
             {
                 if (MatchesFilter(item, filter))
@@ -429,7 +432,7 @@ namespace BooruDatasetTagManager
 
         private void BuildGroupedRows(string filter)
         {
-            rows.Add(new Row(RowKind.All, null, allText, FormatCount(totalImageCount), null, false));
+            AddAllRow();
             ILookup<string, DataItem> byFolder = items.ToLookup(
                 item => DatasetFolderIndex.GetRelativeFolder(item.ImageFilePath, datasetRoot),
                 StringComparer.OrdinalIgnoreCase);
@@ -452,6 +455,18 @@ namespace BooruDatasetTagManager
                         rows.Add(new Row(RowKind.Image, key, item.Name ?? string.Empty, null, item, false));
                 }
             }
+        }
+
+        /// <summary>
+        /// Pinned scope row used for "all images" batch commands (right-click)
+        /// and for clearing a folder scope. Shown for single-folder and flat
+        /// lists too — hiding it made those commands unreachable.
+        /// </summary>
+        private void AddAllRow()
+        {
+            if (folders.Count == 0 && items.Count == 0 && totalImageCount <= 0)
+                return;
+            rows.Add(new Row(RowKind.All, null, allText, FormatCount(totalImageCount), null, false));
         }
 
         private static bool MatchesFilter(DataItem item, string filter)
@@ -1113,8 +1128,22 @@ namespace BooruDatasetTagManager
             return count;
         }
 
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            LayoutSearchBox();
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            LayoutSearchBox();
+        }
+
         private void LayoutSearchBox()
         {
+            if (searchHost == null || searchHost.ClientSize.Width <= 0)
+                return;
             Rectangle box = SearchBoxBounds();
             int left = box.X + LogicalToDeviceUnits(6);
             int right = box.Right - LogicalToDeviceUnits(6);

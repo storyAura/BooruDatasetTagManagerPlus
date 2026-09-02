@@ -213,8 +213,8 @@ namespace BooruDatasetTagManager
                 throw new InvalidOperationException("Model is not loaded.");
 
             var stopwatch = Stopwatch.StartNew();
-            // ImageLoader (ImageSharp) handles formats GDI+ cannot decode, e.g. WebP.
-            using Image image = ImageLoader.GetImageFromFile(imagePath)
+            int inferenceSize = ResolveInputSize(session, loadedModel.FallbackInputSize);
+            using Image image = ImageLoader.GetImageForInference(imagePath, inferenceSize)
                 ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
             IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, generalThreshold, characterThreshold);
             stopwatch.Stop();
