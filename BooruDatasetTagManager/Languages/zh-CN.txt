@@ -1060,7 +1060,7 @@ ResolutionPrepTipScale=整图按长边压到勾选档位，不裁切。
 ResolutionPrepTipCenter=按比例居中裁切后再压到档位。
 ResolutionPrepTipSplit=按档位大小铺满切片。
 ResolutionPrepTipRandom=按比例随机位置裁若干张后再压档。
-ResolutionPrepTipYolo=按检测框扩到比例后再切；此预览不跑检测。
+ResolutionPrepTipYolo=按检测框扩到比例后再切；小于档位时按原尺寸输出。此预览不跑检测。
 ResolutionPrepYoloPreview=切图框以检测结果为准。
 SettingTranslationServiceGroup=服务
 SettingTranslationDataGroup=数据
@@ -1069,4 +1069,6 @@ PreBucketTotals=配平 +{0}  总数 {1}
 TaggerOnnxNativeMissing=无法加载 onnxruntime.dll。请把整个发布包解压完整，保留 exe 旁边的 win-x64 文件夹，不要只拷贝 exe。
 TaggerOnnxVcRedistMissing=缺少 Visual C++ 2015–2022 x64 运行库。请安装微软官方运行库，或重新解压完整发布包（win-x64 内应含 sidecar DLL）。
 TaggerOnnxCompatModeHint=当前进程看起来处于 Windows 兼容模式。请右键 exe → 属性 → 兼容性，关闭「以兼容模式运行这个程序」。
+ResolutionPrepYoloTooSmall=检测到 {0} 个目标，但裁切框过小（不足 64px），没有可写出的文件。
+CharacterTagAuditClusterTooltip=同槽位簇——这些标签可能描述同一件物品：{0}
 

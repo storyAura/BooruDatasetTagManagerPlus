@@ -38,6 +38,8 @@ namespace BooruDatasetTagManager
                 CliCommands.AiRunner = CliAiCommands.Run;
                 CliCommands.GeneralCategoryCatalog = GeneralTagCategoryCatalog.LoadFromFile(
                     GetGeneralTagCategoryCatalogPath(AppContext.BaseDirectory));
+                CliCommands.NearSynonyms = TagNearSynonymIndex.LoadFromFile(
+                    GetTagNearSynonymsPath(AppContext.BaseDirectory));
                 try
                 {
                     Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -136,6 +138,8 @@ namespace BooruDatasetTagManager
                         GeneralTagCategoryLookup = GeneralTagCategoryCatalog.LoadFromFile(
                             GetGeneralTagCategoryCatalogPath());
                         CliCommands.GeneralCategoryCatalog = GeneralTagCategoryLookup;
+                        TagNearSynonyms = TagNearSynonymIndex.LoadFromFile(GetTagNearSynonymsPath());
+                        CliCommands.NearSynonyms = TagNearSynonyms;
                     });
                 }
                 catch (Exception ex)
@@ -351,6 +355,20 @@ namespace BooruDatasetTagManager
         public static string GetGeneralTagCategoryCatalogPath(string appDir)
         {
             return Path.Combine(appDir, "Data", "danbooru_dataset_general.csv");
+        }
+
+        // Danbooru related-tag graph used by the character audit to cluster
+        // same-slot tags (bow / hair ribbon / hairband) for visual resolution.
+        public static TagNearSynonymIndex TagNearSynonyms = TagNearSynonymIndex.Empty;
+
+        public static string GetTagNearSynonymsPath()
+        {
+            return GetTagNearSynonymsPath(Application.StartupPath);
+        }
+
+        public static string GetTagNearSynonymsPath(string appDir)
+        {
+            return Path.Combine(appDir, "Data", "danbooru_tag_near_synonyms.csv");
         }
 
         // In-process RMBG-2.0 background removal (replaces the AiApiServer path).

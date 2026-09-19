@@ -803,12 +803,76 @@ namespace BooruDatasetTagManager
             };
         }
 
+        private static readonly Color[] ClusterTagColors =
+        {
+            Color.FromArgb(214, 234, 255),
+            Color.FromArgb(220, 245, 220),
+            Color.FromArgb(240, 224, 250),
+            Color.FromArgb(255, 236, 214),
+            Color.FromArgb(222, 244, 244),
+            Color.FromArgb(250, 228, 236)
+        };
+
         private static void ApplyDecisionRowColors(DataGridView grid)
         {
+            bool hasTagColumn = grid.Columns.Contains("Tag");
             foreach (DataGridViewRow row in grid.Rows)
             {
-                if (row.DataBoundItem is ReviewRow item)
-                    row.DefaultCellStyle.BackColor = DecisionRowColor(item.Decision);
+                if (row.DataBoundItem is not ReviewRow item)
+                    continue;
+                row.DefaultCellStyle.BackColor = DecisionRowColor(item.Decision);
+                if (!hasTagColumn)
+                    continue;
+                DataGridViewCell tagCell = row.Cells["Tag"];
+                if (item.ClusterId >= 0)
+                {
+                    tagCell.Style.BackColor = ClusterTagColors[item.ClusterId % ClusterTagColors.Length];
+                    tagCell.ToolTipText = string.Format(
+                        I18n.GetText("CharacterTagAuditClusterTooltip"), item.ClusterMembers);
+                }
+                else
+                {
+                    tagCell.Style.BackColor = Color.Empty;
+                    tagCell.ToolTipText = string.Empty;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Marks rows whose effective tags share a same-slot cluster so the
+        /// reviewer sees redundant accessories at a glance. Recomputed on every
+        /// grid rebuild because decisions (and thus effective tags) change.
+        /// </summary>
+        private static void AssignClusters(IReadOnlyList<ReviewRow> rows)
+        {
+            if (rows == null)
+                return;
+            foreach (ReviewRow row in rows)
+            {
+                row.ClusterId = -1;
+                row.ClusterMembers = string.Empty;
+            }
+            IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
+                rows.Select(ToAuditItem),
+                Program.TagNearSynonyms ?? TagNearSynonymIndex.Empty,
+                Program.GeneralTagCategoryLookup ?? GeneralTagCategoryCatalog.Empty);
+            for (int index = 0; index < clusters.Count; index++)
+            {
+                string members = string.Join(", ", clusters[index].Members);
+                foreach (ReviewRow row in rows)
+                {
+                    string effective = row.Decision == CharacterTagDecision.Replace && !string.IsNullOrWhiteSpace(row.ReplacementTag)
+                        ? row.ReplacementTag.Trim()
+                        : row.Tag;
+                    if (row.IncludeInPrompt
+                        && row.Decision != CharacterTagDecision.Delete
+                        && row.Decision != CharacterTagDecision.Uncertain
+                        && clusters[index].Members.Contains(effective, StringComparer.Ordinal))
+                    {
+                        row.ClusterId = index;
+                        row.ClusterMembers = members;
+                    }
+                }
             }
         }
 
@@ -1385,12 +1449,12 @@ namespace BooruDatasetTagManager
                 }
 
                 // TAG-01: tell the user the worst-case bill before it happens
-                // (two model calls per still-pending profile).
+                // (text + visual + optional resolution pass per pending profile).
                 int pendingProfiles = dual
                     ? runProfiles.Count - (dualResume?.Count(result => result != null) ?? 0)
                     : 1;
                 labelProgress.Text = string.Format(
-                    I18n.GetText("CharacterTagAuditMaxRequests"), pendingProfiles * 2);
+                    I18n.GetText("CharacterTagAuditMaxRequests"), pendingProfiles * CharacterTagAuditService.MaxRequestsPerProfile);
 
                 CharacterTagAuditService service = CreateAuditService();
                 var progress = new Progress<CharacterTagAuditProgress>(UpdateAuditProgress);
@@ -1534,7 +1598,9 @@ namespace BooruDatasetTagManager
                 Model = Program.Settings.CharacterTagAuditModel,
                 ReferenceImagePath = selectedImagePath,
                 CharacterAuditorSkill = skills.CharacterAuditor,
-                PromptPyramidSkill = skills.PromptPyramid
+                PromptPyramidSkill = skills.PromptPyramid,
+                TagVocabulary = Program.GeneralTagCategoryLookup ?? GeneralTagCategoryCatalog.Empty,
+                NearSynonyms = Program.TagNearSynonyms ?? TagNearSynonymIndex.Empty
             };
         }
 
@@ -1556,7 +1622,9 @@ namespace BooruDatasetTagManager
                 MinimumCount = (int)numericMinimumCount.Value,
                 Model = Program.Settings.CharacterTagAuditModel,
                 CharacterAuditorSkill = skills.CharacterAuditor,
-                PromptPyramidSkill = skills.PromptPyramid
+                PromptPyramidSkill = skills.PromptPyramid,
+                TagVocabulary = Program.GeneralTagCategoryLookup ?? GeneralTagCategoryCatalog.Empty,
+                NearSynonyms = Program.TagNearSynonyms ?? TagNearSynonymIndex.Empty
             };
         }
 
@@ -1834,6 +1902,7 @@ namespace BooruDatasetTagManager
                 rows = rows.Where(row => row.Tag.Contains(search, StringComparison.OrdinalIgnoreCase));
             if (checkDeletesOnly.Checked)
                 rows = rows.Where(row => row.Decision == CharacterTagDecision.Delete || row.Decision == CharacterTagDecision.Replace);
+            AssignClusters(reviewRows);
             resultGrid.DataSource = new BindingList<ReviewRow>(rows.ToList());
             RebuildSummaryAndPrompt();
         }
@@ -1925,7 +1994,8 @@ namespace BooruDatasetTagManager
             List<CharacterTagAuditItem> items = reviewRows.Select(ToAuditItem).ToList();
             CharacterTagResultCanonicalizer.Apply(
                 items,
-                SelectedChoice<CharacterTagAuditStyle>(comboStyle));
+                SelectedChoice<CharacterTagAuditStyle>(comboStyle),
+                Program.GeneralTagCategoryLookup ?? GeneralTagCategoryCatalog.Empty);
             return items;
         }
 
@@ -2187,6 +2257,7 @@ namespace BooruDatasetTagManager
                 CharacterTagAuditStage.TextScreening => I18n.GetText("CharacterTagAuditTextScreening"),
                 CharacterTagAuditStage.TextScreeningCompleted => I18n.GetText("CharacterTagAuditTextScreening"),
                 CharacterTagAuditStage.VisualReview => I18n.GetText("CharacterTagAuditVisualReview"),
+                CharacterTagAuditStage.Resolution => I18n.GetText("CharacterTagAuditVisualReview"),
                 _ => string.Empty
             };
 
@@ -2252,6 +2323,10 @@ namespace BooruDatasetTagManager
             public string OriginalReason { get; set; }
             public string ReasonDisplay { get; set; }
             public bool ReasonTranslationFailed { get; set; }
+            // Same-slot cluster (bow / hair ribbon / hairband) this row belongs
+            // to, -1 when none; drives the Tag-cell tint and tooltip.
+            public int ClusterId { get; set; } = -1;
+            public string ClusterMembers { get; set; } = string.Empty;
         }
 
         private sealed class DecisionChoice

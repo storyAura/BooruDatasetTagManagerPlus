@@ -135,6 +135,20 @@ namespace BooruDatasetTagManager
             return new List<int>(set);
         }
 
+        /// <summary>
+        /// 64-aligned native size, or null when either edge falls below
+        /// <see cref="MinGear"/>. Used when a crop is smaller than the
+        /// selected gear so YOLO / crop jobs still write something.
+        /// </summary>
+        public static Size? NativeAlignedSize(Size source)
+        {
+            int width = AlignDown(source.Width);
+            int height = AlignDown(source.Height);
+            if (width < MinGear || height < MinGear)
+                return null;
+            return new Size(width, height);
+        }
+
         public static Size? ScaleToLongEdge(Size source, int gear)
         {
             int target = AlignDown(gear);
@@ -397,13 +411,25 @@ namespace BooruDatasetTagManager
                         continue;
 
                     bool anyGear = false;
+                    bool nativeEmitted = false;
                     foreach (int gear in gears)
                     {
                         Size? output = ScaleToLongEdge(crop.Size, gear);
+                        int suffixGear = gear;
                         if (output == null)
                         {
-                            skippedGears++;
-                            continue;
+                            if (nativeEmitted)
+                                continue;
+
+                            output = NativeAlignedSize(crop.Size);
+                            if (output == null)
+                            {
+                                skippedGears++;
+                                continue;
+                            }
+
+                            nativeEmitted = true;
+                            suffixGear = Math.Max(output.Value.Width, output.Value.Height);
                         }
 
                         anyGear = true;
@@ -413,7 +439,7 @@ namespace BooruDatasetTagManager
                             SourceSize = imageSize,
                             SourceRect = crop,
                             OutputSize = output.Value,
-                            Suffix = BuildSuffix(mode, aspectWidth, aspectHeight, gear, i + 1)
+                            Suffix = BuildSuffix(mode, aspectWidth, aspectHeight, suffixGear, i + 1)
                         });
                     }
 

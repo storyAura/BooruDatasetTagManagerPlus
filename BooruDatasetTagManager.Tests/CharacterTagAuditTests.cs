@@ -482,6 +482,396 @@ public sealed class CharacterTagAuditTests
         Assert.Equal("black skirt", CharacterTagPromptBuilder.Build(items, string.Empty));
     }
 
+    private static GeneralTagCategoryCatalog WearableVocabulary(params string[] extraRows)
+    {
+        var text = new System.Text.StringBuilder(
+            "tag,category,other_names,copyright,level,parent_tag,post_count,category_l1,category_l2,wiki_url\n"
+            + "jewelry,general,,,0,,1,饰品,首饰,\n"
+            + "earrings,general,,,1,jewelry,1,饰品,首饰,\n"
+            + "necklace,general,,,1,jewelry,1,饰品,首饰,\n"
+            + "bow,general,,,0,,1,饰品,蝴蝶结,\n"
+            + "hair_bow,general,,,1,bow,1,饰品,蝴蝶结,\n"
+            + "ribbon,general,,,0,,1,饰品,丝带,\n"
+            + "hair_ribbon,general,,,1,ribbon,1,饰品,丝带,\n"
+            + "black_ribbon,general,,,1,ribbon,1,饰品,丝带,\n"
+            + "gloves,general,,,0,,1,服装,手套,\n"
+            + "black_gloves,general,,,1,gloves,1,服装,手套,\n"
+            + "elbow_gloves,general,,,1,gloves,1,服装,手套,\n"
+            + "dress,general,,,0,,1,服装,裙子,\n"
+            + "black_dress,general,,,1,dress,1,服装,裙子,\n"
+            + "blue_dress,general,,,1,dress,1,服装,裙子,\n"
+            + "frills,general,,,0,,1,服装,服装,\n"
+            + "\"frilled_dress\",general,,,1,\"dress, frills\",1,服装,裙子,\n"
+            + "hairband,general,,,0,,1,饰品,发箍,\n"
+            + "hair_ornament,general,,,0,,1,饰品,发饰,\n");
+        foreach (string row in extraRows)
+            text.Append(row).Append('\n');
+        using var reader = new StringReader(text.ToString());
+        return GeneralTagCategoryCatalog.LoadFromReader(reader);
+    }
+
+    private static CharacterTagAuditItem Wearable(
+        string tag,
+        CharacterTagCategory category = CharacterTagCategory.WearableAccessory,
+        int promptOrder = 0)
+    {
+        return AuditItem(tag, CharacterTagDecision.Keep, category: category, includeInPrompt: true, promptOrder: promptOrder);
+    }
+
+    [Fact]
+    public void FamilyRulesFoldContainerIntoSingleConfirmedMember()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("jewelry", promptOrder: 8),
+            Wearable("earrings", promptOrder: 7),
+            Wearable("bow", promptOrder: 6),
+            Wearable("hair bow", promptOrder: 5)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, WearableVocabulary());
+
+        CharacterTagAuditItem jewelry = items.Single(item => item.Tag == "jewelry");
+        Assert.Equal(CharacterTagDecision.Replace, jewelry.FinalDecision);
+        Assert.Equal("earrings", jewelry.ReplacementTag);
+        Assert.Equal(7, jewelry.PromptOrder);
+        Assert.Equal("hair bow", items.Single(item => item.Tag == "bow").ReplacementTag);
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "earrings").FinalDecision);
+        Assert.Equal("hair bow, earrings", CharacterTagPromptBuilder.Build(items, string.Empty));
+    }
+
+    [Fact]
+    public void FamilyRulesDeleteContainerCoveredByTwoMembers()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("jewelry"),
+            Wearable("earrings"),
+            Wearable("necklace"),
+            Wearable("dress", CharacterTagCategory.Clothing),
+            Wearable("black dress", CharacterTagCategory.Clothing),
+            Wearable("blue dress", CharacterTagCategory.Clothing)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, WearableVocabulary());
+
+        CharacterTagAuditItem jewelry = items.Single(item => item.Tag == "jewelry");
+        Assert.Equal(CharacterTagDecision.Delete, jewelry.FinalDecision);
+        Assert.False(jewelry.IncludeInPrompt);
+        Assert.Contains("earrings, necklace", jewelry.Reason);
+        Assert.Equal(CharacterTagDecision.Delete, items.Single(item => item.Tag == "dress").FinalDecision);
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "black dress").FinalDecision);
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "blue dress").FinalDecision);
+        Assert.Equal("black dress, blue dress, earrings, necklace", CharacterTagPromptBuilder.Build(items, string.Empty));
+    }
+
+    [Fact]
+    public void SiblingMergeKeepsColorTagWhenCombinedFormIsNotInVocabulary()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 10),
+            Wearable("elbow gloves", CharacterTagCategory.Clothing, promptOrder: 11),
+            Wearable("hair ribbon", promptOrder: 5),
+            Wearable("black ribbon", promptOrder: 6)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, WearableVocabulary());
+
+        CharacterTagAuditItem elbow = items.Single(item => item.Tag == "elbow gloves");
+        Assert.Equal(CharacterTagDecision.Replace, elbow.FinalDecision);
+        Assert.Equal("black gloves", elbow.ReplacementTag);
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "black gloves").FinalDecision);
+        Assert.Equal("black ribbon", items.Single(item => item.Tag == "hair ribbon").ReplacementTag);
+        Assert.Equal("black ribbon, black gloves", CharacterTagPromptBuilder.Build(items, string.Empty));
+    }
+
+    [Fact]
+    public void SiblingMergeComposesColorAndTypeWhenVocabularyKnowsTheCombinedTag()
+    {
+        GeneralTagCategoryCatalog vocabulary = WearableVocabulary(
+            "black_elbow_gloves,general,,,2,\"black_gloves, elbow_gloves\",1,服装,手套,",
+            "black_frilled_dress,general,,,2,\"black_dress, frilled_dress\",1,服装,裙子,");
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("gloves", CharacterTagCategory.Clothing, promptOrder: 9),
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 10),
+            Wearable("elbow gloves", CharacterTagCategory.Clothing, promptOrder: 11),
+            Wearable("frills", CharacterTagCategory.Clothing, promptOrder: 3),
+            Wearable("black dress", CharacterTagCategory.Clothing, promptOrder: 1),
+            Wearable("frilled dress", CharacterTagCategory.Clothing, promptOrder: 2)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, vocabulary);
+
+        Assert.Equal("black elbow gloves", items.Single(item => item.Tag == "black gloves").ReplacementTag);
+        Assert.Equal("black elbow gloves", items.Single(item => item.Tag == "elbow gloves").ReplacementTag);
+        Assert.Equal("black elbow gloves", items.Single(item => item.Tag == "gloves").ReplacementTag);
+        Assert.Equal("black frilled dress", items.Single(item => item.Tag == "black dress").ReplacementTag);
+        Assert.Equal("black frilled dress", items.Single(item => item.Tag == "frilled dress").ReplacementTag);
+        Assert.Equal("black frilled dress", items.Single(item => item.Tag == "frills").ReplacementTag);
+        Assert.Equal("black frilled dress, black elbow gloves", CharacterTagPromptBuilder.Build(items, string.Empty));
+    }
+
+    [Fact]
+    public void SiblingMergeSkipsAmbiguousGroupsAndUntouchedCategories()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("black gloves", CharacterTagCategory.Clothing),
+            Wearable("white gloves", CharacterTagCategory.Clothing),
+            Wearable("elbow gloves", CharacterTagCategory.Clothing),
+            AuditItem("jewelry", CharacterTagDecision.Keep, category: CharacterTagCategory.WearableAccessory, includeInPrompt: false),
+            Wearable("earrings"),
+            AuditItem("long hair", CharacterTagDecision.Keep, category: CharacterTagCategory.Hair, includeInPrompt: true),
+            AuditItem("very long hair", CharacterTagDecision.Keep, category: CharacterTagCategory.Hair, includeInPrompt: true)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, WearableVocabulary());
+
+        Assert.All(items.Where(item => item.Tag.EndsWith("gloves")),
+            item => Assert.Equal(CharacterTagDecision.Keep, item.FinalDecision));
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "jewelry").FinalDecision);
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "long hair").FinalDecision);
+    }
+
+    [Fact]
+    public void FamilyRulesFoldLiteralSpecializationsWithoutVocabulary()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("black gloves", CharacterTagCategory.Clothing),
+            Wearable("black elbow gloves", CharacterTagCategory.Clothing),
+            Wearable("boots", CharacterTagCategory.Footwear),
+            Wearable("thigh boots", CharacterTagCategory.Footwear)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full);
+
+        Assert.Equal("black elbow gloves", items.Single(item => item.Tag == "black gloves").ReplacementTag);
+        Assert.Equal("thigh boots", items.Single(item => item.Tag == "boots").ReplacementTag);
+        Assert.Equal("black elbow gloves, thigh boots", CharacterTagPromptBuilder.Build(items, string.Empty));
+    }
+
+    [Fact]
+    public void KanonnoFullRegressionRemovesContainersAndSameItemPairsFromPrompt()
+    {
+        string trigger = "kanonno earhart";
+        var items = new List<CharacterTagAuditItem>
+        {
+            AuditItem(trigger, CharacterTagDecision.Keep, category: CharacterTagCategory.Identity, includeInPrompt: true, promptOrder: 0),
+            AuditItem("1girl", CharacterTagDecision.Keep, category: CharacterTagCategory.Identity, includeInPrompt: true, promptOrder: 1),
+            AuditItem("solo", CharacterTagDecision.Keep, category: CharacterTagCategory.Identity, includeInPrompt: true, promptOrder: 1),
+            AuditItem("red eyes", CharacterTagDecision.Keep, category: CharacterTagCategory.Eyes, includeInPrompt: true, promptOrder: 2),
+            AuditItem("pink hair", CharacterTagDecision.Keep, category: CharacterTagCategory.Hair, includeInPrompt: true, promptOrder: 3),
+            AuditItem("short hair", CharacterTagDecision.Keep, category: CharacterTagCategory.Hair, includeInPrompt: true, promptOrder: 4),
+            Wearable("hair ornament", promptOrder: 5),
+            Wearable("hair ribbon", promptOrder: 6),
+            Wearable("hairband", promptOrder: 6),
+            Wearable("black ribbon", promptOrder: 6),
+            Wearable("bow", promptOrder: 6),
+            AuditItem("choker", CharacterTagDecision.Replace, "black choker", category: CharacterTagCategory.WearableAccessory, includeInPrompt: true, promptOrder: 7),
+            Wearable("earrings", promptOrder: 7),
+            Wearable("jewelry", promptOrder: 7),
+            AuditItem("dress", CharacterTagDecision.Replace, "blue dress", category: CharacterTagCategory.Clothing, includeInPrompt: true, promptOrder: 8),
+            Wearable("black dress", CharacterTagCategory.Clothing, promptOrder: 8),
+            Wearable("frills", CharacterTagCategory.Clothing, promptOrder: 8),
+            Wearable("black skirt", CharacterTagCategory.Clothing, promptOrder: 9),
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 10),
+            Wearable("elbow gloves", CharacterTagCategory.Clothing, promptOrder: 10),
+            Wearable("black thighhighs", CharacterTagCategory.Legwear, promptOrder: 11),
+            AuditItem("looking at viewer", CharacterTagDecision.Keep, category: CharacterTagCategory.Composition, includeInPrompt: false)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, WearableVocabulary());
+        string prompt = CharacterTagPromptBuilder.Build(items, trigger);
+        string[] tags = prompt.Split(", ");
+
+        Assert.StartsWith(trigger + ", 1girl, solo, red eyes, pink hair, short hair", prompt);
+        Assert.DoesNotContain("jewelry", tags);
+        Assert.Contains("earrings", tags);
+        Assert.False(tags.Contains("black gloves") && tags.Contains("elbow gloves"));
+        Assert.Contains("black gloves", tags);
+        Assert.False(tags.Contains("hair ribbon") && tags.Contains("black ribbon"));
+        Assert.Contains("black ribbon", tags);
+        Assert.Contains("black dress", tags);
+        Assert.Contains("blue dress", tags);
+        Assert.Equal(tags.Length, tags.Distinct().Count());
+    }
+
+    [Fact]
+    public void KnownPreciseTagWinsOverUnknownComposite()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("black dress", CharacterTagCategory.Clothing, promptOrder: 1),
+            AuditItem("frills", CharacterTagDecision.Replace, "frilled black dress",
+                category: CharacterTagCategory.Clothing, includeInPrompt: true, promptOrder: 2),
+            Wearable("dress", CharacterTagCategory.Clothing, promptOrder: 3)
+        };
+
+        CharacterTagResultCanonicalizer.Apply(items, CharacterTagAuditStyle.Full, WearableVocabulary());
+
+        Assert.Equal(CharacterTagDecision.Keep, items.Single(item => item.Tag == "black dress").FinalDecision);
+        Assert.Equal("black dress", items.Single(item => item.Tag == "frills").ReplacementTag);
+        Assert.Equal("black dress", items.Single(item => item.Tag == "dress").ReplacementTag);
+        Assert.Equal("black dress", CharacterTagPromptBuilder.Build(items, string.Empty));
+    }
+
+    [Fact]
+    public void UnknownCompositeWithoutKnownAnchorIsNormalizedToLongestKnownSubTag()
+    {
+        var frills = new List<CharacterTagAuditItem>
+        {
+            AuditItem("frills", CharacterTagDecision.Replace, "frilled black dress",
+                category: CharacterTagCategory.Clothing, includeInPrompt: true)
+        };
+        CharacterTagResultCanonicalizer.Apply(frills, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal("black dress", frills[0].ReplacementTag);
+        Assert.Contains("normalized to", frills[0].Reason, StringComparison.Ordinal);
+
+        var elbow = new List<CharacterTagAuditItem>
+        {
+            AuditItem("elbow gloves", CharacterTagDecision.Replace, "black elbow gloves",
+                category: CharacterTagCategory.Clothing, includeInPrompt: true)
+        };
+        CharacterTagResultCanonicalizer.Apply(elbow, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal(CharacterTagDecision.Replace, elbow[0].FinalDecision);
+        Assert.Equal("black elbow gloves", elbow[0].ReplacementTag);
+    }
+
+    [Fact]
+    public void ColoredCompositeFoldsBackToKnownColoredSibling()
+    {
+        var ribbon = new List<CharacterTagAuditItem>
+        {
+            Wearable("black ribbon", promptOrder: 1),
+            AuditItem("hair ribbon", CharacterTagDecision.Replace, "black hair ribbon",
+                category: CharacterTagCategory.WearableAccessory, includeInPrompt: true, promptOrder: 2)
+        };
+        CharacterTagResultCanonicalizer.Apply(ribbon, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal(CharacterTagDecision.Keep, ribbon.Single(item => item.Tag == "black ribbon").FinalDecision);
+        Assert.Equal("black ribbon", ribbon.Single(item => item.Tag == "hair ribbon").ReplacementTag);
+        Assert.Equal("black ribbon", CharacterTagPromptBuilder.Build(ribbon, string.Empty));
+
+        var gloves = new List<CharacterTagAuditItem>
+        {
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 1),
+            AuditItem("elbow gloves", CharacterTagDecision.Replace, "black elbow gloves",
+                category: CharacterTagCategory.Clothing, includeInPrompt: true, promptOrder: 2)
+        };
+        CharacterTagResultCanonicalizer.Apply(gloves, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal(CharacterTagDecision.Keep, gloves.Single(item => item.Tag == "black gloves").FinalDecision);
+        Assert.Equal("black gloves", gloves.Single(item => item.Tag == "elbow gloves").ReplacementTag);
+        Assert.Equal("black gloves", CharacterTagPromptBuilder.Build(gloves, string.Empty));
+    }
+
+    [Fact]
+    public void ClustersUseColorStrippedBases()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("black hairband", promptOrder: 1),
+            Wearable("black hair ribbon", promptOrder: 2)
+        };
+
+        IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
+            items, AccessoryNearSynonyms(), WearableVocabulary());
+        CharacterTagCluster cluster = Assert.Single(clusters);
+        Assert.Equal(new[] { "black hairband", "black hair ribbon" }, cluster.Members);
+
+        string accepted = "{\"clusters\":[{\"tags\":[\"black hairband\",\"black hair ribbon\"],"
+            + "\"same_item\":true,\"canonical\":\"black hairband\",\"evidence\":\"a rigid band\"}]}";
+        int changes = CharacterTagResolution.Apply(
+            items, accepted, Array.Empty<string>(), clusters, WearableVocabulary());
+        Assert.Equal(2, changes);
+        Assert.All(items, item => Assert.Equal("black hairband", item.EffectiveTag));
+
+        items = new List<CharacterTagAuditItem>
+        {
+            Wearable("black hairband", promptOrder: 1),
+            Wearable("black hair ribbon", promptOrder: 2)
+        };
+        string rejected = "{\"clusters\":[{\"tags\":[\"black hairband\",\"black hair ribbon\"],"
+            + "\"same_item\":true,\"canonical\":\"frilled black hairband\",\"evidence\":\"invented\"}]}";
+        Assert.Equal(0, CharacterTagResolution.Apply(
+            items, rejected, Array.Empty<string>(), clusters, WearableVocabulary()));
+        Assert.Equal("black hairband", items[0].EffectiveTag);
+        Assert.Equal("black hair ribbon", items[1].EffectiveTag);
+    }
+
+    [Fact]
+    public void ModelDeletedContainerIsRedirectedToItsSingleConfirmedSpecificTag()
+    {
+        var dress = new List<CharacterTagAuditItem>
+        {
+            AuditItem("dress", CharacterTagDecision.Delete, category: CharacterTagCategory.Clothing),
+            Wearable("black dress", CharacterTagCategory.Clothing, promptOrder: 4)
+        };
+        CharacterTagResultCanonicalizer.Apply(dress, CharacterTagAuditStyle.Full, WearableVocabulary());
+        CharacterTagAuditItem dressItem = dress.Single(item => item.Tag == "dress");
+        Assert.Equal(CharacterTagDecision.Replace, dressItem.FinalDecision);
+        Assert.Equal("black dress", dressItem.ReplacementTag);
+        Assert.True(dressItem.IncludeInPrompt);
+
+        var gloves = new List<CharacterTagAuditItem>
+        {
+            AuditItem("gloves", CharacterTagDecision.Delete, category: CharacterTagCategory.Clothing),
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 5)
+        };
+        CharacterTagResultCanonicalizer.Apply(gloves, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal("black gloves", gloves.Single(item => item.Tag == "gloves").ReplacementTag);
+
+        var elbow = new List<CharacterTagAuditItem>
+        {
+            AuditItem("elbow gloves", CharacterTagDecision.Delete, category: CharacterTagCategory.Clothing),
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 5)
+        };
+        CharacterTagResultCanonicalizer.Apply(elbow, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal("black gloves", elbow.Single(item => item.Tag == "elbow gloves").ReplacementTag);
+
+        var twoDresses = new List<CharacterTagAuditItem>
+        {
+            AuditItem("dress", CharacterTagDecision.Delete, category: CharacterTagCategory.Clothing),
+            Wearable("black dress", CharacterTagCategory.Clothing),
+            Wearable("blue dress", CharacterTagCategory.Clothing)
+        };
+        CharacterTagResultCanonicalizer.Apply(twoDresses, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal(CharacterTagDecision.Delete, twoDresses.Single(item => item.Tag == "dress").FinalDecision);
+
+        var smile = new List<CharacterTagAuditItem>
+        {
+            AuditItem("smile", CharacterTagDecision.Delete, category: CharacterTagCategory.Expression),
+            Wearable("black dress", CharacterTagCategory.Clothing)
+        };
+        CharacterTagResultCanonicalizer.Apply(smile, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal(CharacterTagDecision.Delete, smile.Single(item => item.Tag == "smile").FinalDecision);
+    }
+
+    [Fact]
+    public void BareDecorationWordsAreDeletedNextToTheirGarmentInBothStyles()
+    {
+        foreach (CharacterTagAuditStyle style in new[] { CharacterTagAuditStyle.Full, CharacterTagAuditStyle.Sparse })
+        {
+            var items = new List<CharacterTagAuditItem>
+            {
+                Wearable("frills", CharacterTagCategory.Clothing, promptOrder: 2),
+                Wearable("black dress", CharacterTagCategory.Clothing, promptOrder: 1)
+            };
+            CharacterTagResultCanonicalizer.Apply(items, style, WearableVocabulary());
+            Assert.Equal(CharacterTagDecision.Delete, items.Single(item => item.Tag == "frills").FinalDecision);
+            Assert.Contains("black dress", items.Single(item => item.Tag == "frills").Reason, StringComparison.Ordinal);
+            Assert.Equal("black dress", CharacterTagPromptBuilder.Build(items, string.Empty));
+        }
+
+        var lone = new List<CharacterTagAuditItem>
+        {
+            Wearable("frills", CharacterTagCategory.Clothing)
+        };
+        CharacterTagResultCanonicalizer.Apply(lone, CharacterTagAuditStyle.Full, WearableVocabulary());
+        Assert.Equal(CharacterTagDecision.Keep, lone[0].FinalDecision);
+    }
+
     [Fact]
     public void FullCanonicalizerKeepsLongHairWhenLlmMarkedKeep()
     {
@@ -950,6 +1340,337 @@ public sealed class CharacterTagAuditTests
             new[] { "smile", "not present" });
 
         Assert.Equal(new[] { "trigger", "blue hair", "black boots" }, result);
+    }
+
+    private static string FullJson(params (string Tag, string Decision, string Category, bool Include, string Replacement)[] values)
+    {
+        return JsonConvert.SerializeObject(new
+        {
+            tags = values.Select((value, index) => new
+            {
+                tag = value.Tag,
+                decision = value.Decision,
+                category = value.Category,
+                replacement_tag = value.Replacement,
+                reason = "visible in the reference image on the locked character",
+                include_in_prompt = value.Include,
+                prompt_order = index
+            })
+        });
+    }
+
+    private static TagNearSynonymIndex AccessoryNearSynonyms()
+    {
+        using var reader = new StringReader(
+            "tag,near_synonyms\n"
+            + "bow,\"hair_bow, ribbon, hair_ribbon\"\n"
+            + "hair_ribbon,\"hairband, hair_ornament, hair_bow\"\n"
+            + "hairband,\"hair_ribbon, hair_ornament\"\n"
+            + "black_gloves,gloves\n"
+            + "elbow_gloves,gloves\n"
+            + "choker,\"collar, scarf\"\n");
+        return TagNearSynonymIndex.LoadFromReader(reader);
+    }
+
+    private static CharacterTagAuditOptions KanonnoOptions(string referenceImage, CharacterTagInventory inventory)
+    {
+        return new CharacterTagAuditOptions
+        {
+            Inventory = inventory,
+            TriggerWord = "kanonno earhart",
+            Style = CharacterTagAuditStyle.Full,
+            MinimumCount = 1,
+            Model = "gemini-test",
+            ReferenceImagePath = referenceImage,
+            CharacterAuditorSkill = "auditor rules",
+            PromptPyramidSkill = "pyramid rules",
+            TagVocabulary = WearableVocabulary(),
+            NearSynonyms = AccessoryNearSynonyms()
+        };
+    }
+
+    private static string KanonnoVisualJson()
+    {
+        return FullJson(
+            ("kanonno earhart", "keep", "identity", true, ""),
+            ("1girl", "keep", "identity", true, ""),
+            ("red eyes", "keep", "eyes", true, ""),
+            ("pink hair", "keep", "hair", true, ""),
+            ("bow", "keep", "wearable_accessory", true, ""),
+            ("hair ornament", "keep", "wearable_accessory", true, ""),
+            ("hair ribbon", "keep", "wearable_accessory", true, ""),
+            ("hairband", "keep", "wearable_accessory", true, ""),
+            ("choker", "keep", "wearable_accessory", true, ""),
+            ("earrings", "keep", "wearable_accessory", true, ""),
+            ("jewelry", "keep", "wearable_accessory", true, ""),
+            ("black dress", "keep", "clothing", true, ""),
+            ("frills", "keep", "clothing", true, ""),
+            ("skirt", "keep", "clothing", true, ""),
+            ("gloves", "keep", "clothing", true, ""),
+            ("black gloves", "keep", "clothing", true, ""),
+            ("elbow gloves", "keep", "clothing", true, ""),
+            ("black thighhighs", "keep", "legwear", true, ""),
+            ("looking at viewer", "keep", "composition", false, ""));
+    }
+
+    private static CharacterTagInventory KanonnoInventory()
+    {
+        return CharacterTagInventory.Create(new[]
+        {
+            new[]
+            {
+                "kanonno earhart", "1girl", "red eyes", "pink hair", "bow", "hair ornament", "hair ribbon", "hairband",
+                "choker", "earrings", "jewelry", "black dress", "frills", "skirt", "gloves", "black gloves", "elbow gloves",
+                "black thighhighs", "looking at viewer"
+            }
+        });
+    }
+
+    private static CharacterTagInventory KanonnoScreenshotInventory()
+    {
+        return CharacterTagInventory.Create(new[]
+        {
+            new[]
+            {
+                "kanonno earhart", "1girl", "red eyes", "pink hair", "short hair", "bow", "hair ornament",
+                "hair ribbon", "hairband", "choker", "earrings", "jewelry", "dress", "black dress", "frills",
+                "gloves", "black gloves", "elbow gloves", "black thighhighs", "looking at viewer"
+            }
+        });
+    }
+
+    private static string KanonnoScreenshotVisualJson()
+    {
+        return FullJson(
+            ("kanonno earhart", "keep", "identity", true, ""),
+            ("1girl", "keep", "identity", true, ""),
+            ("red eyes", "keep", "eyes", true, ""),
+            ("pink hair", "keep", "hair", true, ""),
+            ("short hair", "keep", "hair", true, ""),
+            ("bow", "keep", "wearable_accessory", true, ""),
+            ("hair ornament", "keep", "wearable_accessory", true, ""),
+            ("hair ribbon", "replace", "wearable_accessory", true, "black hair ribbon"),
+            ("hairband", "replace", "wearable_accessory", true, "black hairband"),
+            ("choker", "replace", "wearable_accessory", true, "black choker"),
+            ("earrings", "replace", "wearable_accessory", true, "blue earrings"),
+            ("jewelry", "keep", "wearable_accessory", true, ""),
+            ("dress", "delete", "clothing", false, ""),
+            ("black dress", "keep", "clothing", true, ""),
+            ("frills", "keep", "clothing", true, ""),
+            ("gloves", "delete", "clothing", false, ""),
+            ("black gloves", "delete", "clothing", false, ""),
+            ("elbow gloves", "replace", "clothing", true, "black elbow gloves"),
+            ("black thighhighs", "keep", "legwear", true, ""),
+            ("looking at viewer", "keep", "composition", false, ""));
+    }
+
+    [Fact]
+    public async Task VisualPromptListsColorlessWearablesAndSameSlotClusters()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+        var requests = new List<CharacterTagModelRequest>();
+        var service = new CharacterTagAuditService((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(new CharacterTagModelResponse(
+                request.Stage == CharacterTagAuditStage.Resolution ? "{}" : KanonnoVisualJson(), string.Empty));
+        });
+
+        await service.ExecuteAsync(KanonnoOptions(referenceImage, KanonnoInventory()));
+
+        CharacterTagModelRequest visual = Assert.Single(requests, request => request.Stage == CharacterTagAuditStage.VisualReview);
+        string todoLine = visual.UserPrompt.Split('\n').Single(line => line.StartsWith("Color-less wearable tags you MUST resolve now:", StringComparison.Ordinal));
+        Assert.Contains("bow", todoLine);
+        Assert.Contains("choker", todoLine);
+        Assert.Contains("hair ribbon", todoLine);
+        Assert.Contains("skirt", todoLine);
+        Assert.DoesNotContain("frills", todoLine);
+        Assert.DoesNotContain("jewelry", todoLine);
+        Assert.DoesNotContain("hair ornament", todoLine);
+        Assert.Contains("color unverifiable:", visual.UserPrompt, StringComparison.Ordinal);
+        string clusterLine = visual.UserPrompt.Split('\n').Single(line => line.StartsWith("Same-slot clusters", StringComparison.Ordinal));
+        Assert.Contains("[bow, hair ribbon, hairband]", clusterLine);
+        Assert.DoesNotContain("gloves", clusterLine);
+        Assert.Contains("at least 8 words", visual.UserPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ResolutionPassAppliesColorsAndClusterVerdictsThenCanonicalizes()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+        var requests = new List<CharacterTagModelRequest>();
+        var service = new CharacterTagAuditService((request, _) =>
+        {
+            requests.Add(request);
+            string body = request.Stage == CharacterTagAuditStage.Resolution
+                ? "{\"colors\":[{\"tag\":\"bow\",\"color\":null,\"evidence\":\"same band as the hairband\"}],"
+                    + "\"clusters\":[{\"tags\":[\"bow\",\"black hair ribbon\",\"black hairband\"],\"same_item\":true,"
+                    + "\"canonical\":\"black hairband\",\"evidence\":\"a rigid band on the hair\"}]}"
+                : KanonnoScreenshotVisualJson();
+            return Task.FromResult(new CharacterTagModelResponse(body, string.Empty));
+        });
+
+        CharacterTagAuditResult result = await service.ExecuteAsync(
+            KanonnoOptions(referenceImage, KanonnoScreenshotInventory()));
+
+        Assert.Equal(
+            new[] { CharacterTagAuditStage.TextScreening, CharacterTagAuditStage.VisualReview, CharacterTagAuditStage.Resolution },
+            requests.Select(request => request.Stage));
+        Assert.Equal(referenceImage, Assert.Single(requests[2].ImagePaths));
+        Assert.DoesNotContain("auditor rules", requests[2].SystemPrompt);
+        Assert.Contains("Clusters: [bow, black hair ribbon, black hairband]", requests[2].UserPrompt, StringComparison.Ordinal);
+        Assert.Contains("a band -> black hairband", requests[2].UserPrompt, StringComparison.Ordinal);
+        Assert.Contains("Items: bow", requests[2].UserPrompt, StringComparison.Ordinal);
+
+        foreach (string tag in new[] { "bow", "hair ribbon", "hairband" })
+        {
+            CharacterTagAuditItem item = result.Items.Single(candidate => candidate.Tag == tag);
+            Assert.Equal(CharacterTagDecision.Replace, item.FinalDecision);
+            Assert.Equal("black hairband", item.ReplacementTag);
+        }
+        Assert.Equal("black hairband", result.Items.Single(item => item.Tag == "hair ornament").ReplacementTag);
+        Assert.Equal("blue earrings", result.Items.Single(item => item.Tag == "jewelry").ReplacementTag);
+        Assert.Equal("black dress", result.Items.Single(item => item.Tag == "dress").ReplacementTag);
+        Assert.Equal("black elbow gloves", result.Items.Single(item => item.Tag == "gloves").ReplacementTag);
+        Assert.Equal(CharacterTagDecision.Delete, result.Items.Single(item => item.Tag == "frills").FinalDecision);
+        Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "black dress").FinalDecision);
+
+        string[] prompt = result.FinalPrompt.Split(", ");
+        Assert.Equal("kanonno earhart", prompt[0]);
+        Assert.Contains("black dress", prompt);
+        Assert.DoesNotContain("frills", prompt);
+        Assert.DoesNotContain("frilled black dress", prompt);
+        Assert.Single(prompt, tag => tag == "black hairband");
+        Assert.DoesNotContain("black hair ribbon", prompt);
+        Assert.DoesNotContain("bow", prompt);
+        Assert.DoesNotContain("hair ornament", prompt);
+        Assert.DoesNotContain("jewelry", prompt);
+        Assert.Contains("black elbow gloves", prompt);
+        Assert.DoesNotContain("black gloves", prompt);
+        Assert.Equal(prompt.Length, prompt.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task ResolutionPassIgnoresOutOfScopeAnswersAndSurvivesMalformedReplies()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+        string[] resolutionReplies =
+        {
+            "{\"colors\":[{\"tag\":\"skirt\",\"color\":\"neon\"},{\"tag\":\"black dress\",\"color\":\"red\"}],"
+                + "\"clusters\":[{\"tags\":[\"bow\",\"hair ribbon\"],\"same_item\":true,\"canonical\":\"red cape\"},"
+                + "{\"tags\":[\"bow\",\"hair ribbon\"],\"same_item\":false,\"canonical\":\"hair ribbon\"}]}",
+            "this is not json at all",
+            string.Empty
+        };
+        foreach (string reply in resolutionReplies)
+        {
+            var service = new CharacterTagAuditService((request, _) => Task.FromResult(new CharacterTagModelResponse(
+                request.Stage == CharacterTagAuditStage.Resolution ? reply : KanonnoVisualJson(), string.Empty)));
+
+            CharacterTagAuditResult result = await service.ExecuteAsync(KanonnoOptions(referenceImage, KanonnoInventory()));
+
+            Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "skirt").FinalDecision);
+            Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "black dress").FinalDecision);
+            Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "bow").FinalDecision);
+            Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "hair ribbon").FinalDecision);
+            Assert.Equal(3, result.Metrics.Requests.Count);
+        }
+
+        var failing = new CharacterTagAuditService((request, _) => Task.FromResult(
+            request.Stage == CharacterTagAuditStage.Resolution
+                ? new CharacterTagModelResponse(string.Empty, "rate limited")
+                : new CharacterTagModelResponse(KanonnoVisualJson(), string.Empty)));
+        CharacterTagAuditResult degraded = await failing.ExecuteAsync(KanonnoOptions(referenceImage, KanonnoInventory()));
+        Assert.Equal(CharacterTagDecision.Keep, degraded.Items.Single(item => item.Tag == "skirt").FinalDecision);
+    }
+
+    [Fact]
+    public async Task ResolutionPassIsSkippedWhenNothingIsLeftToResolve()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+        CharacterTagInventory inventory = CharacterTagInventory.Create(new[] { new[] { "trigger", "black gloves", "smile" } });
+        var requests = new List<CharacterTagModelRequest>();
+        var service = new CharacterTagAuditService((request, _) =>
+        {
+            requests.Add(request);
+            return Task.FromResult(new CharacterTagModelResponse(FullJson(
+                ("trigger", "keep", "identity", true, ""),
+                ("black gloves", "keep", "clothing", true, ""),
+                ("smile", "keep", "expression", false, "")), string.Empty));
+        });
+
+        await service.ExecuteAsync(new CharacterTagAuditOptions
+        {
+            Inventory = inventory,
+            TriggerWord = "trigger",
+            MinimumCount = 1,
+            Model = "test",
+            ReferenceImagePath = referenceImage,
+            CharacterAuditorSkill = "rules",
+            PromptPyramidSkill = "pyramid",
+            NearSynonyms = AccessoryNearSynonyms()
+        });
+
+        Assert.Equal(
+            new[] { CharacterTagAuditStage.TextScreening, CharacterTagAuditStage.VisualReview },
+            requests.Select(request => request.Stage));
+    }
+
+    [Fact]
+    public void BuiltInHairAccessoryImplicationsFoldHairOrnamentWithoutVocabulary()
+    {
+        var two = new List<CharacterTagAuditItem>
+        {
+            Wearable("hair ornament"),
+            Wearable("hair ribbon"),
+            Wearable("hairband")
+        };
+        CharacterTagResultCanonicalizer.Apply(two, CharacterTagAuditStyle.Full);
+        Assert.Equal(CharacterTagDecision.Delete, two.Single(item => item.Tag == "hair ornament").FinalDecision);
+        Assert.Equal("hair ribbon, hairband", CharacterTagPromptBuilder.Build(two, string.Empty));
+
+        var one = new List<CharacterTagAuditItem>
+        {
+            Wearable("hair accessory"),
+            Wearable("black hair ribbon")
+        };
+        CharacterTagResultCanonicalizer.Apply(one, CharacterTagAuditStyle.Full);
+        Assert.Equal("black hair ribbon", one.Single(item => item.Tag == "hair accessory").ReplacementTag);
+        Assert.Equal("black hair ribbon", CharacterTagPromptBuilder.Build(one, string.Empty));
+    }
+
+    [Fact]
+    public void ResolutionCollectorsSkipDecorationContainersAndParentChildPairs()
+    {
+        var items = new List<CharacterTagAuditItem>
+        {
+            Wearable("frills", CharacterTagCategory.Clothing),
+            Wearable("jewelry"),
+            Wearable("hair ornament"),
+            Wearable("black gloves", CharacterTagCategory.Clothing, promptOrder: 5),
+            Wearable("gloves", CharacterTagCategory.Clothing, promptOrder: 4),
+            Wearable("elbow gloves", CharacterTagCategory.Clothing, promptOrder: 6),
+            Wearable("choker", promptOrder: 2),
+            AuditItem("collar", CharacterTagDecision.Keep, category: CharacterTagCategory.WearableAccessory, includeInPrompt: false),
+            AuditItem("smile", CharacterTagDecision.Keep, category: CharacterTagCategory.Expression, includeInPrompt: true)
+        };
+
+        IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(items);
+        Assert.Equal(new[] { "choker", "gloves", "elbow gloves" }, colorless);
+
+        IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
+            items, AccessoryNearSynonyms(), WearableVocabulary());
+        // gloves / black gloves / elbow gloves are parent-child pairs (already
+        // collapsed deterministically) and collar is other-person evidence.
+        Assert.Empty(clusters);
     }
 
     private static string ValidJson(params (string Tag, string Decision)[] values)

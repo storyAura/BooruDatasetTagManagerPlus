@@ -226,5 +226,67 @@ public sealed class GeneralTagCategoryCatalogTests
         Assert.Equal("发长", hair.L2);
         Assert.Contains("发色", catalog.SecondariesOf("头发"));
         Assert.Empty(catalog.SecondariesOf("cosplay"));
+        Assert.Equal(new[] { "jewelry" }, catalog.GetParents("earrings"));
+        Assert.True(catalog.IsAncestor("gloves", "elbow gloves"));
+        Assert.True(catalog.IsAncestor("ribbon", "hair_ribbon"));
+    }
+
+    [Fact]
+    public void ParsesParentTagsIncludingMultipleParents()
+    {
+        GeneralTagCategoryCatalog catalog = Load(
+            "jewelry,general,,,0,,1,饰品,首饰,",
+            "earrings,general,,,1,jewelry,1,饰品,首饰,",
+            "dress,general,,,0,,1,服装,裙子,",
+            "frills,general,,,0,,1,服装,服装,",
+            "\"frilled_dress\",general,,,1,\"dress, frills\",1,服装,裙子,");
+
+        Assert.Equal(new[] { "jewelry" }, catalog.GetParents("earrings"));
+        Assert.Equal(new[] { "jewelry" }, catalog.GetParents("Earrings"));
+        Assert.Equal(new[] { "dress", "frills" }, catalog.GetParents("frilled dress"));
+        Assert.Empty(catalog.GetParents("jewelry"));
+        Assert.Empty(catalog.GetParents("unknown_tag"));
+        Assert.True(catalog.Contains("frilled_dress"));
+        Assert.True(catalog.Contains("frilled dress"));
+        Assert.False(catalog.Contains("black frilled dress"));
+    }
+
+    [Fact]
+    public void IsAncestorWalksChainsStopsAtDepthAndSurvivesCycles()
+    {
+        GeneralTagCategoryCatalog catalog = Load(
+            "a,general,,,0,,1,服装,,",
+            "b,general,,,1,a,1,服装,,",
+            "c,general,,,2,b,1,服装,,",
+            "d,general,,,3,c,1,服装,,",
+            "e,general,,,4,d,1,服装,,",
+            "f,general,,,5,e,1,服装,,",
+            "loop1,general,,,0,loop2,1,服装,,",
+            "loop2,general,,,0,loop1,1,服装,,");
+
+        Assert.True(catalog.IsAncestor("a", "b"));
+        Assert.True(catalog.IsAncestor("a", "e"));
+        Assert.False(catalog.IsAncestor("a", "f"));
+        Assert.True(catalog.IsAncestor("a", "f", maxDepth: 5));
+        Assert.False(catalog.IsAncestor("b", "a"));
+        Assert.False(catalog.IsAncestor("a", "a"));
+        Assert.False(catalog.IsAncestor("x", "loop1"));
+        Assert.True(catalog.IsAncestor("loop2", "loop1"));
+        Assert.False(GeneralTagCategoryCatalog.Empty.IsAncestor("a", "b"));
+    }
+
+    [Fact]
+    public void LoadFromReaderMatchesLoadFromFile()
+    {
+        using var reader = new StringReader(
+            "tag,category,other_names,copyright,level,parent_tag,post_count,category_l1,category_l2,wiki_url\n"
+            + "gloves,general,,,0,,1,服装,手套,\n"
+            + "elbow_gloves,general,,,1,gloves,1,服装,手套,\n");
+
+        GeneralTagCategoryCatalog catalog = GeneralTagCategoryCatalog.LoadFromReader(reader);
+
+        Assert.Equal(2, catalog.Count);
+        Assert.True(catalog.IsAncestor("gloves", "elbow gloves"));
+        Assert.Equal(0, GeneralTagCategoryCatalog.LoadFromReader(null).Count);
     }
 }

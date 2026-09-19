@@ -1,16 +1,17 @@
-# BooruDatasetTagManager+ 1.2.6
+# BooruDatasetTagManager+ 1.2.7
 
 [English](README_en.md) | [Português do Brasil](docs/pt-BR/README_pt_BR.md)
 
 面向 LoRA / 角色数据集的 Windows 打标工具，fork 自 **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**。
 
-每张图配一个同名 `.txt` 存放标签，加载文件夹就能改。也能用 LLM 或本地 **Tag 推标**（原名 ONNX 推标；引擎仍是 WD14 / PixAI / CL）自动打标，并做角色审查、用中文搜标签。界面默认简体中文。[MIT License](LICENSE)。
+每张图配一个同名 `.txt` 存放标签，加载文件夹就能改。也能用 LLM 或本地 **Tag 推标**（原名 ONNX 推标；引擎是 WD14 / PixAI / CL / OppaiOracle）自动打标，并做角色审查、用中文搜标签。界面默认简体中文。[MIT License](LICENSE)。
 
 ![主界面](docs/images/main-window-dataset-browser.png)
 
 ## 更新日志
 
-- **1.2.6**（当前）— **ONNX 推标改名 Tag 推标**（工具菜单、窗口标题、右键；引擎仍是本地 ONNX）；错误标签修复可关闭角色类替换；YOLO 检测比例可按图自动识别；图片标签恢复 Shift / Ctrl 多选；Win10 上原生库加载失败与大批量推标内存峰值已加固。其余多为界面与流程优化：工具菜单分段、快速替换独立窗口、预分桶按批次配平与 Gradient、若干窗口说明与布局收紧。[发布说明](docs/RELEASE_NOTES_v1.2.6.md)
+- **1.2.7**（当前）— **Tag 推标接入 OppaiOracle**（V1 320 / V1.1 448，约 1.9 万 general 标签，不含角色，非 gated）；修复多重切割 YOLO 把过小检测框误报成「没有检测到目标」；角色审查改为逐标签流程，视觉阶段点名待上色标签与同槽位簇，并新增定向解析请求（每角色最多 3 次），复核网格同簇着色。[发布说明](docs/RELEASE_NOTES_v1.2.7.md)
+- **1.2.6** — **ONNX 推标改名 Tag 推标**（工具菜单、窗口标题、右键；引擎仍是本地 ONNX）；错误标签修复可关闭角色类替换；YOLO 检测比例可按图自动识别；图片标签恢复 Shift / Ctrl 多选；Win10 上原生库加载失败与大批量推标内存峰值已加固。其余多为界面与流程优化：工具菜单分段、快速替换独立窗口、预分桶按批次配平与 Gradient、若干窗口说明与布局收紧。[发布说明](docs/RELEASE_NOTES_v1.2.6.md)
 - **1.2.5** — 新增批量裁剪、多重切割、YOLO 检测、预分桶、标签一二级筛选、按标签分类到文件夹；配置改存用户文档。修复 ONNX 下载误删模型、翻译卡住。[发布说明](docs/RELEASE_NOTES_v1.2.5.md)
 - **1.2.4** — 修复 WD14 错色标签、超长文件名无法保存、多人审查下拉不同步；ONNX 按置信度排序；随机百分比抽帧；数据集可按文件类型排序。[发布说明](docs/RELEASE_NOTES_v1.2.4.md)
 - **1.2.3** — 扫描坏图；透明背景可按文件夹 / 全部批量替换；修复标签筛选「点 NOT 得 OR」；密钥与路径安全加固。[发布说明](docs/RELEASE_NOTES_v1.2.3.md)
@@ -50,7 +51,7 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 | 类别 | 包含 |
 | --- | --- |
-| **打标** | LLM（标签 / 自然语言）· **Tag 推标**（本地 ONNX：WD14 / PixAI / CL）· 角色审查（最多 4 人） |
+| **打标** | LLM（标签 / 自然语言）· **Tag 推标**（本地 ONNX：WD14 / PixAI / CL / OppaiOracle）· 角色审查（最多 4 人） |
 | **标签** | 中文搜索、类别着色与一二级筛选、错误标签修复、按标签筛图 |
 | **图片** | 编辑器、批量裁剪、多重切割（含 YOLO）、预分桶、抠图 / 换透明底 |
 | **整理** | 文件夹浏览与预览、按标签分文件夹、按分辨率分桶、相似图、坏图扫描、视频转换 / 抽帧 |
@@ -96,7 +97,7 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 ### 角色标签审查
 
-入口:**工具 → 角色标签审查…**（**测试功能** 窗口里也有同一入口）。设定锁定触发词(强制保留)、标签方法(**少标法**只留核心特征 / **全标法**保留全部正确细节)、最小出现次数与标准图后,AI 先文本初筛、再视觉复核(流程不可回退,改参数请取消后重开);最后逐条复核(保留 / 删除 / 替换 / 不确定)、预览最终角色提示词,**应用并保存**为事务写盘、失败自动回滚。
+入口:**工具 → 角色标签审查…**（**测试功能** 窗口里也有同一入口）。设定锁定触发词(强制保留)、标签方法(**少标法**只留核心特征 / **全标法**保留全部正确细节)、最小出现次数与标准图后,AI 按角色最多发起 **3** 次请求:文本初筛、视觉复核,再对仍无颜色的穿戴标签与同槽位簇(如 `bow` / `hair ribbon` / `hairband`)做一次定向解析(流程不可回退,改参数请取消后重开)。最后逐条复核(保留 / 删除 / 替换 / 不确定):同簇标签加同色底纹,悬停列出簇成员;替换目标优先用词表内已有标签。预览最终角色提示词后,**应用并保存**为事务写盘、失败自动回滚。
 
 支持**多角色**数据集(最多 4 人):主体模式选择 双人 或 多角色 后,为每个角色设定触发词、标准图与性别(留空的角色行自动跳过,因此三人数据集也适用);图片按触发词、再按文件夹自动归属,多人同图自动补齐 `2girls`、`multiple girls` 等主体数标签,AI 审查、逐条复核与应用均逐角色进行,某个角色失败时可只重试该角色(已完成角色的结果保留)。
 
@@ -104,13 +105,13 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 ### Tag 推标
 
-原名 **ONNX 推标**。1.2.6 起界面统一为 **Tag 推标**（英文 **Tag tagger**）：**工具 → 标注工具** 菜单、推标窗口标题、数据集右键 **Tag 重新推标**、文件夹右键 **Tag 推标此文件夹…**。引擎没变：仍是本机 ONNX（WD14 / PixAI / CL），权重仍下到 `Models/`，命令行动词仍是 `onnx-tag` / `onnx-models`。
+原名 **ONNX 推标**。1.2.6 起界面统一为 **Tag 推标**（英文 **Tag tagger**）：**工具 → 标注工具** 菜单、推标窗口标题、数据集右键 **Tag 重新推标**、文件夹右键 **Tag 推标此文件夹…**。引擎是本机 ONNX（WD14 / PixAI / CL / OppaiOracle），权重仍下到 `Models/`，命令行动词仍是 `onnx-tag` / `onnx-models`。
 
 入口:**工具 → Tag 推标…**,或数据集右键 **Tag 重新推标**(自动开始);文件夹右键 **Tag 推标此文件夹…** 会预选「当前文件夹」来源,确认设置后再开始。
 
 ![Tag 推标](docs/images/onnx-tagger.png)
 
-- 模型:WD14 全系列 12 款 + PixAI 0.9 + CL 系列(cl_tagger v1.02、cl_tagger_v2 v2.00 / v2.01a 🔒);各模型阈值与设置独立保存;HuggingFace 官方或镜像下载
+- 模型:WD14 全系列 12 款 + PixAI 0.9 + CL 系列(cl_tagger v1.02、cl_tagger_v2 v2.00 / v2.01a 🔒) + OppaiOracle(V1 320 / V1.1 448，约 1.9 万 general 标签，不含角色，非 gated；该家族隐藏角色阈值，默认阈值 V1 0.55 / V1.1 0.65);各模型阈值与设置独立保存;HuggingFace 官方或镜像下载
 - 下载完成后会校验模型;文件被杀毒/索引短暂占用时会重试并保留,不会当成损坏自动删除。缺运行库等环境错误也不会清掉已下完的文件
 - cl_tagger_v2 为**受限(gated)仓库**,作者许可禁止再分发与捆绑分发——软件不附带模型;下载前弹出许可提示,需自行在 HuggingFace 申请访问并填入 Access Token(DPAPI 加密保存),或手动下载放入 `Models` 目录
 - 写入模式(全部替换 / 追加 / 跳过已有)、可选排序、下划线→空格、前后缀标签;批量推标带进度条;「跳过已有标签列表」模式在推理前就跳过已有标签的图片,完成时如实报告写入 / 跳过数量
@@ -149,7 +150,7 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 - **居中裁切到比例**:先按 1:1 / 2:3 / 16:9 等取图内最大居中矩形,再压到档位
 - **切片分割到比例**:在原图像素空间铺档位大小的窗口(末行/末列贴边吃掉余量),能切就不降采样
 - **随机位置切割**:每张切 N 块(默认 1,最多 32),比例矩形在可滑动范围内随机落点,再压到档位
-- **YOLO 检测**:下拉选择 deepghs 动漫检测器——**全身** Person(v1.1 n/s/m、v1.2 s、v1.3 s,默认 v1.1 small)、**脸** Face(v1.3 s、v1.4 n/s)、**头** Head(v1.6 s、v2.0 n/s);均为 MIT、非 gated 的 YOLOv8 ONNX。按检测框中心扩成选定比例后压档;未检出则跳过。也可导入自己的 YOLOv8 ONNX;下载源与 **Tag 推标** 共用(HuggingFace / hf-mirror)
+- **YOLO 检测**:下拉选择 deepghs 动漫检测器——**全身** Person(v1.1 n/s/m、v1.2 s、v1.3 s,默认 v1.1 small)、**脸** Face(v1.3 s、v1.4 n/s)、**头** Head(v1.6 s、v2.0 n/s);均为 MIT、非 gated 的 YOLOv8 ONNX。按检测框中心扩成选定比例后压档;扩比例后长边仍小于勾选档位时,按 64 对齐的原尺寸写出,不再整批当成「没有检测到目标」;对齐后不足 64px 或完全未检出才跳过。也可导入自己的 YOLOv8 ONNX;下载源与 **Tag 推标** 共用(HuggingFace / hf-mirror)
 - 档位默认 512 / 768 / 896 / 1024 / 1280 / 1536,可多选,也可自定义 64–8192(向下对齐到 64);Lanczos 缩小且不放大;已经小于该档的图会跳过
 - 另有 **工具 → YOLO 检测…**:单独开窗画检测框、勾选保留,可选 **在 Tag 推标中打开** 给保留的切图打标,再导出切图;同样有模型下拉、下载源和「下载模型」。画面比例默认 **自动**(按每张图宽高就近匹配 1:1 / 2:3 / 16:9 等预设),也可锁定某一比例
 
@@ -222,7 +223,7 @@ dotnet publish BooruDatasetTagManager\BooruDatasetTagManager.csproj -c Release -
 
 - **数据集操作**:`stats` 统计;`list-images` / `list-tags` / `classify-tags` 查询(按标签、一二级类别、次数过滤;`--category` 可写「头发」或 `Hair`,`头发/发色` 筛二级);`add-tags` / `remove-tags` / `replace-tag` 批量改标(条件筛选、`--dry-run` 预演);`export` 导出 JSON
 - **`fix-tags`**:错误标签修复的命令行版,`--no-character-variants` 跳过角色类替换,`--child-threshold` 调信任阈值(默认 0 关闭;与 `--no-character-variants` 同时使用无效)、`--catalog` 指定自定义关系表
-- **`onnx-models` / `onnx-tag`**:**Tag 推标** 的命令行版（本地 ONNX）——列出 / 自动下载模型(受限模型支持 `--hf-token`),阈值与写入模式与界面同语义,「跳过已有」在推理前过滤。动词名未改,与旧脚本兼容
+- **`onnx-models` / `onnx-tag`**:**Tag 推标** 的命令行版（本地 ONNX）——列出 / 自动下载模型(受限模型支持 `--hf-token`),阈值与写入模式与界面同语义,「跳过已有」在推理前过滤。OppaiOracle 示例:`onnx-tag --model oo:Grio43/OppaiOracle:v1.1`。动词名未改,与旧脚本兼容
 - **`audit`**:LLM 角色标签审查——沿用界面保存的 API 配置与审查提示词,两阶段审查后事务化写回,`--report` 输出 JSON 报告,`--dry-run` 只看决策
 - 所有写盘走原子替换;标签格式(逗号分隔、小写去重)与界面一致,可与手工编辑混用
 

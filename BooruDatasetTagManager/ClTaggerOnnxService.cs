@@ -71,7 +71,7 @@ namespace BooruDatasetTagManager
             {
                 Id = "cl:Nonene/cl_tagger:1_02",
                 Repo = "Nonene/cl_tagger",
-                ShortName = "v1.02",
+                ShortName = "cl_tagger v1.02",
                 ModelFile = "cl_tagger_1_02/model.onnx",
                 LabelsFile = "cl_tagger_1_02/tag_mapping.json",
                 Preprocess = ClTaggerPreprocess.V1PadSquareBgr,
@@ -84,7 +84,7 @@ namespace BooruDatasetTagManager
             {
                 Id = "cl:cella110n/cl_tagger_v2:v2_00",
                 Repo = "cella110n/cl_tagger_v2",
-                ShortName = "v2.00",
+                ShortName = "cl_tagger_v2 v2.00",
                 ModelFile = "v2_00/model.onnx",
                 ExternalDataFile = "v2_00/model.onnx.data",
                 LabelsFile = "v2_00/model_vocabulary.json",
@@ -98,7 +98,7 @@ namespace BooruDatasetTagManager
             {
                 Id = "cl:cella110n/cl_tagger_v2:v2_01a",
                 Repo = "cella110n/cl_tagger_v2",
-                ShortName = "v2.01a",
+                ShortName = "cl_tagger_v2 v2.01a",
                 ModelFile = "v2_01a/model.onnx",
                 ExternalDataFile = "v2_01a/model.onnx.data",
                 LabelsFile = "v2_01a/model_vocabulary.json",

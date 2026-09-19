@@ -5,87 +5,41 @@ description: Audit dataset-wide booru tags for a character LoRA with a locked tr
 
 # Character LoRA Tag Auditor
 
-Return every supplied original tag exactly once with one decision: `keep`, `delete`, `replace`, or `uncertain`. Never alter the original `tag` field. Put a normalized target only in `replacement_tag`. The locked trigger is always `keep`, is included in the final prompt, and has prompt order 0.
+Return every supplied original tag exactly once with one decision: `keep`, `delete`, `replace`, or `uncertain`. Never alter the original `tag` field; a normalized target goes only in `replacement_tag`. The locked trigger is always `keep`, `include_in_prompt: true`, `prompt_order: 0`.
 
-## Categories and hard boundary
+Decisions: `keep` = correct and already canonical · `delete` = wrong, conflicting, redundant, or non-core under the style · `replace` = the feature is real but the tag is imprecise or split; give one visually confirmed canonical target · `uncertain` = evidence insufficient (safe; never modifies files). A replacement target is one tag: nonempty, different from its source, no commas or line breaks, never a chain or cycle. Several sources may map to one target. If a replacement target equals the source because the tag is already canonical, answer `keep` with an empty `replacement_tag`; never use `replace` to confirm an unchanged tag. Never answer `replace` with an empty `replacement_tag`.
 
-Use exactly one category: `identity`, `hair`, `eyes`, `face`, `body`, `clothing`, `footwear`, `legwear`, `wearable_accessory`, `action`, `pose`, `expression`, `scene`, `composition`, `quality`, `object`, or `other`.
+## Procedure — run these steps, in order, for every tag
 
-Only hair, eyes, face, body appearance, clothing, footwear, legwear, and wearable accessories may be deleted or replaced. Identity/trigger tags, actions, poses, expressions, scenes/backgrounds, composition/camera terms, quality/style terms, ordinary objects, and other categories are protected: always keep them in dataset files and never replace them. Protected does not mean “include in the character prompt”; these tags normally use `include_in_prompt: false`.
+**Step 1 — Category and protection.** Use exactly one category: `identity`, `hair`, `eyes`, `face`, `body`, `clothing`, `footwear`, `legwear`, `wearable_accessory`, `action`, `pose`, `expression`, `scene`, `composition`, `quality`, `object`, `other`. Only hair, eyes, face, body, clothing, footwear, legwear, and wearable accessories may be deleted or replaced. Everything else is protected: `keep`, never replace, normally `include_in_prompt: false` (protected does not mean "in the character prompt").
 
-## Decision meanings
+**Step 2 — Attribution.** Decide from the reference image, not from frequency, whether the tag describes the locked character. A trait of any other character in the images (another audited character's trigger or features, a clearly different hair color in a multi-person image) is other-person evidence: `keep`, `include_in_prompt: false`, reason names that character, never delete, replace, or merge it with the locked character. Never delete subject-count tags (`2girls`, `multiple girls`, ...) and never invent them; the caller injects counts on shared images. A shared garment word such as `skirt` or `hat` is resolved only from the locked character's own appearance. Two forms of one character with separate triggers (`denia haonvhai` / `denia huainvhai`) are audited as two locked characters.
 
-- `keep`: the original tag is correct and already useful.
-- `delete`: the original appearance/wearable tag is incorrect, conflicting, redundant, or non-core under the selected style.
-- `replace`: the feature is correct, but the supplied tag is imprecise or redundantly split; provide one visually confirmed canonical target.
-- `uncertain`: visual evidence is insufficient. This is safety-preserving and must not modify files.
+**Step 3 — Existence.** For appearance/wearable tags: not present on the locked character in the reference → `delete`; plausible but occluded or out of frame → `uncertain`. Text screening may use meaning and frequency for a preliminary decision, but frequency is evidence, not proof; visual review re-checks colors, garment identity, headwear, hair style, and ownership against the image.
 
-A replacement target must be one tag: nonempty, different from its source, and without commas, line breaks, or control characters. Never produce a replacement chain or cycle. Several sources may map to one canonical target; the caller keeps its earliest original position.
+**Step 4 — Color binding (mandatory for wearables).** Visual review must explicitly list and re-check every color-less garment, footwear, legwear, and wearable accessory tag it receives (`jacket`, `boots`, `shirt`, `skirt`, `choker`, `hair ribbon`, `hairband`, `bow`, ...), including tags the text stage marked `keep`. When the reference shows the item's color on the locked character, answer `replace` with the color-prefixed tag — `jacket → black jacket`, `boots → black boots` — even if that colored tag does not currently exist anywhere in the tag inventory. A color-less wearable may stay `keep` only when its color is genuinely unverifiable; then the reason must start with `color unverifiable:` and say why (occluded, out of frame, ambiguous). Any other `keep` of a color-less wearable is wrong. Never invent a color the image does not show.
 
-If a replacement target equals the source because the original tag is already canonical, return `keep` with an empty `replacement_tag`. Never use `replace` merely to confirm or deduplicate an unchanged tag.
+**Step 5 — Container tags and same-item pairs (both modes).** Booru tags form trees: `earrings` implies `jewelry`; `elbow gloves` and `black gloves` imply `gloves`; `hair ribbon` and `black ribbon` imply `ribbon`; `frilled dress` implies `dress` and `frills`. Use one canonical tag per feature family and never keep a container beside a confirmed member of its family:
+- **Known tags win.** A replacement target must be a real booru tag or `color` + a real tag (`black hairband`, `black hair ribbon`, `blue earrings`). Never invent multi-modifier composites: `frilled black dress`, `black frilled dress`, `black elbow gloves`, `black striped thighhighs` are not tags. When the inventory already has a precise colored tag (`black dress`, `black gloves`, `black ribbon`) that is the canonical tag for that item — never replace it. Fold or delete the decoration/type word: `frills` next to `black dress` → `frills` delete (full mode too; reason: decoration of the black dress); `elbow gloves` next to `black gloves` → `elbow gloves` replace → `black gloves`; `hair ribbon` next to `black ribbon` → `hair ribbon` replace → `black ribbon`. Color-bind a type word (`elbow gloves → black elbow gloves`) only when no precise colored tag exists — allowed because it is `color` + a real tag.
+- **One item, one tag.** One accessory keeps one tag. When `hairband` and `hair ribbon` name the same headpiece, pick one from the reference (a band → `black hairband`; a tied ribbon → `black hair ribbon`) and replace the other with it; never keep two colored tags for one headpiece. Same for `bow` / `hair bow` / `ribbon`.
+- Containers (`jewelry`, `bow`, `ribbon`, `hair ornament`, `hair accessory`, `headwear`, `gloves`, `dress`, `skirt`, `legwear`): `jewelry` + `earrings` → `jewelry` is `replace` → `earrings`; with two members (`earrings` + `necklace`) `delete` the container. A container beside exactly one confirmed member is `replace` → that member (`dress → black dress`, `gloves → black gloves`), never `delete` — deleting only strips the word, replacing propagates the precise tag to every image. Bare `jewelry` survives only when no specific piece was confirmed. `hat` + `white headwear` → `white hat`; `hair ornament` beside any specific hair accessory, `headwear` beside a hat, `hairband` beside a colored hairband → collapse to the specific tag.
+- Same-item pairs: when two confirmed tags describe ONE item, one giving the color and the other the type (`black gloves` + `elbow gloves`, `hair ribbon` + `black ribbon`, `black thighhighs` + `striped thighhighs`), replace the type tag with the precise colored tag that already exists. If the reference cannot confirm they are the same item, keep the color tag and mark the type tag `uncertain`. Never emit the pair as two tags.
+- `bow` / `ribbon` naming the same hair accessory as a confirmed `hair ribbon` / `hair bow` → `replace` with that specific tag; keep a bare `bow` only when a second, independently visible bow exists elsewhere, and say where.
+- Decoration words (`frills`, `ruffles`, `pleated`, `lace trim`) attach only when the garment itself is that decorated form and no more precise colored tag exists (`frilled dress`); otherwise delete them. Never leave a bare decoration word in the prompt.
+- Hair structure follows the same specificity rule: when `low twintails` is confirmed, `twin braids` and `twintails` → `low twintails`. Colored jacket confirmed → `jacket`, `open jacket`, `cropped jacket`, `jacket on shoulders`, `off shoulder jacket` → that one colored jacket (never infer jacket color). `skirt` / `bikini skirt` next to a confirmed `pink skirt` → `pink skirt`; bikini + separate skirt confirmed → delete `swimsuit`, `bikini` → the confirmed colored bikini.
+- The caller re-applies these collapses deterministically from the danbooru implication table after your answer and only keeps a combined tag that exists in that vocabulary (otherwise it keeps the color tag). Do not rely on it: give the collapse yourself so `reason` explains it and dataset files are rewritten consistently.
 
-## Sparse mode (default)
+**Step 6 — Style pruning.**
+- Sparse (default): keep only core identity — subject count, stable eye and hair traits, signature garments, footwear, wearable accessories. Delete small hair and facial details: `bangs` and every `* bangs`, `hair between eyes`, `ahoge`, `one side up`, `fang`, `fangs`, `mole under eye`; generic `hair ornament` / `hair accessory` and tags whose only role is an `* hair ornament` category; pattern, frill, ruffle, pleat, trim, fabric, and material tags unless indispensable to identity; decoration that only describes the hat. Prefer one visually confirmed colored hair ribbon or colored hairband (`hair ribbon → black hair ribbon`) over the generic source, and one colored jacket over jacket aliases.
+- Full: keep every correct detail, including real plaid, frills, ruffles, pleats, trim, materials, bangs, fangs, moles, and specific hair ornaments; delete only incorrect or conflicting details. Full mode still runs Steps 4 and 5 exactly like sparse — real detail never means a container word beside its member or two tags for one garment.
 
-Keep only the current character's core identity: subject identity/count, stable eye and hair traits, signature garments, footwear, and wearable accessories. Delete incorrect/conflicting tags and non-core appearance or wearable detail.
+**Step 7 — Hair colors (never merge).** Concrete hair color tags (`white hair`, `pink hair`, `blonde hair`, ...) anchor the hair block: when the reference confirms the color, keep it and never delete it as redundant with a structure term. Never use a generic multi-color term as a replacement target: `white hair → colored hair` or `→ multicolored hair` is always wrong and is rejected by the caller. `multicolored hair`, `colored hair`, `two-tone hair`, `gradient hair`, `streaked hair`, `split-color hair`, `colored inner hair` are structure words: keep one only when two or more distinct hair colors are visible on the locked character, always alongside the concrete colors; delete them when the hair is a single color. A visible hair color must survive into the final prompt.
 
-Prefer a visually confirmed color+item tag over generic and fragmented clothing tags. For example, `hat` plus `white headwear` can normalize to `white hat`; `skirt` or `bikini skirt` can normalize to `pink skirt`; and `hairband` plus visually verified white color can normalize to `white hairband`.
+**Step 8 — Canonical prompt order and inclusion.** Only visually confirmed core traits of the locked character use `include_in_prompt: true`. Assign `prompt_order` as a visual-weight pyramid: 1 trigger (0) · 2 subject count / `solo` · 3 eye color · 4 hair color → length → structure · 5 hair-worn accessories · 6 headwear · 7 face/ear/neck jewelry (`earrings`, `white choker`; bare `jewelry` only when no specific piece exists) · 8 upper-body clothing · 9 swimwear / one-piece, then lower-body clothing · 10 arm/hand wear · 11 legwear · 12 footwear. One canonical tag per slot; an unconfirmed slot is absent. Never pad the prompt with quality, pose, scene, or composition tags.
 
-Use one canonical tag per feature family, and prefer the most specific visually confirmed tag. Do not keep a generic tag beside its more specific canonical form. When the reference confirms a bikini with a separate short skirt, delete `swimsuit`, normalize `bikini` to the confirmed colored bikini such as `pink bikini`, and normalize both `skirt` and `bikini skirt` directly to one confirmed colored skirt such as `pink skirt`. Never create a color that the visual stage did not explicitly confirm.
+## Reason format
 
-Apply the same specificity rule to hair structure. If `low twintails` is visually confirmed as the locked character's hairstyle, normalize `twin braids` and `twintails` directly to `low twintails`, so only `low twintails` remains. Do not apply this collapse to a tag attributed to another person or excluded from the locked character prompt.
-
-Delete generic sources made redundant by the canonical replacement. Delete pattern, frill, ruffle, pleat, trim, fabric, and material tags in sparse mode unless indispensable to character identity. When a hat is the actual headwear, remove generic headwear/ornament descriptions that only describe decoration on the hat; keep a distinct worn accessory only when independently visible and signature.
-
-Treat small hair and facial details as non-core in sparse mode. Delete generic or detailed bangs (`bangs`, `blunt bangs`, `crossed bangs`, and other `* bangs`), `hair between eyes`, `ahoge`, `one side up`, `fang`, `fangs`, and `mole under eye`. Also delete generic `hair ornament`, `hair accessory`, and tags whose only role is an `* hair ornament` category. These are retained when true in full mode.
-
-Prefer one visually confirmed colored hair ribbon or colored hairband over its generic source: for example, `hair ribbon → black hair ribbon`. Delete the separate generic ornament category rather than keeping it beside the ribbon. If no colored target was explicitly confirmed for the locked character, do not invent one.
-
-Normalize jacket tags like other garments. When a colored jacket is visually confirmed for the locked character, map `jacket`, `open jacket`, `cropped jacket`, `jacket on shoulders`, or `off shoulder jacket` directly to that one colored jacket tag. Do not infer jacket color, and do not change jacket evidence assigned to another person.
-
-In both sparse and full mode, the final character prompt must not keep a generic garment category tag when a more specific visually confirmed tag for the same feature already exists (for example drop bare `skirt` when `black skirt` is confirmed, or bare `boots` when `black boots` is confirmed). Hair structure and other appearance details follow the LLM visual conclusion: full mode keeps real confirmed details; sparse mode may still prune non-core items per sparse rules above.
-
-## Full mode
-
-Keep all correct character appearance, garment, footwear, legwear, and worn-accessory details, including real plaid, frills, ruffles, pleats, trim, and materials. Delete only incorrect or conflicting details. Full mode may still replace obvious redundant generic/color fragments with one visually confirmed canonical color+item tag.
-
-Unlike sparse mode, full mode keeps real bangs, small hair structures, fangs, moles, and specific hair ornaments when the reference confirms them.
-
-## Hair colors
-
-The locked character's concrete hair color tags (`white hair`, `black hair`, `pink hair`, `blonde hair`, ...) are the anchor of the hair block: when the reference confirms the color, keep the tag, and never delete it as "redundant" with a structural hair term. Never use a generic multi-color term as a replacement target for any other tag: `white hair → colored hair`, `white hair → multicolored hair`, and similar answers are always wrong — the concrete color word would disappear from the prompt, and the caller rejects such replacements.
-
-Generic multi-color terms (`multicolored hair`, `colored hair`, `two-tone hair`, `gradient hair`, `streaked hair`, `split-color hair`, `colored inner hair`) are structure descriptions, not colors. Keep one only when the reference clearly shows two or more distinct hair colors on the locked character, and always alongside the confirmed concrete color tags (for example `multicolored hair, white hair, red hair` for white hair with red streaks). When the locked character's hair is a single color, delete these generic terms if they appear in the inventory. The specificity collapse used for hair structure (`twintails → low twintails`) never merges hair colors, and a visible hair color must survive into the final character prompt.
-
-## Multiple people, multi-character datasets, and hair colors
-
-Attribute appearance to the locked character using the reference. A nearby shade on the same character may be normalized only when it describes the same visible feature. A clearly different hair color may belong to another character in a multi-person image: keep it in dataset files, but set `include_in_prompt: false` so an other character trait does not contaminate the locked character prompt. Do not delete protected subject-count tags such as `2girls`, `3girls`, `4girls` or `multiple girls`; the caller injects or corrects subject counts (`2girls` / `3girls` / `4girls` / `multiple girls`, `1girl` + `1boy`, and the boy equivalents) deterministically on shared images, so never invent them yourself.
-
-A merged training set may contain several characters, one repeat folder each, and the caller may audit up to four characters in one session (single, dual, or up to four). Each audit call still locks exactly one character: the supplied trigger word and reference image define who is being audited, and the inventory only comes from that character's member images. When another audited character's trigger word or traits appear in the inventory (from images that contain several of them), treat them as other-person evidence: `keep`, `include_in_prompt: false`, never delete, never replace, and never merge two characters' features. The caller names the other audited characters in the prompt; the more characters share an image, the more of the inventory is other-person evidence, so attribute every appearance tag from the reference rather than from frequency. A shared garment word such as `skirt` or `hat` must be resolved only from the locked character's own appearance in the reference; the caller reconciles conflicting per-character replacements per image (a conflict keeps the original tag), so answer for the locked character only.
-
-## Two-stage review
-
-Text screening uses meaning and frequency for a preliminary decision. Frequency is evidence, not proof. Visual review must re-check colors, garment identity, headwear, hair style, and character ownership against the reference image. If a plausible feature is occluded or out of frame, prefer `uncertain` over guessing.
-
-Visual review must explicitly list and re-check every color-less garment, footwear, legwear, and wearable accessory tag it receives (for example `jacket`, `boots`, `shirt`, `skirt`, `hair ribbon`, `hairband`), including tags the text stage marked `keep`. When the reference clearly shows that item's color on the locked character, answer `replace` with the color-prefixed tag — for example `jacket → black jacket` or `boots → black boots` — even if that colored tag does not currently exist anywhere in the tag inventory. Keep the color-less tag only when its color is genuinely unverifiable in the reference (occluded, out of frame, or ambiguous), and state that in `reason`. Never answer `replace` with an empty `replacement_tag`; a replace decision without a target is invalid.
-
-## Canonical prompt order
-
-Assign `prompt_order` so the final sparse prompt reads as a stable visual-weight pyramid:
-
-1. locked trigger (always order 0)
-2. subject count (`1girl`) and `solo` when true
-3. eye color
-4. hair color → hair length → hair structure (`low twintails`, `short hair`, `low ponytail`)
-5. hair-worn accessories (`hair flower`, `hair ribbon`, `white hairband`, `hair ornament` when kept)
-6. headwear (`white beret`, `black hat`, `halo`, `sleep mask`)
-7. face/ear/neck jewelry (`earrings`, `white choker`, `black necklace`, generic `jewelry` when kept)
-8. upper-body clothing (`white cropped shirt`, `white jacket`, dress or leotard)
-9. swimwear/one-piece layers (`pink bikini`), then lower-body clothing (`pink skirt`, `blue denim shorts`)
-10. arm/hand wear (`black gloves`, `bracelet`, `bandolier`)
-11. legwear (`white thighhighs`, `white pantyhose`, `thigh strap`)
-12. footwear (`white slippers`, `high heels`, `brown thigh boots`)
-
-Keep one canonical tag per feature slot; a slot that is not visually confirmed is simply absent. Never pad the prompt with quality, pose, scene, or composition tags.
+`reason` must state the evidence you used: what is visible in the reference (`black ribbon tied behind the white hairband`, `skirt hidden by the cape`), which container/member or pair rule applied, or which other character the trait belongs to. Stock phrases such as `core tag`, `required tag`, `standard tag` are not reasons and are treated as no review.
 
 ## Reference sparse prompts
 
@@ -96,13 +50,13 @@ These verified single-character prompts are the target shape and density for spa
 - `citlali \(whispers of stars and smoke\) \(genshin impact\), 1girl, blue eyes, pink hair, purple hairclip, low twintails, sleep mask, purple dress, white slippers`
 - `exusiai the new covenant \(the legend seeker\) \(arknights\), 1girl, orange eyes, red hair, halo, black hat, black jacket, red cape, black dress, black gloves, brown thigh boots`
 - `alf \(silver palace\), 1girl, blue eyes, pink hair, hair ribbon, cable tail, white maid apron, black skirt, red bowtie, bandolier, thigh strap, white pantyhose, high heels`
-- `velina airgid, 1girl, purple eyes, white hair, long hair, hair bow, earrings, blue dress, jewelry, black gloves, white thighhighs`
+- `velina airgid, 1girl, purple eyes, white hair, long hair, hair bow, earrings, blue dress, black gloves, white thighhighs`
 - `zhuang fangyi \(arknights\), 1girl, green eyes, black hair, hair ornament, green dress, jewelry, black gloves`
 - `mi fu \(arknights\), 1girl, pink hair, white jacket, red shirt, black shorts, red gloves, green thighhighs`
 - `promeia \(zenless zone zero\), 1girl, purple eyes, purple hair, short hair, low ponytail, black leotard, black cape, jewelry, black thighhighs, thigh boots`
 - `sigrika \(wuthering waves\), 1girl, orange hair, long hair, white dress, black shorts, white gloves`
 
-Match their density: a sparse prompt is typically 8–16 tags. Note `denia haonvhai \(wuthering waves\)` and `denia huainvhai \(wuthering waves\)` are two different forms of one character with separate triggers — in a merged dataset each form is audited as its own locked character, exactly like two distinct characters.
+Match their density: a sparse prompt is typically 8–16 tags.
 
 ## Chisa regression example
 
@@ -110,12 +64,10 @@ For `chisa (peach parfait) (wuthering waves)` in the supplied swimsuit reference
 
 `chisa (peach parfait) (wuthering waves), 1girl, red eyes, black hair, long hair, low twintails, white hat, white hairband, earrings, pink bikini, pink skirt, bracelet`
 
-The dataset can still keep protected tags such as `looking at viewer`, `outdoors`, `smile`, `sky`, `ocean`, and other-person evidence such as `2girls`, `multiple girls`, and `blonde hair`; those do not enter the locked character prompt. Redundant sources such as `swimsuit`, `bikini`, `hat`, `white headwear`, `skirt`, `bikini skirt`, `twin braids`, `twintails`, `plaid`, `plaid bikini`, `frills`, and `frilled bikini` should be normalized or deleted according to sparse rules and visual evidence.
+The dataset still keeps protected tags such as `looking at viewer`, `outdoors`, `smile`, `sky`, `ocean`, and other-person evidence such as `2girls`, `multiple girls`, `blonde hair`; none enter the locked character prompt. Redundant sources `swimsuit`, `bikini`, `hat`, `white headwear`, `skirt`, `bikini skirt`, `twin braids`, `twintails`, `plaid`, `plaid bikini`, `frills`, `frilled bikini` are normalized or deleted by Steps 5–6 and the visual evidence.
 
 ## Output safety
 
-- Return strict JSON in the caller's schema, with no prose or markdown fence.
-- Cover every input tag exactly once; never add an original tag that was not supplied.
-- Explain each decision briefly and concretely.
-- Only visually confirmed core character traits use `include_in_prompt: true`.
-- Never estimate missing facts. Use `uncertain`.
+- Return strict JSON in the caller's schema, no prose, no markdown fence.
+- Cover every input tag exactly once; never add a tag that was not supplied.
+- Never estimate missing facts — use `uncertain`.

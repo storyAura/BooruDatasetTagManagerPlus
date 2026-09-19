@@ -377,7 +377,11 @@ namespace BooruDatasetTagManager
             new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> intern =
             new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string[]> parents =
+            new Dictionary<string, string[]>(StringComparer.Ordinal);
         private readonly List<string> primaryCategories = new List<string>();
+
+        public const int DefaultAncestorDepth = 4;
 
         public int Count => tags.Count;
 
@@ -391,6 +395,59 @@ namespace BooruDatasetTagManager
                 return false;
             }
             return tags.TryGetValue(Normalize(tag), out path);
+        }
+
+        public bool Contains(string tag)
+        {
+            return !string.IsNullOrWhiteSpace(tag) && tags.ContainsKey(Normalize(tag));
+        }
+
+        /// <summary>
+        /// Danbooru implication parents from the CSV <c>parent_tag</c> column
+        /// (<c>earrings → jewelry</c>, <c>frilled dress → dress, frills</c>),
+        /// normalized to space-separated form. Empty when unknown.
+        /// </summary>
+        public IReadOnlyList<string> GetParents(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+                return Array.Empty<string>();
+            return parents.TryGetValue(Normalize(tag), out string[] list) ? list : Array.Empty<string>();
+        }
+
+        /// <summary>
+        /// True when <paramref name="ancestor"/> is reachable from
+        /// <paramref name="tag"/> through at most <paramref name="maxDepth"/>
+        /// parent hops. A tag is not its own ancestor; cycles terminate.
+        /// </summary>
+        public bool IsAncestor(string ancestor, string tag, int maxDepth = DefaultAncestorDepth)
+        {
+            if (string.IsNullOrWhiteSpace(ancestor) || string.IsNullOrWhiteSpace(tag) || maxDepth < 1)
+                return false;
+            string target = Normalize(ancestor);
+            string start = Normalize(tag);
+            if (target.Length == 0 || string.Equals(target, start, StringComparison.Ordinal))
+                return false;
+
+            var visited = new HashSet<string>(StringComparer.Ordinal) { start };
+            var frontier = new List<string> { start };
+            for (int depth = 0; depth < maxDepth && frontier.Count > 0; depth++)
+            {
+                var next = new List<string>();
+                foreach (string current in frontier)
+                {
+                    if (!parents.TryGetValue(current, out string[] list))
+                        continue;
+                    foreach (string parent in list)
+                    {
+                        if (string.Equals(parent, target, StringComparison.Ordinal))
+                            return true;
+                        if (visited.Add(parent))
+                            next.Add(parent);
+                    }
+                }
+                frontier = next;
+            }
+            return false;
         }
 
         public IReadOnlyList<string> SecondariesOf(string l1)
@@ -438,12 +495,28 @@ namespace BooruDatasetTagManager
 
         public static GeneralTagCategoryCatalog LoadFromFile(string path)
         {
-            var catalog = new GeneralTagCategoryCatalog();
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                return catalog;
+                return new GeneralTagCategoryCatalog();
             try
             {
                 using var reader = new StreamReader(path);
+                return LoadFromReader(reader);
+            }
+            catch (Exception)
+            {
+                var catalog = new GeneralTagCategoryCatalog();
+                catalog.RebuildPrimaryList();
+                return catalog;
+            }
+        }
+
+        public static GeneralTagCategoryCatalog LoadFromReader(TextReader reader)
+        {
+            var catalog = new GeneralTagCategoryCatalog();
+            if (reader == null)
+                return catalog;
+            try
+            {
                 string header = reader.ReadLine();
                 if (header == null)
                     return catalog;
@@ -451,6 +524,7 @@ namespace BooruDatasetTagManager
                 int tagCol = IndexOfHeader(headerFields, "tag");
                 int l1Col = IndexOfHeader(headerFields, "category_l1");
                 int l2Col = IndexOfHeader(headerFields, "category_l2");
+                int parentCol = IndexOfHeader(headerFields, "parent_tag");
                 if (tagCol < 0)
                     tagCol = 0;
                 if (l1Col < 0)
@@ -459,7 +533,7 @@ namespace BooruDatasetTagManager
                     l2Col = 8;
                 string line;
                 while ((line = reader.ReadLine()) != null)
-                    catalog.AddLine(line, tagCol, l1Col, l2Col);
+                    catalog.AddLine(line, tagCol, l1Col, l2Col, parentCol);
                 catalog.RebuildPrimaryList();
             }
             catch (Exception)
@@ -469,7 +543,7 @@ namespace BooruDatasetTagManager
             return catalog;
         }
 
-        private void AddLine(string line, int tagCol, int l1Col, int l2Col)
+        private void AddLine(string line, int tagCol, int l1Col, int l2Col, int parentCol)
         {
             if (string.IsNullOrWhiteSpace(line))
                 return;
@@ -484,6 +558,18 @@ namespace BooruDatasetTagManager
                 return;
             string l2 = fields.Count > l2Col ? Intern(fields[l2Col].Trim()) : string.Empty;
             tags[key] = new TagCategoryPath(l1, l2);
+            if (parentCol >= 0 && fields.Count > parentCol)
+            {
+                string[] parentList = fields[parentCol]
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(Normalize)
+                    .Where(parent => parent.Length > 0 && !string.Equals(parent, key, StringComparison.Ordinal))
+                    .Select(Intern)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                if (parentList.Length > 0)
+                    parents[key] = parentList;
+            }
             if (l2.Length == 0)
                 return;
             if (!secondaries.TryGetValue(l1, out SortedSet<string> set))
@@ -530,6 +616,15 @@ namespace BooruDatasetTagManager
         }
 
         private static string Normalize(string tag)
+        {
+            return NormalizeTag(tag);
+        }
+
+        /// <summary>
+        /// Shared key form for danbooru-derived tables: lowercase, escaped
+        /// parentheses unescaped, underscores as spaces.
+        /// </summary>
+        public static string NormalizeTag(string tag)
         {
             if (string.IsNullOrWhiteSpace(tag))
                 return string.Empty;

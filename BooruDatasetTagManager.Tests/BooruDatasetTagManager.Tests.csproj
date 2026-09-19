@@ -66,6 +66,8 @@
     <Compile Include="..\BooruDatasetTagManager\QuickTagReplaceService.cs" Link="Source\QuickTagReplaceService.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagAudit.cs" Link="Source\CharacterTagAudit.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagAuditMulti.cs" Link="Source\CharacterTagAuditMulti.cs" />
+    <Compile Include="..\BooruDatasetTagManager\CharacterTagResolution.cs" Link="Source\CharacterTagResolution.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagNearSynonymIndex.cs" Link="Source\TagNearSynonymIndex.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagReasonLocalizer.cs" Link="Source\CharacterTagReasonLocalizer.cs" />
     <Compile Include="..\BooruDatasetTagManager\CharacterTagFileTransaction.cs" Link="Source\CharacterTagFileTransaction.cs" />
     <Compile Include="..\BooruDatasetTagManager\CropRegion.cs" Link="Source\CropRegion.cs" />
@@ -101,6 +103,7 @@
     <Compile Include="..\BooruDatasetTagManager\Wd14OnnxTaggerService.cs" Link="Source\Wd14OnnxTaggerService.cs" />
     <Compile Include="..\BooruDatasetTagManager\PixAiOnnxTaggerService.cs" Link="Source\PixAiOnnxTaggerService.cs" />
     <Compile Include="..\BooruDatasetTagManager\ClTaggerOnnxService.cs" Link="Source\ClTaggerOnnxService.cs" />
+    <Compile Include="..\BooruDatasetTagManager\OppaiOracleOnnxService.cs" Link="Source\OppaiOracleOnnxService.cs" />
     <Compile Include="..\BooruDatasetTagManager\FfmpegLocator.cs" Link="Source\FfmpegLocator.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagPostProcessor.cs" Link="Source\TagPostProcessor.cs" />
     <Compile Include="..\BooruDatasetTagManager\TagWriteService.cs" Link="Source\TagWriteService.cs" />

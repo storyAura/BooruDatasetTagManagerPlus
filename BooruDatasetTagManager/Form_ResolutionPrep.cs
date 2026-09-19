@@ -838,16 +838,25 @@ namespace BooruDatasetTagManager
             {
                 CancellationToken token = runCancellation.Token;
                 ResolutionPrepPlan plan;
+                int yoloDetections = 0;
                 if (CurrentMode() == ResolutionPrepMode.YoloPerson)
-                    plan = await BuildYoloPlanAsync(token).ConfigureAwait(true);
+                {
+                    (plan, yoloDetections) = await BuildYoloPlanAsync(token).ConfigureAwait(true);
+                }
                 else
+                {
                     plan = BuildPlan();
+                }
 
                 if (plan.Jobs.Count == 0)
                 {
-                    string empty = CurrentMode() == ResolutionPrepMode.YoloPerson
-                        ? I18n.GetText("ResolutionPrepYoloNone")
-                        : I18n.GetText("ResolutionPrepNoJobs");
+                    string empty;
+                    if (CurrentMode() != ResolutionPrepMode.YoloPerson)
+                        empty = I18n.GetText("ResolutionPrepNoJobs");
+                    else if (yoloDetections == 0)
+                        empty = I18n.GetText("ResolutionPrepYoloNone");
+                    else
+                        empty = string.Format(I18n.GetText("ResolutionPrepYoloTooSmall"), yoloDetections);
                     MessageBox.Show(this, empty, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
@@ -915,7 +924,7 @@ namespace BooruDatasetTagManager
             }
         }
 
-        private async Task<ResolutionPrepPlan> BuildYoloPlanAsync(CancellationToken token)
+        private async Task<(ResolutionPrepPlan Plan, int Detections)> BuildYoloPlanAsync(CancellationToken token)
         {
             await EnsureYoloModelAsync(token).ConfigureAwait(true);
             token.ThrowIfCancellationRequested();
@@ -928,6 +937,7 @@ namespace BooruDatasetTagManager
             float confidence = (float)numYoloConfidence.Value;
             var crops = new List<(string Path, Size Size, IReadOnlyList<Rectangle> Crops)>();
             IReadOnlyList<string> paths = TargetPaths();
+            int detectionsCount = 0;
             IProgress<(int Done, int Total)> progress = new Progress<(int Done, int Total)>(tuple =>
             {
                 labelStatus.Text = string.Format(I18n.GetText("ResolutionPrepProgress"), tuple.Done, tuple.Total);
@@ -947,6 +957,7 @@ namespace BooruDatasetTagManager
                     }
 
                     List<(Rectangle Box, float Score)> detections = yoloService.Detect(path, confidence);
+                    detectionsCount += detections.Count;
                     var rects = new List<Rectangle>();
                     foreach ((Rectangle box, float _) in detections)
                     {
@@ -959,7 +970,7 @@ namespace BooruDatasetTagManager
                 }
             }, token).ConfigureAwait(true);
 
-            return ResolutionPrepMath.PlanFromCrops(crops, CurrentRequest());
+            return (ResolutionPrepMath.PlanFromCrops(crops, CurrentRequest()), detectionsCount);
         }
 
         private async Task EnsureYoloModelAsync(CancellationToken token)

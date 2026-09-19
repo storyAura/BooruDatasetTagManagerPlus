@@ -27,6 +27,7 @@ namespace BooruDatasetTagManager
         private readonly Wd14OnnxTaggerService wd14Service = new Wd14OnnxTaggerService();
         private readonly PixAiOnnxTaggerService pixAiService = new PixAiOnnxTaggerService();
         private readonly ClTaggerOnnxService clService = new ClTaggerOnnxService();
+        private readonly OppaiOracleOnnxService oppaiService = new OppaiOracleOnnxService();
         private readonly Dictionary<string, Size?> sizeCache = new Dictionary<string, Size?>(StringComparer.OrdinalIgnoreCase);
 
         private readonly RadioButton radioSourceSelected = new RadioButton();
@@ -1043,6 +1044,11 @@ namespace BooruDatasetTagManager
                         return false;
                     clService.LoadModel(entry.ClModel);
                     return true;
+                case OnnxTaggerModelKind.OppaiOracle:
+                    if (entry.OppaiModel == null || !oppaiService.IsModelReady(entry.OppaiModel))
+                        return false;
+                    oppaiService.LoadModel(entry.OppaiModel);
+                    return true;
                 default:
                     return false;
             }
@@ -1068,9 +1074,19 @@ namespace BooruDatasetTagManager
                         path,
                         entry.DefaultThreshold,
                         entry.DefaultCharacterThreshold ?? entry.DefaultThreshold).Tags;
+                case OnnxTaggerModelKind.OppaiOracle:
+                    return oppaiService.TagImageWithTiming(path, ResolveOppaiOracleThreshold(entry)).Tags;
                 default:
                     return Array.Empty<AutoTagProviderItem>();
             }
+        }
+
+        private static double ResolveOppaiOracleThreshold(OnnxTaggerModelEntry entry)
+        {
+            Wd14TaggerSettings settings = Program.Settings?.Wd14Tagger;
+            if (settings != null && settings.HasThresholdsForRepo(entry.Id))
+                return settings.GetThresholdsForRepo(entry.Id).Threshold;
+            return entry.DefaultThreshold;
         }
 
         private static string WriteTempCrop(string sourcePath, Rectangle box)
@@ -1162,6 +1178,7 @@ namespace BooruDatasetTagManager
                 wd14Service.Dispose();
                 pixAiService.Dispose();
                 clService.Dispose();
+                oppaiService.Dispose();
             }
             base.OnFormClosing(e);
         }

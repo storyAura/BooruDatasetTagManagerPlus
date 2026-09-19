@@ -41,6 +41,12 @@ namespace BooruDatasetTagManager
         /// </summary>
         public static GeneralTagCategoryCatalog GeneralCategoryCatalog;
 
+        /// <summary>
+        /// Optional danbooru related-tag graph for the audit verb's same-slot
+        /// clustering. Null or empty disables clustering.
+        /// </summary>
+        public static TagNearSynonymIndex NearSynonyms;
+
         private static readonly string[] HelpFlags = { "--help", "-h", "/?" };
         private static readonly string[] VersionFlags = { "--version", "-v" };
 

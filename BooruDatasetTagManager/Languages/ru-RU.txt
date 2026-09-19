@@ -1058,7 +1058,7 @@ ResolutionPrepTipScale=Сжать всё изображение до выбра�
 ResolutionPrepTipCenter=Вырезать по центру в выбранной пропорции, затем сжать.
 ResolutionPrepTipSplit=Разложить изображение окнами размера ступени.
 ResolutionPrepTipRandom=N случайных вырезок выбранной пропорции, затем сжатие.
-ResolutionPrepTipYolo=Вырезки по рамкам детекции. Этот предпросмотр детекцию не запускает.
+ResolutionPrepTipYolo=Вырезки по рамкам детекции; рамки меньше выбранного размера пишутся как есть. Этот предпросмотр детекцию не запускает.
 ResolutionPrepYoloPreview=Рамки нарезки берутся из детекции.
 SettingTranslationServiceGroup=Сервис
 SettingTranslationDataGroup=Данные
@@ -1067,4 +1067,6 @@ PreBucketTotals=добавлено +{0}  всего {1}
 TaggerOnnxNativeMissing=Не удалось загрузить onnxruntime.dll. Распакуйте весь архив и оставьте папку win-x64 рядом с exe; не копируйте только exe.
 TaggerOnnxVcRedistMissing=Отсутствует Visual C++ 2015–2022 x64. Установите распространяемый пакет Microsoft или распакуйте полный релиз (DLL sidecar в win-x64).
 TaggerOnnxCompatModeHint=Похоже, процесс запущен в режиме совместимости Windows. ПКМ по exe → Свойства → Совместимость, снимите «Запускать программу в режиме совместимости».
+ResolutionPrepYoloTooSmall=Найдено целей: {0}, но рамки слишком малы (меньше 64px после выравнивания) — записывать нечего.
+CharacterTagAuditClusterTooltip=Кластер одного слота — эти теги могут описывать один предмет: {0}
 

@@ -18,17 +18,19 @@ public sealed class CharacterTagAuditIntegrationTests
     }
 
     [Fact]
-    public void ProjectPublishesAgentSkillsAndVersionIs126()
+    public void ProjectPublishesAgentSkillsAndVersionIs127()
     {
         string project = ProjectDirectory();
         string csproj = File.ReadAllText(Path.Combine(project, "BooruDatasetTagManager.csproj"));
         string assembly = File.ReadAllText(Path.Combine(project, "Properties", "AssemblyInfo.cs"));
 
         Assert.Contains("..\\Agent\\skills\\**\\*", csproj);
-        Assert.Contains("<ApplicationVersion>1.2.6.0</ApplicationVersion>", csproj);
-        Assert.Contains("AssemblyVersion(\"1.2.6.0\")", assembly);
-        Assert.Contains("AssemblyFileVersion(\"1.2.6.0\")", assembly);
-        Assert.Contains("AssemblyInformationalVersion(\"1.2.6\")", assembly);
+        Assert.Contains("Data\\danbooru_tag_near_synonyms.csv", csproj);
+        Assert.True(File.Exists(Path.Combine(project, "Data", "danbooru_tag_near_synonyms.csv")));
+        Assert.Contains("<ApplicationVersion>1.2.7.0</ApplicationVersion>", csproj);
+        Assert.Contains("AssemblyVersion(\"1.2.7.0\")", assembly);
+        Assert.Contains("AssemblyFileVersion(\"1.2.7.0\")", assembly);
+        Assert.Contains("AssemblyInformationalVersion(\"1.2.7\")", assembly);
     }
 
     [Fact]
@@ -62,6 +64,49 @@ public sealed class CharacterTagAuditIntegrationTests
         Assert.Contains("colored jacket", pyramid, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("visually confirmed", pyramid, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("character-audit mode", pyramid, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SkillsCollapseContainerTagsAndSameItemPairs()
+    {
+        string root = RepoRoot();
+        string auditor = File.ReadAllText(Path.Combine(root, "Agent", "skills", "character-tag-auditor", "SKILL.md"));
+        string pyramid = File.ReadAllText(Path.Combine(root, "Agent", "skills", "prompt-pyramid", "SKILL.md"));
+
+        Assert.Contains("Container tags and same-item pairs", auditor, StringComparison.Ordinal);
+        Assert.Contains("`jewelry` + `earrings`", auditor, StringComparison.Ordinal);
+        Assert.Contains("black elbow gloves", auditor, StringComparison.Ordinal);
+        Assert.Contains("frilled dress", auditor, StringComparison.Ordinal);
+        Assert.Contains("Never emit the pair as two tags", auditor, StringComparison.Ordinal);
+        Assert.Contains("Known tags win", auditor, StringComparison.Ordinal);
+        Assert.Contains("never replace it", auditor, StringComparison.Ordinal);
+        Assert.Contains("One item, one tag", auditor, StringComparison.Ordinal);
+        Assert.DoesNotContain("then the pair rule yields one", auditor, StringComparison.Ordinal);
+        Assert.DoesNotContain("earrings, blue dress, jewelry", auditor, StringComparison.Ordinal);
+        Assert.Contains("Container words are families, not features", pyramid, StringComparison.Ordinal);
+        Assert.Contains("black elbow gloves", pyramid, StringComparison.Ordinal);
+        Assert.Contains("only when no specific jewelry tag exists", pyramid, StringComparison.Ordinal);
+        Assert.Contains("color` + a real tag", pyramid, StringComparison.Ordinal);
+        Assert.Contains("never invent", pyramid, StringComparison.Ordinal);
+        Assert.Contains("One accessory, one tag", pyramid, StringComparison.Ordinal);
+        Assert.Contains("deleting only strips the word", auditor, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuditorSkillIsAPerTagProcedureWithEvidenceReasons()
+    {
+        string root = RepoRoot();
+        string auditor = File.ReadAllText(Path.Combine(root, "Agent", "skills", "character-tag-auditor", "SKILL.md"));
+        string pyramid = File.ReadAllText(Path.Combine(root, "Agent", "skills", "prompt-pyramid", "SKILL.md"));
+
+        Assert.Contains("run these steps, in order, for every tag", auditor, StringComparison.Ordinal);
+        Assert.Contains("Step 4 — Color binding", auditor, StringComparison.Ordinal);
+        Assert.Contains("color unverifiable:", auditor, StringComparison.Ordinal);
+        Assert.Contains("## Reason format", auditor, StringComparison.Ordinal);
+        Assert.Contains("`core tag`", auditor, StringComparison.Ordinal);
+        Assert.True(auditor.Split('\n').Length <= 110, "the auditor skill must stay a compact procedure");
+        Assert.Contains("only ORDERS the prompt", pyramid, StringComparison.Ordinal);
+        Assert.DoesNotContain("For a sparse character audit, omit non-core bangs", pyramid, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1058,7 +1058,7 @@ ResolutionPrepTipScale=Reduz a imagem inteira a cada degrau marcado. Sem corte.
 ResolutionPrepTipCenter=Corta ao centro na proporção e depois reduz a cada degrau.
 ResolutionPrepTipSplit=Ladrilha a imagem com janelas do tamanho do degrau.
 ResolutionPrepTipRandom=Coloca N cortes aleatórios na proporção e depois reduz.
-ResolutionPrepTipYolo=Os cortes seguem as caixas da deteção. Esta pré-visualização não deteta.
+ResolutionPrepTipYolo=Os cortes seguem as caixas da deteção; caixas menores que o tamanho escolhido saem no tamanho original. Esta pré-visualização não deteta.
 ResolutionPrepYoloPreview=As caixas de corte vêm da deteção.
 SettingTranslationServiceGroup=Serviço
 SettingTranslationDataGroup=Dados
@@ -1067,4 +1067,6 @@ PreBucketTotals=extra +{0}  total {1}
 TaggerOnnxNativeMissing=Não foi possível carregar onnxruntime.dll. Extraia o zip inteiro e mantenha a pasta win-x64 ao lado do exe; não copie só o exe.
 TaggerOnnxVcRedistMissing=Falta o Visual C++ 2015–2022 x64. Instale o redistribuível da Microsoft ou extraia de novo o pacote completo (DLLs sidecar em win-x64).
 TaggerOnnxCompatModeHint=Este processo parece estar em modo de compatibilidade do Windows. Clique com o botão direito no exe → Propriedades → Compatibilidade e desative "Executar em modo de compatibilidade".
+ResolutionPrepYoloTooSmall=Detectados {0} alvo(s), mas as caixas são pequenas demais (menos de 64px após alinhamento) para gravar ficheiros.
+CharacterTagAuditClusterTooltip=Grupo do mesmo slot — estas tags podem descrever um único item: {0}
 

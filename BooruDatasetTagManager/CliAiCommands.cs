@@ -98,13 +98,16 @@ namespace BooruDatasetTagManager
             using var wd14 = new Wd14OnnxTaggerService();
             using var pixai = new PixAiOnnxTaggerService();
             using var cl = new ClTaggerOnnxService();
+            using var oppai = new OppaiOracleOnnxService();
             foreach (OnnxTaggerModelEntry entry in OnnxTaggerCatalog.AllModels)
             {
                 bool ready = entry.Kind switch
                 {
                     OnnxTaggerModelKind.Wd14 => wd14.IsModelReady(entry.Repo),
                     OnnxTaggerModelKind.PixAi => pixai.IsModelReady(),
-                    _ => cl.IsModelReady(entry.ClModel)
+                    OnnxTaggerModelKind.ClTagger => cl.IsModelReady(entry.ClModel),
+                    OnnxTaggerModelKind.OppaiOracle => oppai.IsModelReady(entry.OppaiModel),
+                    _ => false
                 };
                 string thresholds = "threshold=" + entry.DefaultThreshold.ToString(
                     System.Globalization.CultureInfo.InvariantCulture)
@@ -155,7 +158,8 @@ namespace BooruDatasetTagManager
             using var wd14 = new Wd14OnnxTaggerService();
             using var pixai = new PixAiOnnxTaggerService();
             using var cl = new ClTaggerOnnxService();
-            await EnsureModelDownloadedAsync(entry, options, wd14, pixai, cl, output, token).ConfigureAwait(false);
+            using var oppai = new OppaiOracleOnnxService();
+            await EnsureModelDownloadedAsync(entry, options, wd14, pixai, cl, oppai, output, token).ConfigureAwait(false);
 
             Func<string, OnnxTagResult> tagImage;
             switch (entry.Kind)
@@ -167,6 +171,10 @@ namespace BooruDatasetTagManager
                 case OnnxTaggerModelKind.ClTagger:
                     cl.LoadModel(entry.ClModel);
                     tagImage = path => cl.TagImageWithTiming(path, threshold, characterThreshold);
+                    break;
+                case OnnxTaggerModelKind.OppaiOracle:
+                    oppai.LoadModel(entry.OppaiModel);
+                    tagImage = path => oppai.TagImageWithTiming(path, threshold);
                     break;
                 default:
                     wd14.LoadModel(entry.Repo);
@@ -252,7 +260,9 @@ namespace BooruDatasetTagManager
 
         private static string ThresholdKey(OnnxTaggerModelEntry entry)
         {
-            return entry.Kind == OnnxTaggerModelKind.ClTagger ? entry.Id : entry.Repo;
+            return entry.Kind is OnnxTaggerModelKind.ClTagger or OnnxTaggerModelKind.OppaiOracle
+                ? entry.Id
+                : entry.Repo;
         }
 
         private static (double Threshold, double CharacterThreshold) ResolveThresholds(
@@ -270,10 +280,11 @@ namespace BooruDatasetTagManager
                 Wd14TaggerSettings stored = Program.Settings.Wd14Tagger;
                 string key = ThresholdKey(entry);
                 (threshold, characterThreshold) = stored.GetThresholdsForRepo(key);
-                if (entry.Kind == OnnxTaggerModelKind.ClTagger && !stored.HasThresholdsForRepo(key))
+                if (entry.Kind is OnnxTaggerModelKind.ClTagger or OnnxTaggerModelKind.OppaiOracle
+                    && !stored.HasThresholdsForRepo(key))
                 {
-                    // First use of a CL model: the WD fallback defaults do not
-                    // apply, take the catalog defaults (same as the GUI).
+                    // First use of a multi-checkpoint family: the WD fallback
+                    // defaults do not apply, take the catalog defaults (same as the GUI).
                     threshold = entry.DefaultThreshold;
                     characterThreshold = entry.DefaultCharacterThreshold ?? threshold;
                 }
@@ -289,6 +300,7 @@ namespace BooruDatasetTagManager
             Wd14OnnxTaggerService wd14,
             PixAiOnnxTaggerService pixai,
             ClTaggerOnnxService cl,
+            OppaiOracleOnnxService oppai,
             TextWriter output,
             CancellationToken token)
         {
@@ -296,7 +308,9 @@ namespace BooruDatasetTagManager
             {
                 OnnxTaggerModelKind.Wd14 => wd14.IsModelReady(entry.Repo),
                 OnnxTaggerModelKind.PixAi => pixai.IsModelReady(),
-                _ => cl.IsModelReady(entry.ClModel)
+                OnnxTaggerModelKind.ClTagger => cl.IsModelReady(entry.ClModel),
+                OnnxTaggerModelKind.OppaiOracle => oppai.IsModelReady(entry.OppaiModel),
+                _ => false
             };
             if (ready)
                 return;
@@ -322,6 +336,10 @@ namespace BooruDatasetTagManager
                         $"Model '{entry.Id}' is a gated repo: pass --hf-token or store a HuggingFace token once via the GUI.");
                 }
                 await cl.DownloadModelAsync(entry.ClModel, source, hfToken, progress, token).ConfigureAwait(false);
+            }
+            else if (entry.Kind == OnnxTaggerModelKind.OppaiOracle)
+            {
+                await oppai.DownloadModelAsync(entry.OppaiModel, source, progress, token).ConfigureAwait(false);
             }
             else
             {
@@ -457,7 +475,9 @@ namespace BooruDatasetTagManager
                 Model = model,
                 ReferenceImagePath = reference,
                 CharacterAuditorSkill = skills.CharacterAuditor,
-                PromptPyramidSkill = skills.PromptPyramid
+                PromptPyramidSkill = skills.PromptPyramid,
+                TagVocabulary = CliCommands.GeneralCategoryCatalog ?? GeneralTagCategoryCatalog.Empty,
+                NearSynonyms = CliCommands.NearSynonyms ?? TagNearSynonymIndex.Empty
             };
 
             // Same request bridge as the wizard: audit-service request → the

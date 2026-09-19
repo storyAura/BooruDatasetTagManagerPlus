@@ -8,7 +8,8 @@ namespace BooruDatasetTagManager
     {
         Wd14,
         PixAi,
-        ClTagger
+        ClTagger,
+        OppaiOracle
     }
 
     public sealed class OnnxTaggerModelEntry
@@ -21,6 +22,8 @@ namespace BooruDatasetTagManager
         public double? DefaultCharacterThreshold { get; init; }
         /// <summary>Non-null for Kind == ClTagger.</summary>
         public ClTaggerModelDefinition ClModel { get; init; }
+        /// <summary>Non-null for Kind == OppaiOracle.</summary>
+        public OppaiOracleModelDefinition OppaiModel { get; init; }
 
         public override string ToString()
         {
@@ -54,7 +57,7 @@ namespace BooruDatasetTagManager
             {
                 Id = PixAiModelId,
                 Kind = OnnxTaggerModelKind.PixAi,
-                DisplayName = "[PixAI] v0.9",
+                DisplayName = "[PixAI] pixai-tagger v0.9",
                 Repo = PixAiOnnxTaggerService.ModelRepo,
                 DefaultThreshold = 0.3,
                 DefaultCharacterThreshold = 0.85
@@ -72,6 +75,19 @@ namespace BooruDatasetTagManager
                     DefaultThreshold = model.DefaultThreshold,
                     DefaultCharacterThreshold = model.DefaultCharacterThreshold,
                     ClModel = model
+                });
+            }
+
+            foreach (OppaiOracleModelDefinition model in OppaiOracleOnnxService.Models)
+            {
+                models.Add(new OnnxTaggerModelEntry
+                {
+                    Id = model.Id,
+                    Kind = OnnxTaggerModelKind.OppaiOracle,
+                    DisplayName = "[OO] " + model.ShortName,
+                    Repo = model.Repo,
+                    DefaultThreshold = model.DefaultThreshold,
+                    OppaiModel = model
                 });
             }
 

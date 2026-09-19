@@ -288,6 +288,80 @@ public sealed class ResolutionPrepMathTests
         Assert.Equal("_1-1_yolo2_1024", plan.Jobs[1].Suffix);
         Assert.Equal(new Size(1024, 1024), plan.Jobs[0].OutputSize);
     }
+
+    [Fact]
+    public void PlanFromCrops_small_crop_falls_back_to_native_size()
+    {
+        var crops = new (string Path, Size Size, IReadOnlyList<Rectangle> Crops)[]
+        {
+            (@"C:\a.png", new Size(1920, 1080), new[] { new Rectangle(10, 10, 400, 300) })
+        };
+        var plan = ResolutionPrepMath.PlanFromCrops(crops, new ResolutionPrepRequest
+        {
+            Mode = ResolutionPrepMode.YoloPerson,
+            AspectWidth = 4,
+            AspectHeight = 3,
+            Gears = new[] { 1280 }
+        });
+
+        Assert.Single(plan.Jobs);
+        Assert.Equal(new Size(384, 256), plan.Jobs[0].OutputSize);
+        Assert.Equal("_4-3_yolo1_384", plan.Jobs[0].Suffix);
+        Assert.Equal(0, plan.SkippedImages);
+    }
+
+    [Fact]
+    public void PlanFromCrops_native_size_emitted_once_across_larger_gears()
+    {
+        var crops = new (string Path, Size Size, IReadOnlyList<Rectangle> Crops)[]
+        {
+            (@"C:\a.png", new Size(1920, 1080), new[] { new Rectangle(10, 10, 800, 600) })
+        };
+        var largeOnly = ResolutionPrepMath.PlanFromCrops(crops, new ResolutionPrepRequest
+        {
+            Mode = ResolutionPrepMode.YoloPerson,
+            AspectWidth = 4,
+            AspectHeight = 3,
+            Gears = new[] { 1024, 1280 }
+        });
+
+        Assert.Single(largeOnly.Jobs);
+        Assert.Equal(new Size(768, 576), largeOnly.Jobs[0].OutputSize);
+        Assert.Equal("_4-3_yolo1_768", largeOnly.Jobs[0].Suffix);
+
+        var withSmallerGear = ResolutionPrepMath.PlanFromCrops(crops, new ResolutionPrepRequest
+        {
+            Mode = ResolutionPrepMode.YoloPerson,
+            AspectWidth = 4,
+            AspectHeight = 3,
+            Gears = new[] { 512, 1024, 1280 }
+        });
+
+        Assert.Equal(2, withSmallerGear.Jobs.Count);
+        Assert.Contains(withSmallerGear.Jobs, job => job.OutputSize == new Size(512, 384)
+            && job.Suffix == "_4-3_yolo1_512");
+        Assert.Contains(withSmallerGear.Jobs, job => job.OutputSize == new Size(768, 576)
+            && job.Suffix == "_4-3_yolo1_768");
+    }
+
+    [Fact]
+    public void PlanFromCrops_crop_below_min_gear_is_skipped()
+    {
+        var crops = new (string Path, Size Size, IReadOnlyList<Rectangle> Crops)[]
+        {
+            (@"C:\a.png", new Size(1920, 1080), new[] { new Rectangle(10, 10, 50, 40) })
+        };
+        var plan = ResolutionPrepMath.PlanFromCrops(crops, new ResolutionPrepRequest
+        {
+            Mode = ResolutionPrepMode.YoloPerson,
+            AspectWidth = 4,
+            AspectHeight = 3,
+            Gears = new[] { 1280 }
+        });
+
+        Assert.Empty(plan.Jobs);
+        Assert.Equal(1, plan.SkippedImages);
+    }
 }
 
 public sealed class ResolutionPrepServiceTests : IDisposable

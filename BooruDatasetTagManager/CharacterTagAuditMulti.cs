@@ -334,6 +334,8 @@ namespace BooruDatasetTagManager
         public string Model { get; set; } = string.Empty;
         public string CharacterAuditorSkill { get; set; } = string.Empty;
         public string PromptPyramidSkill { get; set; } = string.Empty;
+        public GeneralTagCategoryCatalog TagVocabulary { get; set; } = GeneralTagCategoryCatalog.Empty;
+        public TagNearSynonymIndex NearSynonyms { get; set; } = TagNearSynonymIndex.Empty;
     }
 
     public sealed class CharacterTagDualAuditResult
@@ -481,6 +483,8 @@ namespace BooruDatasetTagManager
                     ReferenceImagePath = profile.ReferenceImagePath,
                     CharacterAuditorSkill = options.CharacterAuditorSkill,
                     PromptPyramidSkill = options.PromptPyramidSkill,
+                    TagVocabulary = options.TagVocabulary,
+                    NearSynonyms = options.NearSynonyms,
                     // Name the other character(s) so shared-image features get
                     // attributed by the reference image, not by frequency.
                     OtherCharacterTriggers = options.Profiles

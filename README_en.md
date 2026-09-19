@@ -1,16 +1,17 @@
-# BooruDatasetTagManager+ 1.2.6
+# BooruDatasetTagManager+ 1.2.7
 
 [简体中文](README.md) | [Português do Brasil](docs/pt-BR/README_pt_BR.md)
 
 A Windows tagger for LoRA and character datasets, forked from **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**.
 
-Each image has a matching `.txt` file for its tags — load a folder and edit them. You can also auto-tag with an LLM or the local **Tag tagger** (formerly ONNX tagger; still WD14 / PixAI / CL), run a character audit, and search tags in Chinese. The UI defaults to Simplified Chinese. [MIT License](LICENSE).
+Each image has a matching `.txt` file for its tags — load a folder and edit them. You can also auto-tag with an LLM or the local **Tag tagger** (formerly ONNX tagger; WD14 / PixAI / CL / OppaiOracle), run a character audit, and search tags in Chinese. The UI defaults to Simplified Chinese. [MIT License](LICENSE).
 
 ![Main window](docs/images/main-window-dataset-browser.png)
 
 ## Changelog
 
-- **1.2.6** (current) — **ONNX tagger renamed Tag tagger** (Tools menu, window title, and right-click; the engine is still local ONNX); tag fixer can skip character-family replacements; YOLO detect aspect can auto-match per image; image-tags Shift/Ctrl multi-select works again; Win10 native-library load failures and large-batch tagging memory spikes are hardened. Most of the rest is UI/workflow polish: grouped Tools menu, standalone quick replace, pre-bucket pad-to-batch and Gradient, tighter window copy and layouts. [Release notes](docs/RELEASE_NOTES_v1.2.6.md)
+- **1.2.7** (current) — **Tag tagger adds OppaiOracle** (V1 320 / V1.1 448, ~19k general tags, no character head, not gated); multi-crop YOLO no longer reports small detect boxes as “nothing detected”; character audit now walks tags one by one, names color-less wearables and same-slot clusters in the visual stage, then runs a targeted resolution request (at most 3 requests per character) with clustered tags tinted in the review grid. [Release notes](docs/RELEASE_NOTES_v1.2.7.md)
+- **1.2.6** — **ONNX tagger renamed Tag tagger** (Tools menu, window title, and right-click; the engine is still local ONNX); tag fixer can skip character-family replacements; YOLO detect aspect can auto-match per image; image-tags Shift/Ctrl multi-select works again; Win10 native-library load failures and large-batch tagging memory spikes are hardened. Most of the rest is UI/workflow polish: grouped Tools menu, standalone quick replace, pre-bucket pad-to-batch and Gradient, tighter window copy and layouts. [Release notes](docs/RELEASE_NOTES_v1.2.6.md)
 - **1.2.5** — New: batch crop, multi-crop, YOLO detect, pre-bucket, two-level category filter, classify images into folders by tag; settings now live in Documents. Fixed: ONNX download deleting a locked model, translation hanging. [Release notes](docs/RELEASE_NOTES_v1.2.5.md)
 - **1.2.4** — Fixed WD14 wrong-color tags, saves on very long filenames, and the multi-character audit dropdown; ONNX results sort by confidence; random-percentage frame extraction; sort the dataset by file type. [Release notes](docs/RELEASE_NOTES_v1.2.4.md)
 - **1.2.3** — Corrupted-image scanner; folder / all-images batch transparent-background fill; fixed tag filter “click NOT, get OR”; key and path hardening. [Release notes](docs/RELEASE_NOTES_v1.2.3.md)
@@ -50,7 +51,7 @@ Running locally creates **Models/** (downloaded ONNX weights) and **Cache/** bes
 
 | Group | Includes |
 | --- | --- |
-| **Tagging** | LLM (tags / captions) · **Tag tagger** (local ONNX: WD14 / PixAI / CL) · character audit (up to 4) |
+| **Tagging** | LLM (tags / captions) · **Tag tagger** (local ONNX: WD14 / PixAI / CL / OppaiOracle) · character audit (up to 4) |
 | **Tags** | Chinese search, category tints and L1/L2 filter, consistency fixer, filter images by tag |
 | **Images** | Editor, batch crop, multi-crop (incl. YOLO), pre-bucket, background removal / fill |
 | **Cleanup** | Folder browser + preview, classify into folders by tag, bucket-by-resolution, similar images, corrupted-file scan, video convert / frames |
@@ -96,7 +97,7 @@ Entry: **Tools → LLM tagging…**, the dataset context menu, or the tag-toolba
 
 ### Character tag audit
 
-Entry: **Tools → Character tag audit…** (the **Test functions** window still has the same entry). Set the locked trigger word (always kept), the tagging style (**sparse** keeps core features / **full** keeps every correct detail), a minimum occurrence threshold, and a reference image; the AI then runs a text screening followed by a visual review (no step back — cancel and reopen to change parameters); finally review each decision (keep / delete / replace / unsure), preview the resulting character prompt, and **Apply & Save** writes transactionally with rollback on failure.
+Entry: **Tools → Character tag audit…** (the **Test functions** window still has the same entry). Set the locked trigger word (always kept), the tagging style (**sparse** keeps core features / **full** keeps every correct detail), a minimum occurrence threshold, and a reference image; the AI then sends at most **3** requests per character: a text screening, a visual review, and a targeted resolution pass for still color-less wearables and same-slot clusters (e.g. `bow` / `hair ribbon` / `hairband`) (no step back — cancel and reopen to change parameters). Finally review each decision (keep / delete / replace / unsure): clustered tags share a tint and the hover lists the cluster; replacement targets prefer tags already in the vocabulary. Preview the resulting character prompt, and **Apply & Save** writes transactionally with rollback on failure.
 
 **Multi-character datasets** (up to 4) are supported: pick the Dual or Multi subject mode and give each character its own trigger word, reference image and gender (empty rows are skipped, so three-character datasets work too); images are attributed by trigger word, then by folder, shared images automatically receive subject-count tags (`2girls`, `multiple girls` and the like), the AI review, per-tag review and apply all run character by character, and a failed character can be retried alone (finished characters keep their results).
 
@@ -104,13 +105,13 @@ Entry: **Tools → Character tag audit…** (the **Test functions** window still
 
 ### Tag tagger
 
-Formerly **ONNX tagger**. From 1.2.6 the UI says **Tag tagger** (Simplified Chinese: **Tag 推标**) on the **Tools → Tagging** menu, the window title, dataset right-click **Retag with Tag tagger**, and folder right-click **Tag folder with Tag tagger…**. The engine is unchanged: local ONNX (WD14 / PixAI / CL), weights still land in `Models/`, and the CLI verbs stay `onnx-tag` / `onnx-models`.
+Formerly **ONNX tagger**. From 1.2.6 the UI says **Tag tagger** (Simplified Chinese: **Tag 推标**) on the **Tools → Tagging** menu, the window title, dataset right-click **Retag with Tag tagger**, and folder right-click **Tag folder with Tag tagger…**. The engine is local ONNX (WD14 / PixAI / CL / OppaiOracle), weights still land in `Models/`, and the CLI verbs stay `onnx-tag` / `onnx-models`.
 
 Entry: **Tools → Tag tagger…**, or right-click **Retag with Tag tagger** on selected images (starts automatically); the folder right-click **Tag folder with Tag tagger…** preselects the *Current folder* source and starts after you confirm the settings.
 
 ![Tag tagger](docs/images/onnx-tagger.png)
 
-- Models: full WD14 catalog (12 models) + PixAI 0.9 + CL family (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); thresholds and settings remembered per model; download from HuggingFace official or mirror
+- Models: full WD14 catalog (12 models) + PixAI 0.9 + CL family (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒) + OppaiOracle (V1 320 / V1.1 448, ~19k general tags, no character head, not gated; the character-threshold control is hidden for this family, defaults V1 0.55 / V1.1 0.65); thresholds and settings remembered per model; download from HuggingFace official or mirror
 - After download the app checks the model; a file briefly locked by antivirus/indexer is retried and kept, not treated as corrupt and deleted. Missing native runtime and other environment errors also leave a finished download in place
 - cl_tagger_v2 is a **gated repo** whose author license forbids redistribution and bundling — the app does not ship it; a license notice shows before download, and you must request access on HuggingFace and enter your own access token (stored DPAPI-encrypted), or place manually downloaded files into the `Models` folder
 - Write mode (replace / append / skip existing), optional sort, underscore→space, prefix/suffix tags; progress bar for batch runs; the "Skipping existing tag lists" mode skips already-tagged images before inference and reports written / skipped counts on completion
@@ -158,7 +159,7 @@ Entry: dataset context menu, folder-header context menu, or **Tools → Multi-cr
 - **Center-crop to ratio**: take the largest centered 1:1 / 2:3 / 16:9 / … rectangle, then downscale
 - **Split into tiles**: lay gear-sized windows on the source pixels (last row/column flush to the edge); downscale only when a tile is still larger than the gear
 - **Random-position crop**: N crops per image (default 1, max 32); the aspect rectangle is placed uniformly in the remaining slide range, then downscaled
-- **YOLO detect crop**: pick a deepghs anime detector from the dropdown — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; default v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, not gated, standard YOLOv8 ONNX. Each box is expanded to the chosen ratio then geared; images with no hit are skipped. You can also import your own YOLOv8 ONNX; download source is shared with **Tag tagger** (HuggingFace / hf-mirror)
+- **YOLO detect crop**: pick a deepghs anime detector from the dropdown — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; default v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, not gated, standard YOLOv8 ONNX. Each box is expanded to the chosen ratio then geared; if the expanded box is still smaller than the selected gear, it is written at the 64-aligned native size instead of reporting “nothing detected”. Boxes under 64px after alignment, or images with no hit, are skipped. You can also import your own YOLOv8 ONNX; download source is shared with **Tag tagger** (HuggingFace / hf-mirror)
 - Default gears 512 / 768 / 896 / 1024 / 1280 / 1536, multi-select, plus custom values 64–8192 (snapped down to a multiple of 64); Lanczos downscale with no upscaling; images already smaller than a gear are skipped
 - Also **Tools → YOLO detect…**: a separate window draws boxes, lets you keep/drop them, optionally **Open in Tag tagger** for the kept crops, then exports; the same model dropdown, download source and *Download model* button live there. Aspect defaults to **Auto** (nearest preset from each image's width/height: 1:1 / 2:3 / 16:9 / …); you can still lock a ratio
 
@@ -222,7 +223,7 @@ Entry: the **Test functions** menu window, "Tag consistency fixer" group. It sca
 
 - **Dataset operations**: `stats`; `list-images` / `list-tags` / `classify-tags` queries (filter by tags, L1/L2 category, count; `--category` accepts `头发` or `Hair`, or `头发/发色` for a secondary); `add-tags` / `remove-tags` / `replace-tag` bulk edits (conditional targeting, `--dry-run`); `export` to JSON
 - **`fix-tags`**: the consistency fixer's CLI twin — `--no-character-variants` skips character-family replacements, `--child-threshold` sets the trust threshold (default 0 = off; ignored with `--no-character-variants`), `--catalog` points at a custom relations CSV
-- **`onnx-models` / `onnx-tag`**: CLI twin of **Tag tagger** (local ONNX) — list / auto-download models (`--hf-token` for gated repos), thresholds and write modes with GUI-equal semantics, "skip existing" filters before inference. The verb names are unchanged so old scripts keep working
+- **`onnx-models` / `onnx-tag`**: CLI twin of **Tag tagger** (local ONNX) — list / auto-download models (`--hf-token` for gated repos), thresholds and write modes with GUI-equal semantics, "skip existing" filters before inference. OppaiOracle example: `onnx-tag --model oo:Grio43/OppaiOracle:v1.1`. The verb names are unchanged so old scripts keep working
 - **`audit`**: the LLM character tag audit — reuses the API configuration and audit prompts saved in the GUI, runs the two-stage review, writes back transactionally; `--report` emits a JSON report, `--dry-run` shows decisions only
 - Every write is an atomic replace; the tag format (comma-separated, lowercase, deduplicated) matches the GUI, so CLI and manual edits mix freely
 

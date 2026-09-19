@@ -1,16 +1,17 @@
-# BooruDatasetTagManager+ 1.2.6
+# BooruDatasetTagManager+ 1.2.7
 
 [English](../../README_en.md) | [简体中文](../../README.md)
 
 Ferramenta Windows para marcar datasets de LoRA e personagens, fork de **[starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)**.
 
-Cada imagem tem um `.txt` com o mesmo nome para as tags — abra a pasta e edite. Também dá para marcar com LLM ou o **Tag tagger** local (antes tagger ONNX; o motor continua WD14 / PixAI / CL), auditar personagens e buscar tags em chinês. A interface começa em chinês simplificado. [Licença MIT](../../LICENSE).
+Cada imagem tem um `.txt` com o mesmo nome para as tags — abra a pasta e edite. Também dá para marcar com LLM ou o **Tag tagger** local (antes tagger ONNX; o motor é WD14 / PixAI / CL / OppaiOracle), auditar personagens e buscar tags em chinês. A interface começa em chinês simplificado. [Licença MIT](../../LICENSE).
 
 ![Janela principal](../images/main-window-dataset-browser.png)
 
 ## Histórico de versões
 
-- **1.2.6** (atual) — **O tagger ONNX passou a chamar-se Tag tagger** (menu Ferramentas, título da janela e clique direito; o motor continua ONNX local); o corretor de tags pode desligar substituições da família de personagem; a proporção do YOLO pode reconhecer cada imagem automaticamente; a seleção Shift/Ctrl nas tags da imagem volta a funcionar; falhas de carga nativa no Win10 e picos de memória em lotes grandes foram reforçados. O restante é sobretudo polimento de interface e fluxo: menu Ferramentas agrupado, substituição rápida numa janela própria, pré-buckets alinhados ao lote com Gradient, textos e janelas mais curtos. [Notas da versão](../RELEASE_NOTES_v1.2.6.md)
+- **1.2.7** (atual) — **O Tag tagger passa a incluir OppaiOracle** (V1 320 / V1.1 448, cerca de 19 mil tags gerais, sem cabeça de personagem, sem restrição); o recorte múltiplo YOLO já não trata caixas pequenas como “nada detectado”; a auditoria de personagem agora percorre tag a tag, nomeia peças sem cor e grupos do mesmo slot na etapa visual, e faz um pedido dirigido de resolução (no máximo 3 pedidos por personagem), com grupos coloridos na grelha de revisão. [Notas da versão](../RELEASE_NOTES_v1.2.7.md)
+- **1.2.6** — **O tagger ONNX passou a chamar-se Tag tagger** (menu Ferramentas, título da janela e clique direito; o motor continua ONNX local); o corretor de tags pode desligar substituições da família de personagem; a proporção do YOLO pode reconhecer cada imagem automaticamente; a seleção Shift/Ctrl nas tags da imagem volta a funcionar; falhas de carga nativa no Win10 e picos de memória em lotes grandes foram reforçados. O restante é sobretudo polimento de interface e fluxo: menu Ferramentas agrupado, substituição rápida numa janela própria, pré-buckets alinhados ao lote com Gradient, textos e janelas mais curtos. [Notas da versão](../RELEASE_NOTES_v1.2.6.md)
 - **1.2.5** — Novidade: recorte em lote, recortes múltiplos, detecção YOLO, pré-buckets, filtro de categorias em dois níveis, classificar imagens em pastas por tag; configurações passam a ficar em Documentos. Correção: download ONNX apagava modelo bloqueado; tradução travava. [Notas da versão](../RELEASE_NOTES_v1.2.5.md)
 - **1.2.4** — Correção de tags de cor erradas no WD14, nomes de arquivo longos e o seletor da auditoria multi; ONNX ordena por confiança; extração aleatória por porcentagem; ordenar o dataset por tipo de arquivo. [Notas da versão](../RELEASE_NOTES_v1.2.4.md)
 - **1.2.3** — Verificador de imagens corrompidas; substituição de fundo transparente em lote (pasta / todas); correção do filtro “clicar NOT, aplicar OR”; reforço de chaves e caminhos. [Notas da versão](../RELEASE_NOTES_v1.2.3.md)
@@ -50,7 +51,7 @@ A execução local cria **Models/** (pesos ONNX baixados) e **Cache/** ao lado d
 
 | Grupo | Inclui |
 | --- | --- |
-| **Marcação** | LLM (tags / legendas) · **Tag tagger** (ONNX local: WD14 / PixAI / CL) · auditoria de personagem (até 4) |
+| **Marcação** | LLM (tags / legendas) · **Tag tagger** (ONNX local: WD14 / PixAI / CL / OppaiOracle) · auditoria de personagem (até 4) |
 | **Tags** | Busca em chinês, cores e filtro L1/L2, corretor de tags, filtrar imagens por tag |
 | **Imagens** | Editor, recorte em lote, recortes múltiplos (incl. YOLO), pré-buckets, remover / preencher fundo |
 | **Organização** | Navegador + pré-visualização, classificar em pastas por tag, buckets por resolução, semelhantes, imagens corrompidas, vídeo / frames |
@@ -96,7 +97,7 @@ Entrada: **Ferramentas → Marcação LLM…**, o menu de contexto do dataset, o
 
 ### Auditoria de tags de personagem
 
-Entrada: **Ferramentas → Auditoria de tags de personagem…** (a janela **Funções de teste** ainda tem a mesma entrada). Defina a palavra de ativação bloqueada (sempre mantida), o estilo de marcação (**enxuto** mantém as características centrais / **completo** mantém todos os detalhes corretos), um limite mínimo de ocorrências e uma imagem de referência; a IA executa uma triagem textual seguida de uma revisão visual (não há como voltar etapas — cancele e reabra para mudar os parâmetros); por fim, revise cada decisão (manter / excluir / substituir / incerto), pré-visualize o prompt final do personagem e **Aplicar e salvar** grava de forma transacional, com reversão em caso de falha.
+Entrada: **Ferramentas → Auditoria de tags de personagem…** (a janela **Funções de teste** ainda tem a mesma entrada). Defina a palavra de ativação bloqueada (sempre mantida), o estilo de marcação (**enxuto** mantém as características centrais / **completo** mantém todos os detalhes corretos), um limite mínimo de ocorrências e uma imagem de referência; a IA envia no máximo **3** pedidos por personagem: triagem textual, revisão visual e um pedido dirigido para peças ainda sem cor e grupos do mesmo slot (por exemplo `bow` / `hair ribbon` / `hairband`) (não há como voltar etapas — cancele e reabra para mudar os parâmetros). Por fim, revise cada decisão (manter / excluir / substituir / incerto): tags do mesmo grupo compartilham uma cor de fundo e o hover lista o grupo; os alvos de substituição preferem tags já existentes no vocabulário. Pré-visualize o prompt final do personagem e **Aplicar e salvar** grava de forma transacional, com reversão em caso de falha.
 
 Há suporte a **datasets com vários personagens** (até 4): escolha o modo de sujeito Duplo ou Múltiplo e defina palavra de ativação, imagem de referência e gênero para cada personagem (linhas vazias são ignoradas, então datasets de três personagens também funcionam); as imagens são atribuídas pela palavra de ativação e depois pela pasta, imagens compartilhadas recebem automaticamente tags de contagem de sujeitos (`2girls`, `multiple girls` etc.), a revisão da IA, a revisão tag a tag e a aplicação ocorrem personagem por personagem, e um personagem que falhou pode ser repetido sozinho (os resultados dos personagens concluídos são mantidos).
 
@@ -104,13 +105,13 @@ Há suporte a **datasets com vários personagens** (até 4): escolha o modo de s
 
 ### Tag tagger
 
-Antes chamava-se **tagger ONNX**. A partir da 1.2.6 a interface passa a dizer **Tag tagger** (chinês: **Tag 推标**) no menu **Ferramentas → Marcação**, no título da janela, no clique direito **Retaguear com Tag tagger** e em **Marcar pasta com Tag tagger…**. O motor não mudou: ONNX local (WD14 / PixAI / CL), pesos em `Models/`, e os verbos de CLI continuam `onnx-tag` / `onnx-models`.
+Antes chamava-se **tagger ONNX**. A partir da 1.2.6 a interface passa a dizer **Tag tagger** (chinês: **Tag 推标**) no menu **Ferramentas → Marcação**, no título da janela, no clique direito **Retaguear com Tag tagger** e em **Marcar pasta com Tag tagger…**. O motor é ONNX local (WD14 / PixAI / CL / OppaiOracle), pesos em `Models/`, e os verbos de CLI continuam `onnx-tag` / `onnx-models`.
 
 Entrada: **Ferramentas → Tag tagger…**, ou clique com o botão direito em **Retaguear com Tag tagger** nas imagens selecionadas (inicia automaticamente); o item **Marcar pasta com Tag tagger…** do clique direito na pasta pré-seleciona a origem *Pasta atual* e só inicia após você confirmar as configurações.
 
 ![Tag tagger](../images/onnx-tagger.png)
 
-- Modelos: catálogo WD14 completo (12 modelos) + PixAI 0.9 + família CL (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒); limites e configurações memorizados por modelo; download do HuggingFace oficial ou do espelho
+- Modelos: catálogo WD14 completo (12 modelos) + PixAI 0.9 + família CL (cl_tagger v1.02, cl_tagger_v2 v2.00 / v2.01a 🔒) + OppaiOracle (V1 320 / V1.1 448, cerca de 19 mil tags gerais, sem cabeça de personagem, sem restrição; o controle de limiar de personagem fica oculto nesta família, padrões V1 0.55 / V1.1 0.65); limites e configurações memorizados por modelo; download do HuggingFace oficial ou do espelho
 - Depois do download o app verifica o modelo; um arquivo brevemente bloqueado pelo antivírus/indexador é retentado e mantido, não tratado como corrompido e apagado. Falta de runtime nativo e outros erros de ambiente também deixam o download concluído no lugar
 - O cl_tagger_v2 é um **repositório restrito (gated)** cuja licença do autor proíbe redistribuição e distribuição em pacotes — o aplicativo não o inclui; um aviso de licença aparece antes do download, e é preciso solicitar acesso no HuggingFace e informar o seu próprio Access Token (armazenado com criptografia DPAPI), ou colocar manualmente os arquivos baixados na pasta `Models`
 - Modo de gravação (substituir / acrescentar / ignorar existentes), ordenação opcional, sublinhado→espaço, tags de prefixo/sufixo; barra de progresso para execuções em lote; o modo "Ignorando listas de tags existentes" pula imagens já marcadas antes da inferência e informa as contagens de gravadas / puladas ao concluir
@@ -149,7 +150,7 @@ Entrada: menu de contexto do dataset, menu do cabeçalho da pasta, ou **Ferramen
 - **Recorte central na proporção**: pega o maior retângulo centrado 1:1 / 2:3 / 16:9 / … e depois reduz
 - **Fatiar em blocos**: espalha janelas do tamanho do degrau nos pixels de origem (última linha/coluna encostada na borda); só reduz se a fatia ainda for maior que o degrau
 - **Recorte em posição aleatória**: N recortes por imagem (padrão 1, máximo 32); o retângulo da proporção cai de forma uniforme na faixa deslizante restante e depois reduz
-- **Recorte YOLO**: escolha um detector de anime deepghs na lista — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; padrão v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, não gated, YOLOv8 ONNX padrão. Cada caixa é expandida para a proporção escolhida e depois reduzida; imagens sem acerto são ignoradas. Também dá para importar o seu próprio ONNX YOLOv8; a fonte de download é a mesma do **Tag tagger** (HuggingFace / hf-mirror)
+- **Recorte YOLO**: escolha um detector de anime deepghs na lista — **Person** (v1.1 n/s/m, v1.2 s, v1.3 s; padrão v1.1 small), **Face** (v1.3 s, v1.4 n/s), **Head** (v1.6 s, v2.0 n/s); MIT, não gated, YOLOv8 ONNX padrão. Cada caixa é expandida para a proporção escolhida e depois reduzida; se a caixa expandida ainda for menor que o degrau marcado, ela é gravada no tamanho nativo alinhado a 64, em vez de reportar “nada detectado”. Caixas abaixo de 64 px após o alinhamento, ou imagens sem acerto, são ignoradas. Também dá para importar o seu próprio ONNX YOLOv8; a fonte de download é a mesma do **Tag tagger** (HuggingFace / hf-mirror)
 - Degraus padrão 512 / 768 / 896 / 1024 / 1280 / 1536, com multi-seleção e valores personalizados 64–8192 (alinhados para baixo em múltiplos de 64); redução Lanczos sem ampliar; imagens já menores que o degrau são ignoradas
 - Também **Ferramentas → Detectar YOLO…**: janela à parte desenha as caixas, deixa manter/descartar, opcionalmente **Abrir no Tag tagger** para os recortes mantidos e depois exporta; a mesma lista de modelos, fonte de download e o botão *Baixar modelo* estão lá. A proporção padrão é **Automático** (preset mais próximo da largura/altura de cada imagem: 1:1 / 2:3 / 16:9 / …); ainda dá para travar uma proporção
 
@@ -213,7 +214,7 @@ O próprio `BooruDatasetTagManagerPlus.exe` é uma ferramenta de linha de comand
 
 - **Operações de dataset**: `stats`; consultas `list-images` / `list-tags` / `classify-tags` (filtro por tags, categoria L1/L2, contagem; `--category` aceita `头发` ou `Hair`, ou `头发/发色` para uma secundária); edições em lote `add-tags` / `remove-tags` / `replace-tag` (alvo condicional, `--dry-run`); `export` para JSON
 - **`fix-tags`**: o gêmeo em CLI do corretor — `--no-character-variants` ignora substituições da família de personagem, `--child-threshold` define o limite de confiança (padrão 0 = desligado; sem efeito com `--no-character-variants`), `--catalog` aponta para um CSV de relações personalizado
-- **`onnx-models` / `onnx-tag`**: versão em linha de comando do **Tag tagger** (ONNX local) — lista / baixa modelos automaticamente (`--hf-token` para repositórios restritos), limites e modos de gravação com a mesma semântica da interface, "ignorar existentes" filtra antes da inferência. Os verbos não mudaram, para scripts antigos continuarem a funcionar
+- **`onnx-models` / `onnx-tag`**: versão em linha de comando do **Tag tagger** (ONNX local) — lista / baixa modelos automaticamente (`--hf-token` para repositórios restritos), limites e modos de gravação com a mesma semântica da interface, "ignorar existentes" filtra antes da inferência. Exemplo OppaiOracle: `onnx-tag --model oo:Grio43/OppaiOracle:v1.1`. Os verbos não mudaram, para scripts antigos continuarem a funcionar
 - **`audit`**: a auditoria LLM de tags de personagem — reutiliza a configuração de API e os prompts salvos na interface, executa a revisão em duas etapas e grava de forma transacional; `--report` emite um relatório JSON, `--dry-run` só mostra as decisões
 - Toda gravação é uma substituição atômica; o formato de tags (separadas por vírgula, minúsculas, sem duplicatas) é o mesmo da interface, então CLI e edições manuais se misturam livremente
 

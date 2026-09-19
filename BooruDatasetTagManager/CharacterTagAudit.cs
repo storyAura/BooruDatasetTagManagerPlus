@@ -36,7 +36,10 @@ namespace BooruDatasetTagManager
         TextScreening,
         TextScreeningCompleted,
         VisualReview,
-        Repair
+        Repair,
+        // Targeted follow-up after visual review: colors of color-less
+        // wearables + same-slot cluster verdicts, no skills attached.
+        Resolution
     }
 
     public enum CharacterTagCategory
@@ -302,6 +305,12 @@ namespace BooruDatasetTagManager
         // Dual/multi audits: trigger words of the OTHER characters sharing
         // images with the audited one, so the prompts can pin attribution.
         public IReadOnlyList<string> OtherCharacterTriggers { get; set; } = Array.Empty<string>();
+        // Danbooru implication vocabulary (Data/danbooru_dataset_general.csv)
+        // that drives the deterministic wearable-family collapse.
+        public GeneralTagCategoryCatalog TagVocabulary { get; set; } = GeneralTagCategoryCatalog.Empty;
+        // Danbooru related-tag graph (Data/danbooru_tag_near_synonyms.csv):
+        // groups same-slot tags into clusters the visual stages must resolve.
+        public TagNearSynonymIndex NearSynonyms { get; set; } = TagNearSynonymIndex.Empty;
     }
 
     public sealed class CharacterTagTriggerCandidate
@@ -502,11 +511,76 @@ namespace BooruDatasetTagManager
 
     public static class CharacterTagResultCanonicalizer
     {
-        private static readonly HashSet<string> Colors = new HashSet<string>(StringComparer.Ordinal)
+        public static readonly HashSet<string> Colors = new HashSet<string>(StringComparer.Ordinal)
         {
             "black", "blue", "brown", "green", "grey", "gray", "orange", "pink", "purple", "red", "white", "yellow",
             "multicolored"
         };
+
+        // Danbooru implications the general CSV does not carry (hair_ribbon
+        // only lists ribbon, hairband has no parent): every specific hair
+        // accessory implies the hair ornament container.
+        private static readonly Dictionary<string, string[]> BuiltInImplications =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                ["hair ribbon"] = new[] { "hair ornament", "ribbon" },
+                ["hair bow"] = new[] { "hair ornament", "bow" },
+                ["hairband"] = new[] { "hair ornament" },
+                ["hair flower"] = new[] { "hair ornament" },
+                ["hairclip"] = new[] { "hair ornament" },
+                ["hairpin"] = new[] { "hair ornament" },
+                ["hair scrunchie"] = new[] { "hair ornament" },
+                ["hair bell"] = new[] { "hair ornament" },
+                ["hair bobbles"] = new[] { "hair ornament" },
+                ["hair stick"] = new[] { "hair ornament" },
+                ["hair tubes"] = new[] { "hair ornament" }
+            };
+
+        private static readonly HashSet<string> HairOrnamentAliases = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "hair ornament", "hair accessory"
+        };
+
+        /// <summary>
+        /// True when <paramref name="generic"/> is a container of
+        /// <paramref name="specific"/>: literal word specialization, a vocabulary
+        /// implication chain, or a built-in hair accessory implication. The
+        /// built-in table also matches through a colored form
+        /// (<c>black hair ribbon</c> → <c>hair ornament</c>).
+        /// </summary>
+        public static bool IsImplied(string generic, string specific, GeneralTagCategoryCatalog vocabulary)
+        {
+            if (string.IsNullOrWhiteSpace(generic) || string.IsNullOrWhiteSpace(specific)
+                || string.Equals(generic, specific, StringComparison.Ordinal))
+            {
+                return false;
+            }
+            if (IsWordSpecialization(generic, specific))
+                return true;
+            if (vocabulary != null && vocabulary.IsAncestor(generic, specific))
+                return true;
+            string strippedSpecific = StripColorWords(specific);
+            if (strippedSpecific.Length > 0
+                && !string.Equals(strippedSpecific, specific, StringComparison.Ordinal)
+                && vocabulary != null
+                && vocabulary.IsAncestor(generic, strippedSpecific))
+            {
+                return true;
+            }
+
+            string target = HairOrnamentAliases.Contains(generic) ? "hair ornament" : generic;
+            foreach (KeyValuePair<string, string[]> pair in BuiltInImplications)
+            {
+                if (!pair.Value.Contains(target, StringComparer.Ordinal))
+                    continue;
+                if (string.Equals(specific, pair.Key, StringComparison.Ordinal)
+                    || IsWordSpecialization(pair.Key, specific))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         private static readonly HashSet<string> SparseMinorHairTags = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -545,24 +619,491 @@ namespace BooruDatasetTagManager
             ("hairband", CharacterTagCategory.WearableAccessory)
         };
 
+        private static readonly CharacterTagCategory[] WearableCategories =
+        {
+            CharacterTagCategory.Clothing,
+            CharacterTagCategory.Footwear,
+            CharacterTagCategory.Legwear,
+            CharacterTagCategory.WearableAccessory
+        };
+
         public static void Apply(IEnumerable<CharacterTagAuditItem> items)
         {
             if (items == null)
                 throw new ArgumentNullException(nameof(items));
             List<CharacterTagAuditItem> list = items.ToList();
 
+            ReviveDeletedContainers(list, GeneralTagCategoryCatalog.Empty);
             ApplyBaseRules(list);
+            ApplyFamilyRules(list, GeneralTagCategoryCatalog.Empty);
         }
 
         public static void Apply(IEnumerable<CharacterTagAuditItem> items, CharacterTagAuditStyle style)
         {
+            Apply(items, style, GeneralTagCategoryCatalog.Empty);
+        }
+
+        public static void Apply(
+            IEnumerable<CharacterTagAuditItem> items,
+            CharacterTagAuditStyle style,
+            GeneralTagCategoryCatalog vocabulary)
+        {
             if (items == null)
                 throw new ArgumentNullException(nameof(items));
             List<CharacterTagAuditItem> list = items.ToList();
+            GeneralTagCategoryCatalog vocab = vocabulary ?? GeneralTagCategoryCatalog.Empty;
 
+            ReviveDeletedContainers(list, vocab);
             ApplyBaseRules(list);
+            ApplyFamilyRules(list, vocab);
             if (style == CharacterTagAuditStyle.Sparse)
                 ApplySparseRules(list);
+        }
+
+        /// <summary>
+        /// Wearable-family collapse driven by danbooru implications
+        /// (<paramref name="vocabulary"/> parent chains) plus literal suffixes:
+        /// first normalize invented replacement targets and fold unknown
+        /// composites back onto known precise tags, then merge one color
+        /// sibling with one type sibling of the same base (<c>black gloves</c>
+        /// + <c>elbow gloves</c>), then fold every container tag into its
+        /// confirmed specific member (<c>jewelry</c> → <c>earrings</c>). Only
+        /// the locked character's verified wearable tags take part; hair,
+        /// eyes, protected categories and other-person evidence are never
+        /// touched. An empty vocabulary keeps the pre-1.2.7 behaviour.
+        /// </summary>
+        private static void ApplyFamilyRules(List<CharacterTagAuditItem> list, GeneralTagCategoryCatalog vocabulary)
+        {
+            NormalizeReplacementTargets(list, vocabulary);
+            FoldUnknownCompositesIntoKnownColoredTags(list, vocabulary);
+            ApplySiblingMerge(list, vocabulary);
+            ApplyHypernymCollapse(list, vocabulary);
+            DeleteBareDecorationWords(list);
+        }
+
+        private static readonly HashSet<string> BareDecorationTags = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "frills", "ruffles", "pleated", "lace trim", "lace"
+        };
+
+        // Pattern prefixes name a rejected print, not a type sibling of a
+        // colored garment (plaid bikini is not "the same item as pink bikini").
+        private static readonly HashSet<string> PatternModifiers = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "plaid", "checkered", "gingham", "argyle", "floral", "polka", "print",
+            "camouflage", "camo", "leopard", "zebra", "striped", "polka-dot"
+        };
+
+        /// <summary>
+        /// A model Delete on a container or type word only strips that word
+        /// from images that never received the precise tag. When exactly one
+        /// confirmed specific wearable remains, turn the Delete into a
+        /// Replace so those images inherit it. Runs before
+        /// <see cref="ApplyBaseRules"/> so later deterministic Deletes
+        /// (swimsuit, sparse bangs) are left alone.
+        /// </summary>
+        private static void ReviveDeletedContainers(
+            List<CharacterTagAuditItem> list,
+            GeneralTagCategoryCatalog vocabulary)
+        {
+            GeneralTagCategoryCatalog vocab = vocabulary ?? GeneralTagCategoryCatalog.Empty;
+            List<CharacterTagAuditItem> verified = VerifiedWearables(list);
+            if (verified.Count == 0)
+                return;
+
+            foreach (CharacterTagAuditItem deleted in list
+                .Where(item => WearableCategories.Contains(item.Category)
+                    && item.FinalDecision == CharacterTagDecision.Delete)
+                .ToList())
+            {
+                List<(string Tag, CharacterTagAuditItem Item)> targets = verified
+                    .Select(item => (Tag: item.EffectiveTag?.Trim(), Item: item))
+                    .Where(pair => !string.IsNullOrWhiteSpace(pair.Tag)
+                        && IsReviveTarget(deleted, pair.Tag, vocab))
+                    .GroupBy(pair => pair.Tag, StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .OrderBy(pair => pair.Tag, StringComparer.Ordinal)
+                    .ToList();
+                if (targets.Count != 1)
+                    continue;
+                (string targetTag, CharacterTagAuditItem source) = targets[0];
+                RedirectItem(deleted, targetTag, source.PromptOrder,
+                    "Deleted generic tag redirected to its confirmed specific tag so images carrying only the generic tag receive it.");
+                deleted.IncludeInPrompt = source.IncludeInPrompt;
+            }
+        }
+
+        private static bool IsReviveTarget(
+            CharacterTagAuditItem deleted,
+            string specificTag,
+            GeneralTagCategoryCatalog vocabulary)
+        {
+            if (IsImplied(deleted.Tag, specificTag, vocabulary) && IsCanonicalForm(specificTag, vocabulary))
+                return true;
+            if (ContainsColorWord(deleted.Tag)
+                || deleted.Tag.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(PatternModifiers.Contains))
+            {
+                return false;
+            }
+            var deletedBases = new HashSet<string>(BasesOf(deleted.Tag, vocabulary), StringComparer.Ordinal);
+            foreach (string baseTag in BasesOf(specificTag, vocabulary))
+            {
+                if (!deletedBases.Contains(baseTag))
+                    continue;
+                if (IsColoredGarment(specificTag, baseTag)
+                    && deleted.Tag.EndsWith(" " + baseTag, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Bare decoration words are not a feature slot. When a confirmed
+        /// garment already exists they are deleted in both styles; a lone
+        /// <c>frills</c> with no clothing anchor is left for the model.
+        /// </summary>
+        private static void DeleteBareDecorationWords(List<CharacterTagAuditItem> list)
+        {
+            CharacterTagAuditItem garment = list
+                .Where(item => item.Category == CharacterTagCategory.Clothing
+                    && IsVerified(item, CharacterTagCategory.Clothing)
+                    && !BareDecorationTags.Contains(item.EffectiveTag?.Trim() ?? string.Empty))
+                .OrderBy(item => item.PromptOrder)
+                .ThenBy(item => item.EffectiveTag, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (garment == null)
+                return;
+
+            foreach (CharacterTagAuditItem item in VerifiedWearables(list))
+            {
+                string tag = item.EffectiveTag?.Trim();
+                if (string.IsNullOrEmpty(tag) || !BareDecorationTags.Contains(tag))
+                    continue;
+                DeleteItem(item, "Decoration word of " + garment.EffectiveTag + "; never a standalone prompt tag.");
+            }
+        }
+
+        /// <summary>
+        /// True when <paramref name="tag"/> is a real vocabulary entry or a
+        /// color-prefixed real entry (<c>black hair ribbon</c>,
+        /// <c>blue earrings</c>). An empty vocabulary accepts every tag so
+        /// existing no-catalog callers keep their previous behaviour.
+        /// <c>frilled black dress</c> also passes when <c>frilled dress</c> is
+        /// known — conflict with a more precise colored sibling is handled by
+        /// <see cref="FoldUnknownCompositesIntoKnownColoredTags"/>.
+        /// </summary>
+        public static bool IsCanonicalForm(string tag, GeneralTagCategoryCatalog vocabulary)
+        {
+            if (vocabulary == null || vocabulary.Count == 0)
+                return true;
+            if (string.IsNullOrWhiteSpace(tag))
+                return false;
+            if (vocabulary.Contains(tag))
+                return true;
+            string stripped = StripColorWords(tag);
+            return stripped.Length > 0 && vocabulary.Contains(stripped);
+        }
+
+        public static string StripColorWords(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+                return string.Empty;
+            return string.Join(" ", tag.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Where(word => !Colors.Contains(word)));
+        }
+
+        public static bool ContainsColorWord(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+                return false;
+            return tag.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(Colors.Contains);
+        }
+
+        private static bool IsKnownPreciseTag(string tag, GeneralTagCategoryCatalog vocabulary)
+        {
+            if (vocabulary.Contains(tag))
+                return true;
+            int space = tag.IndexOf(' ');
+            if (space <= 0)
+                return false;
+            string color = tag.Substring(0, space);
+            string rest = tag.Substring(space + 1).Trim();
+            return Colors.Contains(color) && rest.Length > 0 && vocabulary.Contains(rest);
+        }
+
+        private static void NormalizeReplacementTargets(
+            List<CharacterTagAuditItem> list,
+            GeneralTagCategoryCatalog vocabulary)
+        {
+            if (vocabulary == null || vocabulary.Count == 0)
+                return;
+            foreach (CharacterTagAuditItem item in list)
+            {
+                if (item.FinalDecision != CharacterTagDecision.Replace)
+                    continue;
+                string target = item.ReplacementTag?.Trim();
+                if (string.IsNullOrEmpty(target) || IsKnownPreciseTag(target, vocabulary))
+                    continue;
+                string known = LongestKnownSubTag(target, vocabulary);
+                if (string.IsNullOrEmpty(known) || string.Equals(known, target, StringComparison.Ordinal))
+                    continue;
+                RedirectItem(item, known, item.PromptOrder,
+                    "Replacement target is not a known tag; normalized to " + known + ".");
+            }
+        }
+
+        private static string LongestKnownSubTag(string tag, GeneralTagCategoryCatalog vocabulary)
+        {
+            string[] words = tag.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string best = null;
+            int bestLength = 0;
+            bool bestHasColor = false;
+            for (int start = 0; start < words.Length; start++)
+            {
+                for (int end = start; end < words.Length; end++)
+                {
+                    int length = end - start + 1;
+                    string candidate = string.Join(" ", words.Skip(start).Take(length));
+                    if (!vocabulary.Contains(candidate))
+                        continue;
+                    bool hasColor = ContainsColorWord(candidate);
+                    if (length > bestLength || (length == bestLength && hasColor && !bestHasColor))
+                    {
+                        best = candidate;
+                        bestLength = length;
+                        bestHasColor = hasColor;
+                    }
+                }
+            }
+            return best;
+        }
+
+        private static void FoldUnknownCompositesIntoKnownColoredTags(
+            List<CharacterTagAuditItem> list,
+            GeneralTagCategoryCatalog vocabulary)
+        {
+            if (vocabulary == null || vocabulary.Count == 0)
+                return;
+            List<(CharacterTagAuditItem Item, string Effective)> snapshot = VerifiedWearables(list)
+                .Select(item => (Item: item, Effective: item.EffectiveTag?.Trim()))
+                .Where(pair => !string.IsNullOrWhiteSpace(pair.Effective))
+                .ToList();
+            List<(CharacterTagAuditItem Item, string Effective)> knownColored = snapshot
+                .Where(pair => vocabulary.Contains(pair.Effective) && ContainsColorWord(pair.Effective))
+                .ToList();
+            if (knownColored.Count == 0)
+                return;
+
+            foreach ((CharacterTagAuditItem item, string composite) in snapshot)
+            {
+                if (vocabulary.Contains(composite))
+                    continue;
+                string best = knownColored
+                    .Where(pair => !ReferenceEquals(pair.Item, item)
+                        && IsWordSpecialization(pair.Effective, composite))
+                    .Select(pair => pair.Effective)
+                    .OrderByDescending(tag => tag.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length)
+                    .ThenBy(tag => tag, StringComparer.Ordinal)
+                    .FirstOrDefault();
+                if (best == null)
+                    continue;
+                RedirectItem(item, best, item.PromptOrder,
+                    "Unknown composite folded back to the known precise tag.");
+            }
+        }
+
+        private static void ApplySiblingMerge(List<CharacterTagAuditItem> list, GeneralTagCategoryCatalog vocabulary)
+        {
+            List<CharacterTagAuditItem> wearables = VerifiedWearables(list);
+            var groups = new Dictionary<string, List<CharacterTagAuditItem>>(StringComparer.Ordinal);
+            foreach (CharacterTagAuditItem item in wearables)
+            {
+                foreach (string baseTag in BasesOf(item.EffectiveTag, vocabulary))
+                {
+                    if (!groups.TryGetValue(baseTag, out List<CharacterTagAuditItem> members))
+                    {
+                        members = new List<CharacterTagAuditItem>();
+                        groups[baseTag] = members;
+                    }
+                    if (!members.Contains(item))
+                        members.Add(item);
+                }
+            }
+
+            foreach (KeyValuePair<string, List<CharacterTagAuditItem>> group in groups.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            {
+                string baseTag = group.Key;
+                string suffix = " " + baseTag;
+                List<CharacterTagAuditItem> colorSiblings = group.Value
+                    .Where(item => IsColoredGarment(item.EffectiveTag, baseTag))
+                    .ToList();
+                List<CharacterTagAuditItem> typeSiblings = group.Value
+                    .Where(item => item.EffectiveTag.EndsWith(suffix, StringComparison.Ordinal)
+                        && !IsColoredGarment(item.EffectiveTag, baseTag)
+                        && !ContainsColorWord(item.EffectiveTag))
+                    .ToList();
+                if (colorSiblings.Count != 1 || typeSiblings.Count != 1)
+                    continue;
+
+                CharacterTagAuditItem color = colorSiblings[0];
+                CharacterTagAuditItem type = typeSiblings[0];
+                if (!IsVerifiedWearable(color) || !IsVerifiedWearable(type))
+                    continue;
+                string colorWord = color.EffectiveTag.Substring(0, color.EffectiveTag.Length - suffix.Length);
+                string composed = colorWord + " " + type.EffectiveTag;
+                int order = Math.Min(color.PromptOrder, type.PromptOrder);
+                if (vocabulary.Contains(composed))
+                {
+                    RedirectItem(color, composed, order,
+                        "Merged color and type of the same item into one canonical tag.");
+                    RedirectItem(type, composed, order,
+                        "Merged color and type of the same item into one canonical tag.");
+                }
+                else
+                {
+                    color.PromptOrder = order;
+                    RedirectItem(type, color.EffectiveTag, order,
+                        "Same item as the colored tag; the combined form is not a known tag, so the color tag is kept.");
+                }
+            }
+        }
+
+        private static void ApplyHypernymCollapse(List<CharacterTagAuditItem> list, GeneralTagCategoryCatalog vocabulary)
+        {
+            List<CharacterTagAuditItem> wearables = VerifiedWearables(list);
+            var snapshot = wearables
+                .Select(item => (Item: item, Effective: item.EffectiveTag))
+                .Where(pair => !string.IsNullOrWhiteSpace(pair.Effective))
+                .ToList();
+            var changed = new HashSet<CharacterTagAuditItem>();
+
+            foreach ((CharacterTagAuditItem generic, string genericTag) in snapshot)
+            {
+                if (changed.Contains(generic))
+                    continue;
+                List<string> specifics = snapshot
+                    .Where(pair => !ReferenceEquals(pair.Item, generic)
+                        && !changed.Contains(pair.Item)
+                        && IsImplied(genericTag, pair.Effective, vocabulary)
+                        && IsCanonicalForm(pair.Effective, vocabulary))
+                    .Select(pair => pair.Effective)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(tag => tag, StringComparer.Ordinal)
+                    .ToList();
+                if (ContainsColorWord(genericTag)
+                    && vocabulary != null
+                    && vocabulary.Count > 0
+                    && vocabulary.Contains(genericTag))
+                {
+                    specifics = specifics
+                        .Where(vocabulary.Contains)
+                        .ToList();
+                }
+                if (specifics.Count == 0)
+                    continue;
+
+                changed.Add(generic);
+                if (specifics.Count == 1)
+                {
+                    CharacterTagAuditItem target = snapshot
+                        .Select(pair => pair.Item)
+                        .FirstOrDefault(item => string.Equals(item.EffectiveTag, specifics[0], StringComparison.Ordinal));
+                    RedirectItem(generic, specifics[0], target?.PromptOrder ?? generic.PromptOrder,
+                        "Generic category folded into its confirmed specific tag.");
+                }
+                else
+                {
+                    DeleteItem(generic, "Generic category covered by: " + string.Join(", ", specifics) + ".");
+                }
+            }
+        }
+
+        private static IEnumerable<string> BasesOf(string tag, GeneralTagCategoryCatalog vocabulary)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+                yield break;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string parent in vocabulary.GetParents(tag))
+            {
+                if (tag.EndsWith(" " + parent, StringComparison.Ordinal) && seen.Add(parent))
+                    yield return parent;
+            }
+            int lastSpace = tag.LastIndexOf(' ');
+            if (lastSpace > 0 && lastSpace < tag.Length - 1)
+            {
+                string lastWord = tag.Substring(lastSpace + 1);
+                if (seen.Add(lastWord))
+                    yield return lastWord;
+            }
+        }
+
+        /// <summary>
+        /// <paramref name="specific"/> names the same item as
+        /// <paramref name="generic"/> with extra words: it ends with the same
+        /// head noun and contains every word of the generic tag
+        /// (<c>black gloves</c> → <c>black elbow gloves</c>, <c>skirt</c> →
+        /// <c>black skirt</c>). <c>blue dress</c> is not a specialization of
+        /// <c>black dress</c>.
+        /// </summary>
+        public static bool IsWordSpecialization(string generic, string specific)
+        {
+            if (string.IsNullOrWhiteSpace(generic) || string.IsNullOrWhiteSpace(specific))
+                return false;
+            string[] genericWords = generic.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] specificWords = specific.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (genericWords.Length == 0 || specificWords.Length <= genericWords.Length)
+                return false;
+            if (!string.Equals(genericWords[^1], specificWords[^1], StringComparison.Ordinal))
+                return false;
+            var pool = new HashSet<string>(specificWords, StringComparer.Ordinal);
+            return genericWords.All(pool.Contains);
+        }
+
+        private static List<CharacterTagAuditItem> VerifiedWearables(IEnumerable<CharacterTagAuditItem> items)
+        {
+            return items.Where(IsVerifiedWearable).ToList();
+        }
+
+        private static bool IsVerifiedWearable(CharacterTagAuditItem item)
+        {
+            return WearableCategories.Contains(item.Category) && IsVerified(item, item.Category);
+        }
+
+        public static bool IsVerifiedWearableItem(CharacterTagAuditItem item)
+        {
+            return item != null && IsVerifiedWearable(item);
+        }
+
+        public static bool IsVerifiedHairOrWearable(CharacterTagAuditItem item)
+        {
+            return item != null
+                && (IsVerifiedWearable(item)
+                    || (item.Category == CharacterTagCategory.Hair && IsVerified(item, CharacterTagCategory.Hair)));
+        }
+
+        public static void Redirect(CharacterTagAuditItem item, string targetTag, int promptOrder, string reason)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(targetTag))
+                return;
+            RedirectItem(item, targetTag.Trim(), promptOrder, reason);
+        }
+
+        private static void RedirectItem(CharacterTagAuditItem item, string targetTag, int promptOrder, string reason)
+        {
+            if (string.Equals(item.Tag, targetTag, StringComparison.Ordinal))
+            {
+                item.FinalDecision = CharacterTagDecision.Keep;
+                item.ReplacementTag = string.Empty;
+            }
+            else
+            {
+                item.FinalDecision = CharacterTagDecision.Replace;
+                item.ReplacementTag = targetTag;
+            }
+            item.PromptOrder = promptOrder;
+            item.Reason = reason;
         }
 
         private static void ApplyBaseRules(List<CharacterTagAuditItem> list)
@@ -600,6 +1141,15 @@ namespace BooruDatasetTagManager
                 CharacterTagAuditItem target = FindVerifiedColored(list, category, garment)
                     ?? FindVerifiedSpecificGarment(list, category, garment);
                 if (target == null)
+                    continue;
+                // Two distinct colors (black dress + blue dress): no single
+                // target to pick — the family rules delete the generic instead.
+                int distinctColors = list
+                    .Where(item => IsVerified(item, category) && IsColoredGarment(item.EffectiveTag, garment))
+                    .Select(item => item.EffectiveTag)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count();
+                if (distinctColors > 1)
                     continue;
                 string targetTag = target.EffectiveTag;
                 if (string.Equals(garment, "jacket", StringComparison.Ordinal))
@@ -739,7 +1289,8 @@ namespace BooruDatasetTagManager
                 && string.Equals(item.EffectiveTag, targetTag, StringComparison.Ordinal));
             foreach (CharacterTagAuditItem item in list.Where(item => IsVerified(item, category)
                 && string.Equals(item.Tag, sourceTag, StringComparison.Ordinal)
-                && !string.Equals(item.Tag, targetTag, StringComparison.Ordinal)))
+                && !string.Equals(item.Tag, targetTag, StringComparison.Ordinal)
+                && !string.Equals(item.EffectiveTag, targetTag, StringComparison.Ordinal)))
             {
                 item.FinalDecision = CharacterTagDecision.Replace;
                 item.ReplacementTag = targetTag;
@@ -810,7 +1361,7 @@ namespace BooruDatasetTagManager
             {
                 if (string.Equals(other, tag, StringComparison.Ordinal))
                     continue;
-                if (other.EndsWith(" " + tag, StringComparison.Ordinal))
+                if (CharacterTagResultCanonicalizer.IsWordSpecialization(tag, other))
                     return true;
             }
             return false;
@@ -1137,7 +1688,8 @@ namespace BooruDatasetTagManager
             var initialByTag = initial.ToDictionary(item => item.Tag, StringComparer.Ordinal);
             foreach (CharacterTagAuditItem item in final)
                 item.InitialDecision = initialByTag[item.Tag].FinalDecision;
-            CharacterTagResultCanonicalizer.Apply(final, options.Style);
+            await RunResolutionAsync(options, final, metrics, cancellationToken).ConfigureAwait(false);
+            CharacterTagResultCanonicalizer.Apply(final, options.Style, options.TagVocabulary);
             progress?.Report(new CharacterTagAuditProgress
             {
                 Stage = CharacterTagAuditStage.VisualReview,
@@ -1146,6 +1698,51 @@ namespace BooruDatasetTagManager
                 TotalSteps = totalSteps
             });
             return final;
+        }
+
+        /// <summary>
+        /// The visual stage keeps leaving wearables color-less and same-slot
+        /// tags side by side (bow + hair ribbon + hairband). This extra
+        /// request asks only those questions with the reference attached and
+        /// no skills, then applies answers that stay inside the requested
+        /// tags. It is best-effort: any failure keeps the visual result.
+        /// </summary>
+        private async Task RunResolutionAsync(
+            CharacterTagAuditOptions options,
+            IReadOnlyList<CharacterTagAuditItem> final,
+            CharacterTagAuditMetrics metrics,
+            CancellationToken cancellationToken)
+        {
+            IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(final);
+            IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
+                final, options.NearSynonyms, options.TagVocabulary);
+            if (!CharacterTagResolution.NeedsResolution(colorless, clusters))
+                return;
+
+            var request = new CharacterTagModelRequest
+            {
+                Stage = CharacterTagAuditStage.Resolution,
+                Model = options.Model,
+                SystemPrompt = CharacterTagResolution.SystemPrompt,
+                UserPrompt = CharacterTagResolution.BuildUserPrompt(options.TriggerWord, colorless, clusters)
+            };
+            request.ImagePaths.Add(options.ReferenceImagePath);
+            try
+            {
+                CharacterTagModelResponse response = await RequestWithMetricsAsync(request, metrics, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
+                    return;
+                CharacterTagResolution.Apply(
+                    final.ToList(), response.Result, colorless, clusters, options.TagVocabulary);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("CharacterTagAudit resolution pass skipped: " + ex.Message);
+            }
         }
 
         /// <summary>
@@ -1167,6 +1764,23 @@ namespace BooruDatasetTagManager
 
         private static string BuildVisualPrompt(IReadOnlyList<CharacterTagAuditItem> initial, CharacterTagAuditOptions options)
         {
+            IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(initial);
+            IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
+                initial, options.NearSynonyms, options.TagVocabulary);
+            string todo = string.Empty;
+            if (colorless.Count > 0)
+            {
+                todo += "Color-less wearable tags you MUST resolve now: " + string.Join(", ", colorless)
+                    + ". For each: replace -> \"<color> <tag>\" when the reference shows the color, otherwise keep with a "
+                    + "reason starting \"color unverifiable:\".\n";
+            }
+            if (clusters.Count > 0)
+            {
+                todo += "Same-slot clusters in this inventory (each names related tags that may describe ONE item): "
+                    + CharacterTagResolution.FormatClusters(clusters)
+                    + ". For each cluster keep only the tags that are visibly distinct items on the reference; map every "
+                    + "other member to the single best tag (color + type when confirmed).\n";
+            }
             return BuildOtherCharactersHint(options)
                 + (options.OtherCharacterTriggers != null && options.OtherCharacterTriggers.Count > 0
                     ? "The attached reference image shows ONLY the locked character ("
@@ -1181,7 +1795,10 @@ namespace BooruDatasetTagManager
                 + "the locked character, use replace with the color-prefixed tag (for example jacket -> black jacket) even "
                 + "if that colored tag does not exist anywhere in the inventory. Keep the color-less tag only when the "
                 + "color is genuinely unverifiable, and explain why in reason. Never answer replace with an empty "
-                + "replacement_tag.\nPreliminary: "
+                + "replacement_tag.\n"
+                + todo
+                + "Each reason must cite what you see in the reference (at least 8 words); stock phrases such as "
+                + "\"core tag\" or \"required tag\" are invalid.\nPreliminary: "
                 + JsonConvert.SerializeObject(initial.Select(item => new
                 {
                     tag = item.Tag,
@@ -1193,6 +1810,10 @@ namespace BooruDatasetTagManager
                     prompt_order = item.PromptOrder
                 }));
         }
+
+        // Text screening + visual review + the optional resolution pass.
+        // Repair retries are excluded from this user-facing worst case.
+        public const int MaxRequestsPerProfile = 3;
 
         // A malformed model answer goes through one Repair request; if that
         // still fails to validate, the whole [original → repair] pair is
