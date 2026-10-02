@@ -1,4 +1,4 @@
-﻿
+
 namespace BooruDatasetTagManager
 {
     partial class MainForm
@@ -65,6 +65,7 @@ namespace BooruDatasetTagManager
             BtnTagImageChecker = new System.Windows.Forms.ToolStripButton();
             toolStripSeparator9 = new System.Windows.Forms.ToolStripSeparator();
             BtnTagFindInAll = new System.Windows.Forms.ToolStripButton();
+            BtnTagFindInImage = new System.Windows.Forms.ToolStripButton();
             menuStrip1 = new System.Windows.Forms.MenuStrip();
             fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             openFolderToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -311,7 +312,7 @@ namespace BooruDatasetTagManager
             // 
             toolStripTags.Dock = System.Windows.Forms.DockStyle.None;
             toolStripTags.ImageScalingSize = new System.Drawing.Size(32, 32);
-            toolStripTags.Items.AddRange(new System.Windows.Forms.ToolStripItem[] { BtnTagAdd, BtnTagDelete, BtnTagUndo, BtnTagRedo, toolStripSeparator1, BtnTagCopy, BtnTagPaste, BtnTagSetToAll, toolStripSeparator2, BtnTagPasteFromClipBoard, BtnTagShow, toolStripSplitButton1, toolStripSeparator4, BtnTagUp, BtnTagDown, toolStripSeparator7, BtnTagImageChecker, toolStripSeparator9, BtnTagFindInAll });
+            toolStripTags.Items.AddRange(new System.Windows.Forms.ToolStripItem[] { BtnTagAdd, BtnTagDelete, BtnTagUndo, BtnTagRedo, toolStripSeparator1, BtnTagCopy, BtnTagPaste, BtnTagSetToAll, toolStripSeparator2, BtnTagPasteFromClipBoard, BtnTagShow, toolStripSplitButton1, toolStripSeparator4, BtnTagUp, BtnTagDown, toolStripSeparator7, BtnTagImageChecker, toolStripSeparator9, BtnTagFindInImage, BtnTagFindInAll });
             toolStripTags.Location = new System.Drawing.Point(0, 3);
             toolStripTags.Name = "toolStripTags";
             toolStripTags.Size = new System.Drawing.Size(37, 587);
@@ -502,6 +503,16 @@ namespace BooruDatasetTagManager
             // 
             toolStripSeparator9.Name = "toolStripSeparator9";
             toolStripSeparator9.Size = new System.Drawing.Size(35, 6);
+            // 
+            // BtnTagFindInImage
+            // 
+            BtnTagFindInImage.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+            BtnTagFindInImage.Image = Properties.Resources.Find;
+            BtnTagFindInImage.ImageTransparentColor = System.Drawing.Color.Magenta;
+            BtnTagFindInImage.Name = "BtnTagFindInImage";
+            BtnTagFindInImage.Size = new System.Drawing.Size(35, 36);
+            BtnTagFindInImage.Text = "Find tag in image";
+            BtnTagFindInImage.Click += BtnTagFindInImage_Click;
             // 
             // BtnTagFindInAll
             // 
@@ -1629,6 +1640,7 @@ namespace BooruDatasetTagManager
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator6;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator7;
         private System.Windows.Forms.ToolStripButton BtnTagFindInAll;
+        private System.Windows.Forms.ToolStripButton BtnTagFindInImage;
         private CustomTextBoxColumn customTextBoxColumn1;
         private System.Windows.Forms.ContextMenuStrip contextMenuStrip1;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem1;

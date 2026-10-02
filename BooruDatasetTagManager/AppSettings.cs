@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -105,6 +105,7 @@ namespace BooruDatasetTagManager
         public bool LoadSettingsLoadPreviewImages { get; set; } = true;
         public bool LoadSettingsReadMetadata { get; set; } = false;
         public bool UseDanbooruZhCsvBeforeTranslation { get; set; } = true;
+        public bool CopyTagsWithTranslation { get; set; } = false;
         public int QuickReplaceThreshold { get; set; } = 30;
         // Unified concurrency for ALL external-LLM batch operations (tagging + TAG2NL),
         // not just TAG2NL. Kept under the legacy JSON name for settings back-compat.
@@ -512,6 +513,7 @@ namespace BooruDatasetTagManager
                 LoadSettingsLoadPreviewImages = tempSettings.LoadSettingsLoadPreviewImages;
                 LoadSettingsReadMetadata = tempSettings.LoadSettingsReadMetadata;
                 UseDanbooruZhCsvBeforeTranslation = tempSettings.UseDanbooruZhCsvBeforeTranslation;
+                CopyTagsWithTranslation = tempSettings.CopyTagsWithTranslation;
                 QuickReplaceThreshold = tempSettings.QuickReplaceThreshold <= 0 ? 30 : tempSettings.QuickReplaceThreshold;
                 LlmT2NlConcurrency = Math.Clamp(tempSettings.LlmT2NlConcurrency, 1, 100);
                 LlmTaggerMode = tempSettings.LlmTaggerMode;

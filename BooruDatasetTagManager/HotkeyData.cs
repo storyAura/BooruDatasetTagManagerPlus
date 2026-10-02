@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -63,6 +63,7 @@ namespace BooruDatasetTagManager
             Items.Add(new HotkeyItem("BtnTagUp", "Up tag in list", Keys.PageUp, true, false, false));
             Items.Add(new HotkeyItem("BtnTagDown", "Down tag in list", Keys.PageDown, true, false, false));
             Items.Add(new HotkeyItem("BtnTagFindInAll", "Find selected tag in all list", Keys.F, true, false, false));
+            Items.Add(new HotkeyItem("BtnTagFindInImage", "Find tag in image tags", Keys.None, false, false, false));
             Items.Add(new HotkeyItem("BtnTagAddToAll", "Add tag to all", Keys.W, true, false, false));
             Items.Add(new HotkeyItem("BtnTagAddToSelected", "Add tag to selected", Keys.W, false, true, false));
             Items.Add(new HotkeyItem("BtnTagAddToFiltered", "Add tag to filtered", Keys.W, true, true, false));
@@ -100,6 +101,7 @@ namespace BooruDatasetTagManager
             this["BtnTagUp"].Text = I18n.GetText("HKBtnTagUp");
             this["BtnTagDown"].Text = I18n.GetText("HKBtnTagDown");
             this["BtnTagFindInAll"].Text = I18n.GetText("HKBtnTagFindInAll");
+            this["BtnTagFindInImage"].Text = I18n.GetText("HKBtnTagFindInImage");
             this["BtnTagAddToAll"].Text = I18n.GetText("HKBtnTagAddToAll");
             this["BtnTagAddToSelected"].Text = I18n.GetText("HKBtnTagAddToSelected");
             this["BtnTagAddToFiltered"].Text = I18n.GetText("HKBtnTagAddToFiltered");

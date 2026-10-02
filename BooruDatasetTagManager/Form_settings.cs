@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -31,6 +31,7 @@ namespace BooruDatasetTagManager
         private FontSettings autocompleteFontSettings = null;
         private System.Windows.Forms.CheckBox checkBoxUseDanbooruCsv;
         private System.Windows.Forms.CheckBox checkBoxMatchCharacterTags;
+        private System.Windows.Forms.CheckBox checkBoxCopyTagsWithTranslation;
         private System.Windows.Forms.GroupBox groupTranslationService;
         private System.Windows.Forms.GroupBox groupTranslationData;
         private System.Windows.Forms.Label labelImageEditorSaveMode;
@@ -140,6 +141,12 @@ namespace BooruDatasetTagManager
                 Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
                 Name = "checkBoxMatchCharacterTags"
             };
+            checkBoxCopyTagsWithTranslation = new System.Windows.Forms.CheckBox
+            {
+                AutoSize = true,
+                Margin = new System.Windows.Forms.Padding(4, 3, 4, 3),
+                Name = "checkBoxCopyTagsWithTranslation"
+            };
 
             tabTranslations.Controls.Remove(translationTableLayoutPanel);
             translationTableLayoutPanel.Controls.Remove(labelTransLang);
@@ -196,6 +203,7 @@ namespace BooruDatasetTagManager
             dataFlow.Controls.Add(checkBoxLoadOnlyManual);
             dataFlow.Controls.Add(checkBoxUseDanbooruCsv);
             dataFlow.Controls.Add(checkBoxMatchCharacterTags);
+            dataFlow.Controls.Add(checkBoxCopyTagsWithTranslation);
             groupTranslationData.Controls.Add(dataFlow);
 
             var root = new System.Windows.Forms.TableLayoutPanel
@@ -226,6 +234,7 @@ namespace BooruDatasetTagManager
                 numericUpDownTranslationTimeout.Minimum, numericUpDownTranslationTimeout.Maximum);
             checkBoxUseDanbooruCsv.Checked = Program.Settings.UseDanbooruZhCsvBeforeTranslation;
             checkBoxMatchCharacterTags.Checked = Program.Settings.MatchCharacterTags;
+            checkBoxCopyTagsWithTranslation.Checked = Program.Settings.CopyTagsWithTranslation;
             comboAutocompMode.Items.AddRange(Extensions.GetFriendlyEnumValues<AutocompleteMode>());
             comboAutocompMode.SelectedIndex = Extensions.GetEnumIndexFromValue<AutocompleteMode>(Program.Settings.AutocompleteMode.ToString());
             comboAutocompSort.Items.AddRange(Extensions.GetFriendlyEnumValues<AutocompleteSort>());
@@ -291,6 +300,7 @@ namespace BooruDatasetTagManager
             Program.Settings.OnlyManualTransInAutocomplete = checkBoxLoadOnlyManual.Checked;
             Program.Settings.UseDanbooruZhCsvBeforeTranslation = checkBoxUseDanbooruCsv.Checked;
             Program.Settings.MatchCharacterTags = checkBoxMatchCharacterTags.Checked;
+            Program.Settings.CopyTagsWithTranslation = checkBoxCopyTagsWithTranslation.Checked;
             Program.Settings.AutocompleteMode = Extensions.GetEnumItemFromFriendlyText<AutocompleteMode>(comboAutocompMode.SelectedItem.ToString());
             Program.Settings.AutocompleteSort = Extensions.GetEnumItemFromFriendlyText<AutocompleteSort>(comboAutocompSort.SelectedItem.ToString());
             Program.Settings.FixTagsOnSaveLoad = checkBoxFixOnLoad.Checked;
@@ -514,6 +524,7 @@ namespace BooruDatasetTagManager
             checkBoxLoadOnlyManual.Text = I18n.GetText("SettingLoadOnlyManualAutocomplete");
             checkBoxUseDanbooruCsv.Text = I18n.GetText("SettingUseDanbooruCsvBeforeTranslation");
             checkBoxMatchCharacterTags.Text = I18n.GetText("SettingMatchCharacterTags");
+            checkBoxCopyTagsWithTranslation.Text = I18n.GetText("SettingCopyTagsWithTranslation");
             checkBoxCacheImages.Text = I18n.GetText("SettingsCheckBoxCacheImages");
             labelImageEditorSaveMode.Text = I18n.GetText("SettingsImageEditorSaveMode");
             FillImageEditorSaveModeItems();

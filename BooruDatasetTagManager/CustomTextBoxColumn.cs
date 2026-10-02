@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -172,9 +172,18 @@ namespace BooruDatasetTagManager
                 case Keys.PageUp:
                 case Keys.Enter:
                     return true;
+                case Keys.C:
+                case Keys.V:
+                case Keys.X:
+                case Keys.A:
+                case Keys.Z:
+                    if ((key & Keys.Modifiers) == Keys.Control)
+                        return true;
+                    break;
                 default:
                     return !dataGridViewWantsInputKey;
             }
+            return !dataGridViewWantsInputKey;
         }
 
         // Implements the IDataGridViewEditingControl.PrepareEditingControlForEdit

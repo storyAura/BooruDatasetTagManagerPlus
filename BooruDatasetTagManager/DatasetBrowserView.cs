@@ -228,6 +228,7 @@ namespace BooruDatasetTagManager
             selectedPaths.Clear();
             selectedFolders.Clear();
             anchorPath = null;
+            anchorLastPath = null;
             defaultCollapsePending = true;
             Rebuild();
         }
@@ -342,6 +343,9 @@ namespace BooruDatasetTagManager
             selectedPaths.Clear();
             foreach (string path in incoming)
                 selectedPaths.Add(path);
+            string first = selectedPaths.FirstOrDefault();
+            anchorPath = first;
+            anchorLastPath = first;
             list.Invalidate();
         }
 
@@ -544,6 +548,7 @@ namespace BooruDatasetTagManager
                     selectedPaths.Clear();
                     selectedPaths.Add(row.Item.ImageFilePath);
                     anchorPath = row.Item.ImageFilePath;
+                    anchorLastPath = row.Item.ImageFilePath;
                     list.Invalidate();
                     SelectionChangedByUser?.Invoke();
                 }
@@ -611,18 +616,21 @@ namespace BooruDatasetTagManager
             if (shift)
             {
                 SelectRange(anchorPath ?? path, path);
+                anchorLastPath = path;
             }
             else if (control)
             {
                 if (!selectedPaths.Remove(path))
                     selectedPaths.Add(path);
                 anchorPath = path;
+                anchorLastPath = path;
             }
             else
             {
                 selectedPaths.Clear();
                 selectedPaths.Add(path);
                 anchorPath = path;
+                anchorLastPath = path;
             }
             list.Invalidate();
             SelectionChangedByUser?.Invoke();
@@ -709,7 +717,18 @@ namespace BooruDatasetTagManager
             List<int> imageIndexes = ImageRowIndexes();
             if (imageIndexes.Count == 0)
                 return;
-            int current = imageIndexes.FindIndex(i => PathEquals(rows[i].Item.ImageFilePath, anchorLastPath ?? anchorPath));
+
+            string caretPath = anchorLastPath ?? anchorPath;
+            if (!extendRange && selectedPaths.Count == 1)
+            {
+                caretPath = selectedPaths.First();
+            }
+            else if (caretPath == null && selectedPaths.Count > 0)
+            {
+                caretPath = selectedPaths.First();
+            }
+
+            int current = imageIndexes.FindIndex(i => PathEquals(rows[i].Item.ImageFilePath, caretPath));
             int next = current < 0
                 ? (direction > 0 ? 0 : imageIndexes.Count - 1)
                 : Math.Max(0, Math.Min(imageIndexes.Count - 1, current + direction));

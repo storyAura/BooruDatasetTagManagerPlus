@@ -40,6 +40,7 @@
     <Compile Include="..\BooruDatasetTagManager\EditableTag.cs" Link="Source\EditableTag.cs" />
     <Compile Include="..\BooruDatasetTagManager\EditableTagHistory.cs" Link="Source\EditableTagHistory.cs" />
     <Compile Include="..\BooruDatasetTagManager\EditableTagList.cs" Link="Source\EditableTagList.cs" />
+    <Compile Include="..\BooruDatasetTagManager\TagSearchHelper.cs" Link="Source\TagSearchHelper.cs" />
     <Compile Include="..\BooruDatasetTagManager\ImageTagGridSelection.cs" Link="Source\ImageTagGridSelection.cs" />
     <Compile Include="..\BooruDatasetTagManager\GlobalEnums.cs" Link="Source\GlobalEnums.cs" />
     <Compile Include="..\BooruDatasetTagManager\GoogleTranslator.cs" Link="Source\GoogleTranslator.cs" />
