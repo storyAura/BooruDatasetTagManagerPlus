@@ -37,6 +37,7 @@ namespace BooruDatasetTagManager
         private readonly ComboBox comboResultProfile = new ComboBox();
         private readonly TextBox textModel = new TextBox();
         private readonly NumericUpDown numericMinimumCount = new NumericUpDown();
+        private readonly NumericUpDown numericTemperature = new NumericUpDown();
         private readonly TextBox textImageSearch = new TextBox();
         private readonly ListView imageGallery = new ListView();
         private readonly ImageList galleryImages = new ImageList();
@@ -201,6 +202,11 @@ namespace BooruDatasetTagManager
             numericMinimumCount.Minimum = 1;
             numericMinimumCount.Maximum = 1000000;
             numericMinimumCount.Width = 120;
+            numericTemperature.DecimalPlaces = 2;
+            numericTemperature.Increment = 0.1m;
+            numericTemperature.Minimum = 0;
+            numericTemperature.Maximum = (decimal)CharacterTagAuditService.MaxTemperature;
+            numericTemperature.Width = 120;
             // The trigger word lives in character row A below (the single
             // mode shows only that row), so the subject-mode picker takes the
             // former trigger cell at the top left.
@@ -214,6 +220,8 @@ namespace BooruDatasetTagManager
             settings.Controls.Add(comboMode, 3, 1);
             settings.Controls.Add(new Label { Name = "labelMinimumCount", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
             settings.Controls.Add(numericMinimumCount, 1, 2);
+            settings.Controls.Add(new Label { Name = "labelAuditTemperature", AutoSize = true, Anchor = AnchorStyles.Left }, 2, 2);
+            settings.Controls.Add(numericTemperature, 3, 2);
 
             // Multi-character rows, one per character slot: trigger, gender,
             // repeat-folder scope and the reference image picker.
@@ -951,6 +959,8 @@ namespace BooruDatasetTagManager
             FindControl<Label>(pages.TabPages[0], "labelAuditStyle").Text = I18n.GetText("CharacterTagAuditStyle");
             FindControl<Label>(pages.TabPages[0], "labelAuditMode").Text = I18n.GetText("CharacterTagAuditMode");
             FindControl<Label>(pages.TabPages[0], "labelMinimumCount").Text = I18n.GetText("CharacterTagAuditMinimumCount");
+            FindControl<Label>(pages.TabPages[0], "labelAuditTemperature").Text = I18n.GetText("CharacterTagAuditTemperature");
+            metricsToolTip.SetToolTip(numericTemperature, I18n.GetText("CharacterTagAuditTemperatureHint"));
             FindControl<Label>(pages.TabPages[0], "labelSubjectMode").Text = I18n.GetText("CharacterTagAuditSubjectMode");
             for (int slot = 0; slot < MaxProfileSlots; slot++)
             {
@@ -1021,6 +1031,7 @@ namespace BooruDatasetTagManager
             for (int slot = 0; slot < MaxProfileSlots; slot++)
                 SelectChoice(comboProfileGenders[slot], genders[slot]);
             numericMinimumCount.Value = Math.Clamp(Program.Settings.CharacterTagAuditMinimumCount, 1, (int)numericMinimumCount.Maximum);
+            numericTemperature.Value = Math.Clamp((decimal)Program.Settings.CharacterTagAuditTemperature, numericTemperature.Minimum, numericTemperature.Maximum);
             textModel.Text = string.IsNullOrWhiteSpace(Program.Settings.CharacterTagAuditModel)
                 ? I18n.GetText("CharacterTagAuditModelRequired")
                 : Program.Settings.CharacterTagAuditModel;
@@ -1463,11 +1474,13 @@ namespace BooruDatasetTagManager
                     var dualService = new CharacterTagDualAuditService(service);
                     dualAuditInfo = await dualService.ExecuteAsync(BuildDualAuditOptions(), progress, cancellation.Token, dualResume);
                     dualResults = dualAuditInfo.ProfileResults.ToList();
+                    LogTemperatureWarnings(dualResults);
                 }
                 else
                 {
                     CharacterTagAuditOptions auditOptions = BuildAuditOptions();
                     auditResult = await service.ExecuteAsync(auditOptions, progress, cancellation.Token);
+                    LogTemperatureWarnings(new[] { auditResult });
                 }
 
                 Program.Settings.CharacterTagAuditStyle = SelectedChoice<CharacterTagAuditStyle>(comboStyle);
@@ -1477,6 +1490,7 @@ namespace BooruDatasetTagManager
                     .Select(SelectedChoice<CharacterGender>)
                     .ToArray();
                 Program.Settings.CharacterTagAuditMinimumCount = (int)numericMinimumCount.Value;
+                Program.Settings.CharacterTagAuditTemperature = (float)numericTemperature.Value;
                 Program.Settings.SaveSettings();
                 if (dual)
                     PrepareDualResults();
@@ -1567,6 +1581,17 @@ namespace BooruDatasetTagManager
             }
         }
 
+        private static void LogTemperatureWarnings(IEnumerable<CharacterTagAuditResult> results)
+        {
+            foreach (string warning in results
+                .Select(result => result?.Metrics?.TemperatureWarning)
+                .Where(warning => !string.IsNullOrEmpty(warning))
+                .Distinct(StringComparer.Ordinal))
+            {
+                DebugLog.Write("CharacterTagAudit", warning);
+            }
+        }
+
         private CharacterTagAuditService CreateAuditService()
         {
             return new CharacterTagAuditService(async (request, token) =>
@@ -1578,12 +1603,17 @@ namespace BooruDatasetTagManager
                     UserPrompt = request.UserPrompt
                 };
                 openAiRequest.ImagePath.AddRange(request.ImagePaths);
+                if (request.Temperature.HasValue)
+                    openAiRequest.Temperature = request.Temperature.Value;
                 OpenAiDetailedResponse response = await Program.OpenAiAutoTagger.SendDetailedRequestAsync(openAiRequest, token);
                 CharacterTagTokenUsage usage = response.TotalTokens.HasValue
                     ? new CharacterTagTokenUsage(response.InputTokens ?? 0, response.OutputTokens ?? 0, response.TotalTokens.Value)
                     : null;
                 return new CharacterTagModelResponse(response.Result, response.ErrMessage, usage);
-            });
+            })
+            {
+                Temperature = (float)numericTemperature.Value
+            };
         }
 
         private CharacterTagAuditOptions BuildAuditOptions()
@@ -1655,6 +1685,7 @@ namespace BooruDatasetTagManager
                 var progress = new Progress<CharacterTagAuditProgress>(UpdateAuditProgress);
                 auditResult = await service.ExecuteVisualReviewAsync(
                     BuildAuditOptions(), initialAuditItems, progress, cancellation.Token);
+                LogTemperatureWarnings(new[] { auditResult });
                 PrepareResults();
             }
             catch (OperationCanceledException)
@@ -2008,6 +2039,8 @@ namespace BooruDatasetTagManager
                 ? string.Format(I18n.GetText("CharacterTagAuditTokenUsage"), metrics.InputTokens, metrics.OutputTokens, metrics.TotalTokens)
                 : I18n.GetText("CharacterTagAuditTokenUnavailable");
             labelMetrics.Text = string.Format(I18n.GetText("CharacterTagAuditMetrics"), metrics.TotalDuration.TotalSeconds, usage);
+            if (!string.IsNullOrEmpty(metrics.TemperatureWarning))
+                labelMetrics.Text += " | " + string.Format(I18n.GetText("CharacterTagAuditTemperatureFallback"), numericTemperature.Value);
             metricsToolTip.SetToolTip(labelMetrics, string.Join(Environment.NewLine, metrics.Requests.Select((request, index) =>
                 string.Format(I18n.GetText("CharacterTagAuditMetricDetail"), index + 1, request.Stage, request.Duration.TotalSeconds,
                     request.Usage == null ? I18n.GetText("CharacterTagAuditTokenUnavailable") : request.Usage.TotalTokens.ToString()))));

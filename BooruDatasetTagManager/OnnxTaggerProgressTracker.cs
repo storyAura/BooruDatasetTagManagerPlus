@@ -9,6 +9,7 @@ namespace BooruDatasetTagManager
     {
         public IReadOnlyList<AutoTagProviderItem> Tags { get; init; }
         public double ElapsedMilliseconds { get; init; }
+        public string Error { get; init; }
     }
 
     public sealed class OnnxTaggerProgressTracker

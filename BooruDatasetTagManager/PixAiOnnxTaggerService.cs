@@ -15,27 +15,94 @@ using Newtonsoft.Json.Linq;
 
 namespace BooruDatasetTagManager
 {
+    public enum PixAiPreprocessKind
+    {
+        StretchV09,
+        LetterboxRgbV10
+    }
+
+    public sealed class PixAiModelDefinition
+    {
+        public string Id { get; init; }
+        public string Repo { get; init; }
+        public string ShortName { get; init; }
+        public PixAiPreprocessKind Preprocess { get; init; }
+        public string ModelFile { get; init; } = "model.onnx";
+        public string LabelsFile { get; init; }
+        public string ExternalDataFile { get; init; }
+        public string PreprocessFile { get; init; }
+        public string ThresholdsFile { get; init; }
+        public string CategoriesFile { get; init; }
+        public int InputSize { get; init; } = 448;
+        public double DefaultGeneralThreshold { get; init; }
+        public double DefaultCharacterThreshold { get; init; }
+
+        public IEnumerable<string> AllFiles()
+        {
+            yield return ModelFile;
+            if (!string.IsNullOrEmpty(ExternalDataFile))
+                yield return ExternalDataFile;
+            yield return LabelsFile;
+            if (!string.IsNullOrEmpty(PreprocessFile))
+                yield return PreprocessFile;
+            if (!string.IsNullOrEmpty(ThresholdsFile))
+                yield return ThresholdsFile;
+            if (!string.IsNullOrEmpty(CategoriesFile))
+                yield return CategoriesFile;
+        }
+    }
+
     public sealed class PixAiOnnxTaggerService : IDisposable
     {
         public const string ModelRepo = "deepghs/pixai-tagger-v0.9-onnx";
-        public static readonly IReadOnlyList<string> RequiredFiles = new[]
+        public const string V09Id = "pixai:v0.9";
+        public const string V10Id = "pixai:v1.0";
+        public const string V10Repo = "noaione/pixai-tagger-v1.0-onnx";
+
+        public static IReadOnlyList<PixAiModelDefinition> Models { get; } = new[]
         {
-            "model.onnx",
-            "selected_tags.csv",
-            "categories.json",
-            "preprocess.json",
-            "thresholds.csv"
+            new PixAiModelDefinition
+            {
+                Id = V09Id,
+                Repo = ModelRepo,
+                ShortName = "pixai-tagger v0.9",
+                Preprocess = PixAiPreprocessKind.StretchV09,
+                LabelsFile = "selected_tags.csv",
+                PreprocessFile = "preprocess.json",
+                ThresholdsFile = "thresholds.csv",
+                CategoriesFile = "categories.json",
+                InputSize = 448,
+                DefaultGeneralThreshold = 0.3,
+                DefaultCharacterThreshold = 0.85
+            },
+            new PixAiModelDefinition
+            {
+                Id = V10Id,
+                Repo = V10Repo,
+                ShortName = "pixai-tagger v1.0",
+                Preprocess = PixAiPreprocessKind.LetterboxRgbV10,
+                LabelsFile = "tags.json",
+                ExternalDataFile = "model.onnx.data",
+                InputSize = 1008,
+                DefaultGeneralThreshold = 0.17,
+                DefaultCharacterThreshold = 0.27
+            }
         };
+
+        public static IReadOnlyList<string> RequiredFiles { get; } = Models[0].AllFiles().ToArray();
 
         private static readonly string[] PreferredOutputNames = { "prediction", "logits" };
 
         private readonly HuggingFaceModelDownloader downloader = new HuggingFaceModelDownloader();
         private InferenceSession session;
         private bool usesDirectMlProvider;
+        private bool loadedForceCpu;
         private List<(string Name, int Category)> labels = new List<(string, int)>();
         private string inputName = "input";
         private string outputName = "prediction";
         private bool outputRequiresSigmoid;
+        private string loadedModelPath;
+        private PixAiModelDefinition loadedDefinition;
         private int inputWidth = 448;
         private int inputHeight = 448;
         private double defaultGeneralThreshold = 0.3;
@@ -43,38 +110,63 @@ namespace BooruDatasetTagManager
 
         public bool IsLoaded => session != null;
 
-        public bool IsModelReady()
+        public static PixAiModelDefinition GetById(string id)
         {
-            return RequiredFiles.All(file => downloader.IsFileCached(ModelRepo, file));
+            return Models.FirstOrDefault(model => string.Equals(model.Id, id, StringComparison.OrdinalIgnoreCase))
+                ?? Models[0];
         }
 
-        public IReadOnlyList<string> GetMissingFiles()
+        public bool IsModelReady(PixAiModelDefinition model)
         {
-            return RequiredFiles.Where(file => !downloader.IsFileCached(ModelRepo, file)).ToList();
+            if (model == null)
+                return false;
+
+            return model.AllFiles().All(file => downloader.IsFileCached(model.Repo, file));
+        }
+
+        public IReadOnlyList<string> GetMissingFiles(PixAiModelDefinition model)
+        {
+            if (model == null)
+                return Array.Empty<string>();
+
+            return model.AllFiles().Where(file => !downloader.IsFileCached(model.Repo, file)).ToList();
         }
 
         public async Task DownloadModelAsync(
+            PixAiModelDefinition model,
             HuggingFaceDownloadSource source,
             IProgress<(string file, long downloaded, long? total)> progress,
             CancellationToken cancellationToken)
         {
-            foreach (string file in RequiredFiles)
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
+
+            foreach (string file in model.AllFiles())
             {
-                if (downloader.IsFileCached(ModelRepo, file))
+                if (downloader.IsFileCached(model.Repo, file))
                     continue;
 
-                await downloader.DownloadFileAsync(source, ModelRepo, file, progress, cancellationToken).ConfigureAwait(false);
+                await downloader.DownloadFileAsync(source, model.Repo, file, progress, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        public void LoadModel()
+        public void LoadModel(PixAiModelDefinition model, bool forceCpu = false)
         {
-            if (session != null)
-                return;
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
 
-            foreach (string file in RequiredFiles)
+            if (loadedDefinition != null
+                && string.Equals(loadedDefinition.Id, model.Id, StringComparison.OrdinalIgnoreCase)
+                && session != null
+                && loadedForceCpu == forceCpu)
             {
-                if (!downloader.IsFileCached(ModelRepo, file))
+                return;
+            }
+
+            Unload();
+            foreach (string file in model.AllFiles())
+            {
+                if (!downloader.IsFileCached(model.Repo, file))
                     throw new FileNotFoundException(I18n.GetText("TaggerModelMissing"), file);
             }
 
@@ -84,13 +176,29 @@ namespace BooruDatasetTagManager
                 // a corrupt file throws here. Purge only genuine parse failures.
                 OnnxModelIntegrity.RunWithTransientLockRetry(() =>
                 {
-                    labels = PixAiSelectedTagsCsvLoader.Load(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "selected_tags.csv"));
-                    LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "thresholds.csv"));
-                    LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "preprocess.json"));
-                    string modelPath = HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx");
+                    string labelsPath = HuggingFaceModelDownloader.GetLocalPath(model.Repo, model.LabelsFile);
+                    labels = model.Preprocess == PixAiPreprocessKind.LetterboxRgbV10
+                        ? PixAiTagsJsonLoader.Load(labelsPath)
+                        : PixAiSelectedTagsCsvLoader.Load(labelsPath);
+                    if (!string.IsNullOrEmpty(model.ThresholdsFile))
+                        LoadThresholds(HuggingFaceModelDownloader.GetLocalPath(model.Repo, model.ThresholdsFile));
+                    if (!string.IsNullOrEmpty(model.PreprocessFile))
+                        LoadPreprocess(HuggingFaceModelDownloader.GetLocalPath(model.Repo, model.PreprocessFile));
+                    else
+                    {
+                        inputWidth = model.InputSize;
+                        inputHeight = model.InputSize;
+                    }
+
+                    string modelPath = HuggingFaceModelDownloader.GetLocalPath(model.Repo, model.ModelFile);
+                    loadedModelPath = modelPath;
+                    // The v1.0 SAM3 graph is about 2 GB. Full ORT optimization
+                    // rewrites it on the CPU and then DirectML spends the run
+                    // copying those nodes back. Keep the exported graph.
+                    bool lightGraph = model.Preprocess == PixAiPreprocessKind.LetterboxRgbV10;
                     try
                     {
-                        session = CreateSession(modelPath);
+                        session = CreateSession(modelPath, forceCpu, lightGraph);
                     }
                     catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
                     {
@@ -98,9 +206,11 @@ namespace BooruDatasetTagManager
                         // say nothing about the file on disk: retry on CPU before
                         // the outer handler declares the model corrupt and purges
                         // the cached download.
-                        session = CreateSession(modelPath, forceCpu: true);
+                        session = CreateSession(modelPath, forceCpu: true, lightGraph: lightGraph);
                     }
                     ConfigureSessionMetadata(session);
+                    loadedDefinition = model;
+                    loadedForceCpu = !usesDirectMlProvider;
                 });
             }
             catch (Exception ex) when (ex is not FileNotFoundException)
@@ -108,7 +218,7 @@ namespace BooruDatasetTagManager
                 Unload();
                 if (OnnxModelIntegrity.ShouldClearCachedModel(ex))
                 {
-                    ClearModelCache();
+                    ClearModelCache(model);
                     throw new ModelCorruptedException(I18n.GetText("TaggerModelCorruptCleared"), ex);
                 }
 
@@ -118,6 +228,11 @@ namespace BooruDatasetTagManager
 
         public OnnxTagResult TagImageWithTiming(string imagePath, double generalThreshold, double characterThreshold)
         {
+            return TagImageWithTiming(imagePath, TaggerProFilter.Basic(generalThreshold, characterThreshold));
+        }
+
+        public OnnxTagResult TagImageWithTiming(string imagePath, TaggerProFilter filter)
+        {
             if (session == null)
                 throw new InvalidOperationException("Model is not loaded.");
 
@@ -125,7 +240,7 @@ namespace BooruDatasetTagManager
             int inferenceSize = Math.Max(inputWidth, inputHeight);
             using Image image = ImageLoader.GetImageForInference(imagePath, inferenceSize)
                 ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
-            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, generalThreshold, characterThreshold);
+            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, filter);
             stopwatch.Stop();
             return new OnnxTagResult
             {
@@ -141,25 +256,71 @@ namespace BooruDatasetTagManager
 
         public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, double generalThreshold, double characterThreshold)
         {
+            return TagImage(image, TaggerProFilter.Basic(generalThreshold, characterThreshold));
+        }
+
+        public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, TaggerProFilter filter)
+        {
             if (session == null)
                 throw new InvalidOperationException("Model is not loaded.");
 
-            DenseTensor<float> input = PixAiOnnxImagePreprocessor.CreateInputTensor(image, inputWidth, inputHeight);
+            DenseTensor<float> input = loadedDefinition?.Preprocess == PixAiPreprocessKind.LetterboxRgbV10
+                ? PixAiV1OnnxImagePreprocessor.CreateInputTensor(image, inputWidth)
+                : PixAiOnnxImagePreprocessor.CreateInputTensor(image, inputWidth, inputHeight);
             float[] output = RunPrediction(session, input);
-            return BuildTagItems(output, generalThreshold, characterThreshold);
+            return BuildTagItems(output, filter ?? TaggerProFilter.Basic(0.3, 0.85));
+        }
+
+        public IReadOnlyList<OnnxTagResult> TagImageBatch(IReadOnlyList<string> paths, TaggerProFilter filter, int batchSize)
+        {
+            if (session == null)
+                throw new InvalidOperationException("Model is not loaded.");
+
+            filter ??= TaggerProFilter.Basic(0.3, 0.85);
+            int inferenceSize = Math.Max(inputWidth, inputHeight);
+            return OnnxInferenceBatch.Execute(
+                paths,
+                batchSize,
+                session.InputMetadata[inputName].Dimensions,
+                path => EncodePath(path, inferenceSize),
+                tensor => RunPrediction(session, tensor),
+                row => BuildTagItems(row, filter));
+        }
+
+        private (DenseTensor<float> Tensor, string Error) EncodePath(string path, int inferenceSize)
+        {
+            try
+            {
+                using Image image = ImageLoader.GetImageForInference(path, inferenceSize)
+                    ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
+                DenseTensor<float> tensor = loadedDefinition?.Preprocess == PixAiPreprocessKind.LetterboxRgbV10
+                    ? PixAiV1OnnxImagePreprocessor.CreateInputTensor(image, inputWidth)
+                    : PixAiOnnxImagePreprocessor.CreateInputTensor(image, inputWidth, inputHeight);
+                return (tensor, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, ex.Message);
+            }
         }
 
         public void Unload()
         {
             session?.Dispose();
             session = null;
+            loadedDefinition = null;
+            loadedModelPath = null;
+            loadedForceCpu = false;
             labels.Clear();
         }
 
-        public void ClearModelCache()
+        public void ClearModelCache(PixAiModelDefinition model)
         {
-            foreach (string file in RequiredFiles)
-                downloader.DeleteCachedFile(ModelRepo, file);
+            if (model == null)
+                return;
+
+            foreach (string file in model.AllFiles())
+                downloader.DeleteCachedFile(model.Repo, file);
         }
 
         public void Dispose()
@@ -228,7 +389,11 @@ namespace BooruDatasetTagManager
             catch (OnnxRuntimeException ex) when (usesDirectMlProvider)
             {
                 activeSession.Dispose();
-                session = CreateSession(HuggingFaceModelDownloader.GetLocalPath(ModelRepo, "model.onnx"), forceCpu: true);
+                session = CreateSession(
+                    loadedModelPath,
+                    forceCpu: true,
+                    lightGraph: loadedDefinition?.Preprocess == PixAiPreprocessKind.LetterboxRgbV10);
+                loadedForceCpu = true;
                 ConfigureSessionMetadata(session);
                 try
                 {
@@ -247,37 +412,45 @@ namespace BooruDatasetTagManager
                 new[] { NamedOnnxValue.CreateFromTensor(inputName, input) },
                 new[] { outputName });
             float[] output = ExtractFloatVector(results.First());
-            if (outputRequiresSigmoid)
+            // v0.9 "prediction" is already a probability. v1.0 is a logits
+            // export (output name "logits"); sigmoid once either way.
+            if (outputRequiresSigmoid
+                || loadedDefinition?.Preprocess == PixAiPreprocessKind.LetterboxRgbV10)
+            {
                 output = ApplySigmoid(output);
+            }
             return output;
         }
 
-        private List<AutoTagProviderItem> BuildTagItems(float[] output, double generalThreshold, double characterThreshold)
+        private List<AutoTagProviderItem> BuildTagItems(float[] output, TaggerProFilter filter)
         {
             var items = new List<AutoTagProviderItem>();
             int count = Math.Min(labels.Count, output.Length);
             for (int i = 0; i < count; i++)
             {
                 (string name, int category) = labels[i];
-                if (category is not (0 or 4))
-                    continue;
-
-                double threshold = category == 4 ? characterThreshold : generalThreshold;
-                if (output[i] >= threshold)
-                    items.Add(new AutoTagProviderItem { Tag = name, Confidence = output[i] });
+                if (TaggerCategoryFilter.TryAccept(name, category, output[i], filter, out AutoTagProviderItem item))
+                    items.Add(item);
             }
 
-            return TagWriteService.OrderByConfidenceDescending(items);
+            List<AutoTagProviderItem> ordered = TagWriteService.OrderByConfidenceDescending(items);
+            return filter.CharacterFirst ? TagWriteService.PlaceCharactersFirst(ordered) : ordered;
         }
 
-        private static InferenceSession CreateSession(string modelPath, bool forceCpu, out bool usesDirectMl)
+        private static InferenceSession CreateSession(string modelPath, bool forceCpu, bool lightGraph, out bool usesDirectMl)
         {
-            // Disposed once the session is constructed: ORT copies what it
-            // needs, and each leaked SessionOptions held a native handle.
+            // Full optimization of the v1.0 graph is a CPU rewrite of a 2 GB
+            // SAM3 model. DirectML then copies those rewritten nodes back to
+            // the CPU on every image. BASIC leaves the exported graph on the GPU.
             using var options = new SessionOptions
             {
-                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+                GraphOptimizationLevel = lightGraph
+                    ? GraphOptimizationLevel.ORT_ENABLE_BASIC
+                    : GraphOptimizationLevel.ORT_ENABLE_ALL,
+                EnableMemoryPattern = !lightGraph
             };
+            if (lightGraph)
+                options.EnableCpuMemArena = false;
 
             usesDirectMl = false;
             if (forceCpu)
@@ -300,9 +473,9 @@ namespace BooruDatasetTagManager
             return new InferenceSession(HuggingFaceModelDownloader.NormalizePathForOnnx(modelPath), options);
         }
 
-        private InferenceSession CreateSession(string modelPath, bool forceCpu = false)
+        private InferenceSession CreateSession(string modelPath, bool forceCpu = false, bool lightGraph = false)
         {
-            return CreateSession(modelPath, forceCpu, out usesDirectMlProvider);
+            return CreateSession(modelPath, forceCpu, lightGraph, out usesDirectMlProvider);
         }
 
         private void LoadPreprocess(string preprocessPath)
@@ -462,6 +635,151 @@ namespace BooruDatasetTagManager
             }
 
             return bitmap;
+        }
+    }
+
+    internal static class PixAiTagsJsonLoader
+    {
+        public static List<(string Name, int Category)> Load(string labelsPath)
+        {
+            return Parse(File.ReadAllText(labelsPath));
+        }
+
+        internal static List<(string Name, int Category)> Parse(string json)
+        {
+            JObject root = JObject.Parse(json);
+            JArray categories = root["categories"] as JArray
+                ?? throw new InvalidOperationException("PixAI tags.json is missing categories.");
+
+            int total = root["num_classes"]?.Value<int>() ?? 0;
+            if (total <= 0)
+            {
+                foreach (JToken category in categories)
+                {
+                    int end = category["offset"].Value<int>() + category["count"].Value<int>();
+                    if (end > total)
+                        total = end;
+                }
+            }
+
+            var slots = new (string Name, int Category)[total];
+            var filled = new bool[total];
+            foreach (JToken category in categories)
+            {
+                string name = category["name"]?.ToString() ?? string.Empty;
+                int offset = category["offset"].Value<int>();
+                int count = category["count"].Value<int>();
+                int mapped = MapCategory(name);
+                JArray tags = category["tags"] as JArray;
+                if (tags == null || tags.Count != count)
+                    throw new InvalidOperationException($"PixAI tags.json category '{name}' has an invalid count.");
+
+                for (int i = 0; i < count; i++)
+                {
+                    int index = offset + i;
+                    if ((uint)index >= (uint)total)
+                        throw new InvalidOperationException($"PixAI tags.json index {index} is outside num_classes.");
+
+                    slots[index] = (tags[i].ToString(), mapped);
+                    filled[index] = true;
+                }
+            }
+
+            var result = new List<(string, int)>(total);
+            for (int i = 0; i < total; i++)
+            {
+                if (!filled[i])
+                    throw new InvalidOperationException($"PixAI tags.json is missing tag index {i}.");
+
+                result.Add(slots[i]);
+            }
+
+            return result;
+        }
+
+        internal static int MapCategory(string name)
+        {
+            return name switch
+            {
+                "general" => TaggerCategoryFilter.General,
+                "character" => TaggerCategoryFilter.Character,
+                "copyright" => TaggerCategoryFilter.Copyright,
+                "style" => TaggerCategoryFilter.Style,
+                "meta" => TaggerCategoryFilter.Meta,
+                "rating" => TaggerCategoryFilter.Rating,
+                _ => -1
+            };
+        }
+    }
+
+    internal static class PixAiV1OnnxImagePreprocessor
+    {
+        public static DenseTensor<float> CreateInputTensor(Image source, int size)
+        {
+            using Bitmap prepared = Letterbox(source, size);
+            var tensor = new DenseTensor<float>(new[] { 1, 3, size, size });
+            BitmapData data = prepared.LockBits(
+                new Rectangle(0, 0, size, size),
+                ImageLockMode.ReadOnly,
+                PixelFormat.Format24bppRgb);
+            try
+            {
+                int stride = data.Stride;
+                int bytes = Math.Abs(stride) * size;
+                byte[] buffer = new byte[bytes];
+                Marshal.Copy(data.Scan0, buffer, 0, bytes);
+                for (int y = 0; y < size; y++)
+                {
+                    int row = y * stride;
+                    for (int x = 0; x < size; x++)
+                    {
+                        int offset = row + (x * 3);
+                        // GDI memory is B,G,R. v1.0 wants RGB, then (x/255 - 0.5) / 0.5.
+                        float red = buffer[offset + 2] / 255f;
+                        float green = buffer[offset + 1] / 255f;
+                        float blue = buffer[offset + 0] / 255f;
+                        tensor[0, 0, y, x] = (red - 0.5f) / 0.5f;
+                        tensor[0, 1, y, x] = (green - 0.5f) / 0.5f;
+                        tensor[0, 2, y, x] = (blue - 0.5f) / 0.5f;
+                    }
+                }
+            }
+            finally
+            {
+                prepared.UnlockBits(data);
+            }
+
+            return tensor;
+        }
+
+        private static Bitmap Letterbox(Image source, int size)
+        {
+            // Match run_onnx.py: scale with truncation (small images scale up),
+            // flatten alpha onto white, then center on a black square.
+            double scale = Math.Min(size / (double)source.Height, size / (double)source.Width);
+            int scaledWidth = Math.Max(1, (int)(source.Width * scale));
+            int scaledHeight = Math.Max(1, (int)(source.Height * scale));
+            scaledWidth = Math.Min(size, scaledWidth);
+            scaledHeight = Math.Min(size, scaledHeight);
+
+            using var fitted = new Bitmap(scaledWidth, scaledHeight, PixelFormat.Format24bppRgb);
+            using (Graphics graphics = Graphics.FromImage(fitted))
+            {
+                graphics.Clear(Color.White);
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                graphics.DrawImage(source, 0, 0, scaledWidth, scaledHeight);
+            }
+
+            var canvas = new Bitmap(size, size, PixelFormat.Format24bppRgb);
+            using (Graphics graphics = Graphics.FromImage(canvas))
+            {
+                graphics.Clear(Color.Black);
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                graphics.DrawImage(fitted, (size - scaledWidth) / 2, (size - scaledHeight) / 2, scaledWidth, scaledHeight);
+            }
+
+            return canvas;
         }
     }
 }

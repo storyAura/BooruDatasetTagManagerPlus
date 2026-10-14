@@ -270,6 +270,9 @@ namespace BooruDatasetTagManager
         public int InputTokens => Requests.Where(item => item.Usage != null).Sum(item => item.Usage.InputTokens);
         public int OutputTokens => Requests.Where(item => item.Usage != null).Sum(item => item.Usage.OutputTokens);
         public int TotalTokens => Requests.Where(item => item.Usage != null).Sum(item => item.Usage.TotalTokens);
+        // Set when the model rejected the configured temperature and the run
+        // fell back to the provider default; callers surface it to the user.
+        public string TemperatureWarning { get; set; }
     }
 
     public sealed class CharacterTagAuditResult
@@ -368,6 +371,8 @@ namespace BooruDatasetTagManager
         public string SystemPrompt { get; set; } = string.Empty;
         public string UserPrompt { get; set; } = string.Empty;
         public List<string> ImagePaths { get; } = new List<string>();
+        // Null = leave the provider default (set by the service; bridges forward it).
+        public float? Temperature { get; set; }
     }
 
     public sealed class CharacterTagModelResponse
@@ -658,6 +663,33 @@ namespace BooruDatasetTagManager
             ApplyFamilyRules(list, vocab);
             if (style == CharacterTagAuditStyle.Sparse)
                 ApplySparseRules(list);
+            ExcludeBodyFramingFromPrompt(list, style);
+        }
+
+        // Body-part presence words describe framing/exposure of one picture,
+        // not the character design; the model keeps putting them in the prompt.
+        private static readonly HashSet<string> BodyFramingTags = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "breasts", "thighs", "navel", "collarbone", "armpits", "cleavage", "legs", "stomach",
+            "bare shoulders", "bare legs", "bare arms", "skindentation", "ass", "feet", "toes",
+            "thigh gap", "underboob", "sideboob", "nipples", "groin"
+        };
+
+        /// <summary>
+        /// Keeps the tags in the dataset files but out of the character
+        /// prompt. Sparse also drops breast size: it is not a core identity
+        /// trait at 8–16 tags.
+        /// </summary>
+        private static void ExcludeBodyFramingFromPrompt(List<CharacterTagAuditItem> list, CharacterTagAuditStyle style)
+        {
+            foreach (CharacterTagAuditItem item in list.Where(item => item.IncludeInPrompt))
+            {
+                string tag = item.EffectiveTag?.Trim() ?? string.Empty;
+                bool sparseSize = style == CharacterTagAuditStyle.Sparse
+                    && (tag.EndsWith(" breasts", StringComparison.Ordinal) || tag == "flat chest");
+                if (BodyFramingTags.Contains(tag) || sparseSize)
+                    item.IncludeInPrompt = false;
+            }
         }
 
         /// <summary>
@@ -786,24 +818,32 @@ namespace BooruDatasetTagManager
         }
 
         /// <summary>
-        /// True when <paramref name="tag"/> is a real vocabulary entry or a
-        /// color-prefixed real entry (<c>black hair ribbon</c>,
-        /// <c>blue earrings</c>). An empty vocabulary accepts every tag so
-        /// existing no-catalog callers keep their previous behaviour.
-        /// <c>frilled black dress</c> also passes when <c>frilled dress</c> is
-        /// known — conflict with a more precise colored sibling is handled by
-        /// <see cref="FoldUnknownCompositesIntoKnownColoredTags"/>.
+        /// True when <paramref name="tag"/> is itself a real vocabulary entry.
+        /// Danbooru colors only real garments (<c>white shirt</c>,
+        /// <c>blue sailor collar</c>); <c>white long sleeves</c>,
+        /// <c>white school uniform</c> and <c>black elbow gloves</c> are
+        /// invented composites a booru-trained model never learned, so
+        /// "color + a real tag" is not enough. An empty vocabulary accepts
+        /// every tag so no-catalog callers keep their previous behaviour.
         /// </summary>
         public static bool IsCanonicalForm(string tag, GeneralTagCategoryCatalog vocabulary)
         {
             if (vocabulary == null || vocabulary.Count == 0)
                 return true;
-            if (string.IsNullOrWhiteSpace(tag))
-                return false;
-            if (vocabulary.Contains(tag))
+            return !string.IsNullOrWhiteSpace(tag) && vocabulary.Contains(tag);
+        }
+
+        /// <summary>
+        /// True when danbooru has a colored form of <paramref name="tag"/>
+        /// (<c>shirt</c> → <c>white shirt</c>). Type/attribute words such as
+        /// <c>long sleeves</c>, <c>school uniform</c>, <c>eyepatch</c> have
+        /// none, so asking for their color only produces invented tags.
+        /// </summary>
+        public static bool IsColorable(string tag, GeneralTagCategoryCatalog vocabulary)
+        {
+            if (vocabulary == null || vocabulary.Count == 0)
                 return true;
-            string stripped = StripColorWords(tag);
-            return stripped.Length > 0 && vocabulary.Contains(stripped);
+            return Colors.Any(color => vocabulary.Contains(color + " " + tag));
         }
 
         public static string StripColorWords(string tag)
@@ -821,18 +861,6 @@ namespace BooruDatasetTagManager
             return tag.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(Colors.Contains);
         }
 
-        private static bool IsKnownPreciseTag(string tag, GeneralTagCategoryCatalog vocabulary)
-        {
-            if (vocabulary.Contains(tag))
-                return true;
-            int space = tag.IndexOf(' ');
-            if (space <= 0)
-                return false;
-            string color = tag.Substring(0, space);
-            string rest = tag.Substring(space + 1).Trim();
-            return Colors.Contains(color) && rest.Length > 0 && vocabulary.Contains(rest);
-        }
-
         private static void NormalizeReplacementTargets(
             List<CharacterTagAuditItem> list,
             GeneralTagCategoryCatalog vocabulary)
@@ -844,7 +872,7 @@ namespace BooruDatasetTagManager
                 if (item.FinalDecision != CharacterTagDecision.Replace)
                     continue;
                 string target = item.ReplacementTag?.Trim();
-                if (string.IsNullOrEmpty(target) || IsKnownPreciseTag(target, vocabulary))
+                if (string.IsNullOrEmpty(target) || vocabulary.Contains(target))
                     continue;
                 string known = LongestKnownSubTag(target, vocabulary);
                 if (string.IsNullOrEmpty(known) || string.Equals(known, target, StringComparison.Ordinal))
@@ -1235,7 +1263,8 @@ namespace BooruDatasetTagManager
 
         private static bool IsGenericHairOrnament(CharacterTagAuditItem item)
         {
-            return IsVerified(item, CharacterTagCategory.WearableAccessory)
+            // Models file "pom pom hair ornament" under hair as often as under accessory.
+            return (IsVerified(item, CharacterTagCategory.WearableAccessory) || IsVerified(item, CharacterTagCategory.Hair))
                 && (string.Equals(item.Tag, "hair ornament", StringComparison.Ordinal)
                     || string.Equals(item.Tag, "hair accessory", StringComparison.Ordinal)
                     || item.Tag.EndsWith(" hair ornament", StringComparison.Ordinal));
@@ -1439,8 +1468,13 @@ namespace BooruDatasetTagManager
                     }
                     if (decision == CharacterTagDecision.Delete)
                         includeInPrompt = false;
-                    if (!CharacterTagAuditPolicy.CanDelete(category) && category != CharacterTagCategory.Identity)
+                    // A model "identity" label alone cannot put a protected tag in
+                    // the prompt (official alternate costume came through as one).
+                    if (!CharacterTagAuditPolicy.CanDelete(category)
+                        && CharacterTagAuditPolicy.ClassifyLocally(tag) != CharacterTagCategory.Identity)
+                    {
                         includeInPrompt = false;
+                    }
                     parsed[tag] = new CharacterTagAuditItem
                     {
                         Tag = tag,
@@ -1713,7 +1747,7 @@ namespace BooruDatasetTagManager
             CharacterTagAuditMetrics metrics,
             CancellationToken cancellationToken)
         {
-            IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(final);
+            IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(final, options.TagVocabulary);
             IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
                 final, options.NearSynonyms, options.TagVocabulary);
             if (!CharacterTagResolution.NeedsResolution(colorless, clusters))
@@ -1764,7 +1798,7 @@ namespace BooruDatasetTagManager
 
         private static string BuildVisualPrompt(IReadOnlyList<CharacterTagAuditItem> initial, CharacterTagAuditOptions options)
         {
-            IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(initial);
+            IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(initial, options.TagVocabulary);
             IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
                 initial, options.NearSynonyms, options.TagVocabulary);
             string todo = string.Empty;
@@ -1793,9 +1827,11 @@ namespace BooruDatasetTagManager
                 + "Explicitly list and re-check every color-less garment, footwear, legwear, and wearable accessory tag "
                 + "(for example jacket, boots, shirt, skirt, hair ribbon). When the reference clearly shows its color on "
                 + "the locked character, use replace with the color-prefixed tag (for example jacket -> black jacket) even "
-                + "if that colored tag does not exist anywhere in the inventory. Keep the color-less tag only when the "
-                + "color is genuinely unverifiable, and explain why in reason. Never answer replace with an empty "
-                + "replacement_tag.\n"
+                + "if that colored tag does not exist anywhere in the inventory, but only when the colored form is a real "
+                + "danbooru tag. Never color type or attribute words danbooru does not color (long sleeves, school uniform, "
+                + "eyepatch, elbow gloves, hair ribbon, earrings): white long sleeves or white school uniform are invented "
+                + "tags and are rejected. Keep the color-less tag only when the color is genuinely unverifiable, and explain "
+                + "why in reason. Never answer replace with an empty replacement_tag.\n"
                 + todo
                 + "Each reason must cite what you see in the reference (at least 8 words); stock phrases such as "
                 + "\"core tag\" or \"required tag\" are invalid.\nPreliminary: "
@@ -1867,21 +1903,92 @@ namespace BooruDatasetTagManager
             throw lastFailure ?? new CharacterTagAuditResponseException("The model response is not valid character tag JSON.");
         }
 
+        // An audit is a judgment, not creative writing: at the provider
+        // default (often 1.0) repeat runs flipped one garment between blue
+        // and black. User-adjustable in the wizard (Settings.CharacterTagAuditTemperature).
+        public const float DefaultTemperature = 0.5f;
+        public const float MaxTemperature = 2f;
+
+        private float temperature = DefaultTemperature;
+
+        public float Temperature
+        {
+            get => temperature;
+            set => temperature = float.IsFinite(value) ? Math.Clamp(value, 0f, MaxTemperature) : DefaultTemperature;
+        }
+
+        // Proxies fail transiently (HTTP 400 get_channel_failed, 429, 5xx);
+        // before this one such error ended the whole audit. Failed calls
+        // are not billed, so retrying costs only time.
+        public const int MaxTransportAttempts = 3;
+
+        // The shared client timeout is the user's LLM setting (3600 s by
+        // default, sized for slow local taggers); one hung audit call must
+        // not freeze the wizard that long.
+        public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+        // Base delay between transport retries (attempt n waits n × this).
+        public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(2);
+
+        // Reasoning models (o-series and some proxies) accept only the default
+        // temperature; once rejected, the rest of this service's runs omit it
+        // and every result's metrics carry the warning.
+        private string temperatureWarning;
+
         private async Task<CharacterTagModelResponse> RequestWithMetricsAsync(
             CharacterTagModelRequest request,
             CharacterTagAuditMetrics metrics,
             CancellationToken cancellationToken)
         {
-            Stopwatch timer = Stopwatch.StartNew();
-            CharacterTagModelResponse response = await requestAsync(request, cancellationToken).ConfigureAwait(false);
-            timer.Stop();
-            metrics.Requests.Add(new CharacterTagRequestMetrics
+            for (int attempt = 1; ; attempt++)
             {
-                Stage = request.Stage,
-                Duration = timer.Elapsed,
-                Usage = response.Usage
-            });
-            return response;
+                request.Temperature = temperatureWarning == null ? Temperature : null;
+                Stopwatch timer = Stopwatch.StartNew();
+                CharacterTagModelResponse response = await SendWithTimeoutAsync(request, cancellationToken).ConfigureAwait(false);
+                timer.Stop();
+                metrics.Requests.Add(new CharacterTagRequestMetrics
+                {
+                    Stage = request.Stage,
+                    Duration = timer.Elapsed,
+                    Usage = response.Usage
+                });
+                if (temperatureWarning != null)
+                    metrics.TemperatureWarning = temperatureWarning;
+                if (string.IsNullOrWhiteSpace(response.ErrorMessage))
+                    return response;
+                // A rejected temperature is a setting mismatch, not a transport
+                // failure: resend at once with the provider default, without
+                // spending a retry.
+                if (request.Temperature.HasValue
+                    && response.ErrorMessage.Contains("temperature", StringComparison.OrdinalIgnoreCase))
+                {
+                    temperatureWarning = $"Model {request.Model} rejected temperature {request.Temperature.Value:0.##}; "
+                        + "using the provider default temperature. (" + response.ErrorMessage.Trim() + ")";
+                    metrics.TemperatureWarning = temperatureWarning;
+                    attempt--;
+                    continue;
+                }
+                if (attempt >= MaxTransportAttempts)
+                    return response;
+                await Task.Delay(TimeSpan.FromTicks(RetryDelay.Ticks * attempt), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<CharacterTagModelResponse> SendWithTimeoutAsync(
+            CharacterTagModelRequest request,
+            CancellationToken cancellationToken)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(RequestTimeout);
+            try
+            {
+                return await requestAsync(request, timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new CharacterTagModelResponse(
+                    null, $"Request timed out after {RequestTimeout.TotalSeconds:0} s.");
+            }
         }
 
         private static string BuildSystemPrompt(CharacterTagAuditOptions options)

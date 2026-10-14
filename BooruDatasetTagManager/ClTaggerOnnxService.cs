@@ -113,6 +113,7 @@ namespace BooruDatasetTagManager
         private readonly HuggingFaceModelDownloader downloader = new HuggingFaceModelDownloader();
         private InferenceSession session;
         private bool usesDirectMlProvider;
+        private bool loadedForceCpu;
         private string inputName;
         private string outputName;
         private string loadedModelPath;
@@ -153,11 +154,12 @@ namespace BooruDatasetTagManager
             }
         }
 
-        public void LoadModel(ClTaggerModelDefinition model)
+        public void LoadModel(ClTaggerModelDefinition model, bool forceCpu = false)
         {
             if (loadedModel != null
                 && string.Equals(loadedModel.Id, model.Id, StringComparison.OrdinalIgnoreCase)
-                && session != null)
+                && session != null
+                && loadedForceCpu == forceCpu)
             {
                 return;
             }
@@ -180,7 +182,7 @@ namespace BooruDatasetTagManager
                     loadedModelPath = modelPath;
                     try
                     {
-                        session = CreateSession(modelPath);
+                        session = CreateSession(modelPath, forceCpu);
                     }
                     catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
                     {
@@ -205,9 +207,15 @@ namespace BooruDatasetTagManager
                 throw;
             }
             loadedModel = model;
+            loadedForceCpu = !usesDirectMlProvider;
         }
 
         public OnnxTagResult TagImageWithTiming(string imagePath, double generalThreshold, double characterThreshold)
+        {
+            return TagImageWithTiming(imagePath, TaggerProFilter.Basic(generalThreshold, characterThreshold));
+        }
+
+        public OnnxTagResult TagImageWithTiming(string imagePath, TaggerProFilter filter)
         {
             if (session == null)
                 throw new InvalidOperationException("Model is not loaded.");
@@ -216,7 +224,7 @@ namespace BooruDatasetTagManager
             int inferenceSize = ResolveInputSize(session, loadedModel.FallbackInputSize);
             using Image image = ImageLoader.GetImageForInference(imagePath, inferenceSize)
                 ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
-            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, generalThreshold, characterThreshold);
+            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, filter);
             stopwatch.Stop();
             return new OnnxTagResult
             {
@@ -227,35 +235,67 @@ namespace BooruDatasetTagManager
 
         public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, double generalThreshold, double characterThreshold)
         {
+            return TagImage(image, TaggerProFilter.Basic(generalThreshold, characterThreshold));
+        }
+
+        public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, TaggerProFilter filter)
+        {
             if (session == null || loadedModel == null)
                 throw new InvalidOperationException("Model is not loaded.");
 
+            filter ??= TaggerProFilter.Basic(0.45, 0.45);
             int targetSize = ResolveInputSize(session, loadedModel.FallbackInputSize);
             DenseTensor<float> input = ClTaggerImagePreprocessor.CreateInputTensor(image, targetSize, loadedModel.Preprocess);
             float[] logits = RunPrediction(session, input);
+            return DecodeTags(logits, filter);
+        }
 
+        public IReadOnlyList<OnnxTagResult> TagImageBatch(IReadOnlyList<string> paths, TaggerProFilter filter, int batchSize)
+        {
+            if (session == null || loadedModel == null)
+                throw new InvalidOperationException("Model is not loaded.");
+
+            filter ??= TaggerProFilter.Basic(0.45, 0.45);
+            int targetSize = ResolveInputSize(session, loadedModel.FallbackInputSize);
+            ClTaggerPreprocess preprocess = loadedModel.Preprocess;
+            return OnnxInferenceBatch.Execute(
+                paths,
+                batchSize,
+                session.InputMetadata[inputName].Dimensions,
+                path => EncodePath(path, targetSize, preprocess),
+                tensor => RunPrediction(session, tensor),
+                row => DecodeTags(row, filter));
+        }
+
+        private (DenseTensor<float> Tensor, string Error) EncodePath(string path, int targetSize, ClTaggerPreprocess preprocess)
+        {
+            try
+            {
+                using Image image = ImageLoader.GetImageForInference(path, targetSize)
+                    ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
+                return (ClTaggerImagePreprocessor.CreateInputTensor(image, targetSize, preprocess), null);
+            }
+            catch (Exception ex)
+            {
+                return (null, ex.Message);
+            }
+        }
+
+        private IReadOnlyList<AutoTagProviderItem> DecodeTags(float[] logits, TaggerProFilter filter)
+        {
             var items = new List<AutoTagProviderItem>();
             int count = Math.Min(labels.Count, logits.Length);
             for (int i = 0; i < count; i++)
             {
                 (string name, string category) = labels[i];
-                if (name == null)
-                    continue;
-
-                double threshold;
-                if (string.Equals(category, "General", StringComparison.OrdinalIgnoreCase))
-                    threshold = generalThreshold;
-                else if (string.Equals(category, "Character", StringComparison.OrdinalIgnoreCase))
-                    threshold = characterThreshold;
-                else
-                    continue; // Rating/Quality/Copyright/Artist/Meta/Model are skipped like WD14.
-
-                double probability = Sigmoid(logits[i]);
-                if (probability >= threshold)
-                    items.Add(new AutoTagProviderItem { Tag = name, Confidence = (float)probability });
+                int mapped = TaggerCategoryFilter.MapClCategory(category);
+                float probability = (float)Sigmoid(logits[i]);
+                if (TaggerCategoryFilter.TryAccept(name, mapped, probability, filter, out AutoTagProviderItem item))
+                    items.Add(item);
             }
 
-            return TagWriteService.OrderByConfidenceDescending(items);
+            List<AutoTagProviderItem> ordered = TagWriteService.OrderByConfidenceDescending(items);
+            return filter.CharacterFirst ? TagWriteService.PlaceCharactersFirst(ordered) : ordered;
         }
 
         internal static double Sigmoid(double x)
@@ -279,6 +319,7 @@ namespace BooruDatasetTagManager
             session = null;
             loadedModel = null;
             loadedModelPath = null;
+            loadedForceCpu = false;
             labels.Clear();
         }
 
@@ -366,6 +407,7 @@ namespace BooruDatasetTagManager
             {
                 activeSession.Dispose();
                 session = CreateSession(loadedModelPath, forceCpu: true);
+                loadedForceCpu = true;
                 (inputName, outputName) = Wd14OnnxTaggerService.ResolveSessionMetadata(session);
                 try
                 {

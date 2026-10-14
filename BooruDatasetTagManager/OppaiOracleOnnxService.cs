@@ -78,6 +78,7 @@ namespace BooruDatasetTagManager
         private readonly HuggingFaceModelDownloader downloader = new HuggingFaceModelDownloader();
         private InferenceSession session;
         private bool usesDirectMlProvider;
+        private bool loadedForceCpu;
         private string pixelValuesName;
         private string paddingMaskName;
         private string outputName;
@@ -118,11 +119,12 @@ namespace BooruDatasetTagManager
             }
         }
 
-        public void LoadModel(OppaiOracleModelDefinition model)
+        public void LoadModel(OppaiOracleModelDefinition model, bool forceCpu = false)
         {
             if (loadedModel != null
                 && string.Equals(loadedModel.Id, model.Id, StringComparison.OrdinalIgnoreCase)
-                && session != null)
+                && session != null
+                && loadedForceCpu == forceCpu)
             {
                 return;
             }
@@ -141,7 +143,7 @@ namespace BooruDatasetTagManager
                     loadedModelPath = modelPath;
                     try
                     {
-                        session = CreateSession(modelPath);
+                        session = CreateSession(modelPath, forceCpu);
                     }
                     catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
                     {
@@ -163,6 +165,7 @@ namespace BooruDatasetTagManager
             }
 
             loadedModel = model;
+            loadedForceCpu = !usesDirectMlProvider;
         }
 
         public OnnxTagResult TagImageWithTiming(string imagePath, double threshold)
@@ -192,6 +195,123 @@ namespace BooruDatasetTagManager
             OppaiOraclePreprocessResult prepared = OppaiOracleImagePreprocessor.Create(image, targetSize);
             float[] probabilities = RunPrediction(prepared.PixelValues, prepared.PaddingMask);
             return CollectTags(labels, probabilities, threshold, prepared.WasComposited);
+        }
+
+        public IReadOnlyList<OnnxTagResult> TagImageBatch(IReadOnlyList<string> paths, double threshold, int batchSize)
+        {
+            if (session == null || loadedModel == null)
+                throw new InvalidOperationException("Model is not loaded.");
+
+            int targetSize = ResolveInputSize();
+            IReadOnlyList<int> dims = session.InputMetadata[pixelValuesName].Dimensions;
+            int batch = OnnxInferenceBatch.EffectiveSize(dims, batchSize);
+            var results = new List<OnnxTagResult>(paths.Count);
+            for (int offset = 0; offset < paths.Count; offset += batch)
+            {
+                int count = Math.Min(batch, paths.Count - offset);
+                if (count == 1)
+                {
+                    results.Add(TagOne(paths[offset], threshold, targetSize));
+                    continue;
+                }
+
+                try
+                {
+                    results.AddRange(TagGroup(paths, offset, count, threshold, targetSize));
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    for (int i = 0; i < count; i++)
+                        results.Add(TagOne(paths[offset + i], threshold, targetSize));
+                }
+            }
+
+            return results;
+        }
+
+        private OnnxTagResult TagOne(string path, double threshold, int targetSize)
+        {
+            try
+            {
+                return TagImageWithTiming(path, threshold);
+            }
+            catch (Exception ex)
+            {
+                return new OnnxTagResult { Error = ex.Message };
+            }
+        }
+
+        private List<OnnxTagResult> TagGroup(IReadOnlyList<string> paths, int offset, int count, double threshold, int targetSize)
+        {
+            var slots = new OnnxTagResult[count];
+            var pixels = new List<DenseTensor<float>>();
+            var masks = new List<DenseTensor<bool>>();
+            var composited = new List<bool>();
+            var indexes = new List<int>();
+            for (int i = 0; i < count; i++)
+            {
+                try
+                {
+                    using Image image = ImageLoader.GetImageForInference(paths[offset + i], targetSize)
+                        ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
+                    OppaiOraclePreprocessResult prepared = OppaiOracleImagePreprocessor.Create(image, targetSize);
+                    pixels.Add(prepared.PixelValues);
+                    masks.Add(prepared.PaddingMask);
+                    composited.Add(prepared.WasComposited);
+                    indexes.Add(i);
+                }
+                catch (Exception ex)
+                {
+                    slots[i] = new OnnxTagResult { Error = ex.Message };
+                }
+            }
+
+            if (pixels.Count == 0)
+                return new List<OnnxTagResult>(slots);
+
+            var stopwatch = Stopwatch.StartNew();
+            float[] output = RunPrediction(
+                pixels.Count == 1 ? pixels[0] : OnnxInferenceBatch.Concat(pixels),
+                masks.Count == 1 ? masks[0] : ConcatMasks(masks));
+            stopwatch.Stop();
+            double each = stopwatch.Elapsed.TotalMilliseconds / pixels.Count;
+            if (pixels.Count == 1)
+            {
+                slots[indexes[0]] = new OnnxTagResult
+                {
+                    Tags = CollectTags(labels, output, threshold, composited[0]),
+                    ElapsedMilliseconds = each
+                };
+                return new List<OnnxTagResult>(slots);
+            }
+
+            if (!OnnxInferenceBatch.TrySplit(output, pixels.Count, out float[][] rows))
+                throw new InvalidOperationException("Model did not return one row per image.");
+
+            for (int i = 0; i < indexes.Count; i++)
+            {
+                slots[indexes[i]] = new OnnxTagResult
+                {
+                    Tags = CollectTags(labels, rows[i], threshold, composited[i]),
+                    ElapsedMilliseconds = each
+                };
+            }
+
+            return new List<OnnxTagResult>(slots);
+        }
+
+        private static DenseTensor<bool> ConcatMasks(IReadOnlyList<DenseTensor<bool>> tensors)
+        {
+            int stride = checked((int)tensors[0].Length);
+            int rank = tensors[0].Dimensions.Length;
+            var dims = new int[rank];
+            dims[0] = tensors.Count;
+            for (int d = 1; d < rank; d++)
+                dims[d] = tensors[0].Dimensions[d];
+            var data = new bool[tensors.Count * stride];
+            for (int i = 0; i < tensors.Count; i++)
+                tensors[i].Buffer.Span.CopyTo(data.AsSpan(i * stride, stride));
+            return new DenseTensor<bool>(data, dims);
         }
 
         internal static IReadOnlyList<AutoTagProviderItem> CollectTags(
@@ -253,6 +373,7 @@ namespace BooruDatasetTagManager
             session = null;
             loadedModel = null;
             loadedModelPath = null;
+            loadedForceCpu = false;
             pixelValuesName = null;
             paddingMaskName = null;
             outputName = null;
@@ -300,6 +421,7 @@ namespace BooruDatasetTagManager
             {
                 session.Dispose();
                 session = CreateSession(loadedModelPath, forceCpu: true);
+                loadedForceCpu = true;
                 ConfigureSessionMetadata(session);
                 try
                 {

@@ -58,7 +58,8 @@ namespace BooruDatasetTagManager
             "highres", "absurdres", "lowres", "traditional media", "official art", "watermark",
             "signature", "artist name", "dated", "commentary", "english commentary",
             "chinese commentary", "translation request", "translated", "scan", "jpeg artifacts",
-            "bad id", "bad pixiv id", "duplicate", "virtual youtuber"
+            "bad id", "bad pixiv id", "duplicate", "virtual youtuber",
+            "official alternate costume", "alternate costume"
         };
 
         // Checked before Hair/Clothing so "hair ornament" / "hair bow" land here.

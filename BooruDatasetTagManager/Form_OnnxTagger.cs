@@ -32,11 +32,31 @@ namespace BooruDatasetTagManager
         private readonly Label labelModelStatus = new Label();
         private readonly ComboBox comboSetMode = new ComboBox();
         private readonly ComboBox comboSortMode = new ComboBox();
+        private readonly NumericUpDown numericBatchSize = new NumericUpDown();
+        private readonly Label labelBatchSize = new Label();
+        private readonly ComboBox comboInferenceDevice = new ComboBox();
+        private readonly CheckBox checkProfessional = new CheckBox();
+        private readonly NumericUpDown numericCopyright = new NumericUpDown();
+        private readonly NumericUpDown numericStyle = new NumericUpDown();
+        private readonly NumericUpDown numericMeta = new NumericUpDown();
+        private readonly NumericUpDown numericRating = new NumericUpDown();
+        private readonly CheckBox checkIncludeStyle = new CheckBox();
+        private readonly CheckBox checkIncludeMeta = new CheckBox();
+        private readonly CheckBox checkCharacterFirst = new CheckBox();
+        private readonly Label labelCopyright = new Label();
+        private readonly Label labelStyle = new Label();
+        private readonly Label labelMeta = new Label();
+        private readonly Label labelRating = new Label();
+        private readonly RowStyle proRowStyle = new RowStyle(SizeType.Absolute, 0F);
+        private readonly RowStyle[] proContentRows = new RowStyle[4];
+        private TableLayoutPanel proPanel;
+        private bool loadingPro;
         private readonly Label labelThreshold = new Label();
         private readonly Label labelCharacterThreshold = new Label();
         private readonly Label labelDownloadSource = new Label();
         private readonly Label labelSetMode = new Label();
         private readonly Label labelSortMode = new Label();
+        private readonly Label labelInferenceDevice = new Label();
         private readonly Label labelSizeHint = new Label();
         private readonly CheckBox checkReplaceUnderscores = new CheckBox();
         private readonly TextBox textTagPrefix = new TextBox();
@@ -79,8 +99,8 @@ namespace BooruDatasetTagManager
             Text = "Tag tagger";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.Sizable;
-            MinimumSize = new Size(720, 580);
-            ClientSize = new Size(800, 640);
+            MinimumSize = new Size(720, 820);
+            ClientSize = new Size(800, 840);
 
             var mainLayout = new TableLayoutPanel
             {
@@ -92,7 +112,7 @@ namespace BooruDatasetTagManager
             mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(72F)));
             mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(108F)));
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(152F)));
 
             mainLayout.Controls.Add(BuildSourceGroup(), 0, 0);
             mainLayout.Controls.Add(BuildModelGroup(), 0, 1);
@@ -111,6 +131,9 @@ namespace BooruDatasetTagManager
             comboSortMode.DropDownStyle = ComboBoxStyle.DropDownList;
             comboSortMode.Items.AddRange(Extensions.GetFriendlyEnumValues<AutoTaggerSort>());
 
+            comboInferenceDevice.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboInferenceDevice.Items.AddRange(Extensions.GetFriendlyEnumValues<OnnxInferenceDevice>());
+
             numericThreshold.DecimalPlaces = 2;
             numericThreshold.Increment = 0.01m;
             numericThreshold.Minimum = 0.01m;
@@ -120,6 +143,12 @@ namespace BooruDatasetTagManager
             numericCharacterThreshold.Increment = 0.01m;
             numericCharacterThreshold.Minimum = 0.01m;
             numericCharacterThreshold.Maximum = 1.00m;
+
+            numericBatchSize.DecimalPlaces = 0;
+            numericBatchSize.Increment = 1;
+            numericBatchSize.Minimum = OnnxInferenceBatch.MinSize;
+            numericBatchSize.Maximum = OnnxInferenceBatch.MaxSize;
+            numericBatchSize.Value = OnnxInferenceBatch.MinSize;
 
             radioSourceSelected.Checked = true;
             comboModel.SelectedIndexChanged += (_, _) =>
@@ -139,6 +168,7 @@ namespace BooruDatasetTagManager
                 }
 
                 LoadPostProcessForSelectedModel();
+                LoadProControls();
                 UpdateModelKindUi();
                 UpdateModelStatus();
                 PersistSettings();
@@ -149,6 +179,20 @@ namespace BooruDatasetTagManager
             comboDownloadSource.SelectedIndexChanged += (_, _) => PersistSettings();
             comboSetMode.SelectedIndexChanged += (_, _) => PersistSettings();
             comboSortMode.SelectedIndexChanged += (_, _) => PersistSettings();
+            comboInferenceDevice.SelectedIndexChanged += (_, _) => PersistSettings();
+            checkProfessional.CheckedChanged += (_, _) =>
+            {
+                UpdateProVisibility();
+                PersistSettings();
+            };
+            checkIncludeStyle.CheckedChanged += (_, _) => PersistSettings();
+            checkIncludeMeta.CheckedChanged += (_, _) => PersistSettings();
+            checkCharacterFirst.CheckedChanged += (_, _) => PersistSettings();
+            numericCopyright.ValueChanged += (_, _) => PersistSettings();
+            numericStyle.ValueChanged += (_, _) => PersistSettings();
+            numericMeta.ValueChanged += (_, _) => PersistSettings();
+            numericRating.ValueChanged += (_, _) => PersistSettings();
+            numericBatchSize.ValueChanged += (_, _) => PersistSettings();
             checkReplaceUnderscores.CheckedChanged += (_, _) => PersistSettings();
             textTagPrefix.TextChanged += (_, _) => PersistSettings();
             textTagSuffix.TextChanged += (_, _) => PersistSettings();
@@ -262,6 +306,15 @@ namespace BooruDatasetTagManager
 
             labelSortMode.Dock = DockStyle.Fill;
             labelSortMode.TextAlign = ContentAlignment.MiddleLeft;
+            labelBatchSize.Dock = DockStyle.Fill;
+            labelBatchSize.TextAlign = ContentAlignment.MiddleLeft;
+            numericBatchSize.Dock = DockStyle.Fill;
+            numericBatchSize.Margin = new Padding(0, 0, 8, 0);
+
+            comboInferenceDevice.Dock = DockStyle.Fill;
+            comboInferenceDevice.Margin = new Padding(0, 0, 8, 0);
+            labelInferenceDevice.Dock = DockStyle.Fill;
+            labelInferenceDevice.TextAlign = ContentAlignment.MiddleLeft;
 
             labelModelStatus.Dock = DockStyle.Fill;
             labelModelStatus.AutoEllipsis = true;
@@ -295,7 +348,7 @@ namespace BooruDatasetTagManager
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 4,
-                RowCount = 7
+                RowCount = 9
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLayout(120F)));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
@@ -305,6 +358,8 @@ namespace BooruDatasetTagManager
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(34F)));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(34F)));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(34F)));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(34F)));
+            layout.RowStyles.Add(proRowStyle);
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(34F)));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(34F)));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -325,24 +380,80 @@ namespace BooruDatasetTagManager
 
             layout.Controls.Add(labelSortMode, 0, 3);
             layout.Controls.Add(comboSortMode, 1, 3);
-            layout.Controls.Add(labelSizeHint, 2, 3);
-            layout.SetColumnSpan(labelSizeHint, 2);
+            layout.Controls.Add(labelBatchSize, 2, 3);
+            layout.Controls.Add(numericBatchSize, 3, 3);
 
-            layout.Controls.Add(checkReplaceUnderscores, 0, 4);
+            layout.Controls.Add(labelInferenceDevice, 0, 4);
+            layout.Controls.Add(comboInferenceDevice, 1, 4);
+            checkProfessional.AutoSize = true;
+            checkProfessional.Dock = DockStyle.Fill;
+            layout.Controls.Add(checkProfessional, 2, 4);
+            layout.SetColumnSpan(checkProfessional, 2);
+
+            TableLayoutPanel proPanel = BuildProPanel();
+            layout.Controls.Add(proPanel, 0, 5);
+            layout.SetColumnSpan(proPanel, 4);
+
+            layout.Controls.Add(checkReplaceUnderscores, 0, 6);
             layout.SetColumnSpan(checkReplaceUnderscores, 4);
 
-            layout.Controls.Add(labelTagPrefix, 0, 5);
-            layout.Controls.Add(textTagPrefix, 1, 5);
-            layout.Controls.Add(labelTagSuffix, 2, 5);
-            layout.Controls.Add(textTagSuffix, 3, 5);
-
-            layout.Controls.Add(buttonDownloadModel, 0, 6);
-            layout.SetColumnSpan(buttonDownloadModel, 2);
-            layout.Controls.Add(labelModelStatus, 2, 6);
-            layout.SetColumnSpan(labelModelStatus, 2);
+            layout.Controls.Add(labelTagPrefix, 0, 7);
+            layout.Controls.Add(textTagPrefix, 1, 7);
+            layout.Controls.Add(labelTagSuffix, 2, 7);
+            layout.Controls.Add(textTagSuffix, 3, 7);
+            layout.Controls.Add(labelSizeHint, 0, 8);
+            layout.SetColumnSpan(labelSizeHint, 4);
 
             groupModel.Controls.Add(layout);
             return groupModel;
+        }
+
+        private TableLayoutPanel BuildProPanel()
+        {
+            ConfigureThresholdBox(numericCopyright);
+            ConfigureThresholdBox(numericStyle);
+            ConfigureThresholdBox(numericMeta);
+            ConfigureThresholdBox(numericRating);
+            foreach (Label label in new[] { labelCopyright, labelStyle, labelMeta, labelRating })
+            {
+                label.Dock = DockStyle.Fill;
+                label.TextAlign = ContentAlignment.MiddleLeft;
+            }
+
+            checkIncludeStyle.AutoSize = true;
+            checkIncludeMeta.AutoSize = true;
+            checkCharacterFirst.AutoSize = true;
+            checkIncludeStyle.Dock = DockStyle.Fill;
+            checkIncludeMeta.Dock = DockStyle.Fill;
+            checkCharacterFirst.Dock = DockStyle.Fill;
+
+            proPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 4,
+                RowCount = proContentRows.Length,
+                Margin = new Padding(0)
+            };
+            proPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLayout(120F)));
+            proPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            proPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLayout(120F)));
+            proPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            for (int i = 0; i < proContentRows.Length; i++)
+            {
+                proContentRows[i] = new RowStyle(SizeType.Absolute, 0F);
+                proPanel.RowStyles.Add(proContentRows[i]);
+            }
+
+            return proPanel;
+        }
+
+        private void ConfigureThresholdBox(NumericUpDown box)
+        {
+            box.DecimalPlaces = 2;
+            box.Increment = 0.01m;
+            box.Minimum = 0.01m;
+            box.Maximum = 1.00m;
+            box.Dock = DockStyle.Fill;
         }
 
         private TableLayoutPanel BuildBottomPanel()
@@ -351,11 +462,27 @@ namespace BooruDatasetTagManager
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 3
+                RowCount = 4
             };
+            panelBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(40F)));
             panelBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(28F)));
             panelBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLayout(24F)));
             panelBottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var downloadRow = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0)
+            };
+            downloadRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLayout(148F)));
+            downloadRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            buttonDownloadModel.Dock = DockStyle.Left;
+            buttonDownloadModel.Margin = new Padding(0, 4, 8, 0);
+            labelModelStatus.Margin = new Padding(0, 4, 0, 0);
+            downloadRow.Controls.Add(buttonDownloadModel, 0, 0);
+            downloadRow.Controls.Add(labelModelStatus, 1, 0);
 
             progressBar.Dock = DockStyle.Fill;
             progressBar.Style = ProgressBarStyle.Continuous;
@@ -379,9 +506,10 @@ namespace BooruDatasetTagManager
             panelActionButtons.Controls.Add(buttonCancelJob);
             panelActionButtons.Controls.Add(buttonClose);
 
-            panelBottom.Controls.Add(progressBar, 0, 0);
-            panelBottom.Controls.Add(labelStatus, 0, 1);
-            panelBottom.Controls.Add(panelActionButtons, 0, 2);
+            panelBottom.Controls.Add(downloadRow, 0, 0);
+            panelBottom.Controls.Add(progressBar, 0, 1);
+            panelBottom.Controls.Add(labelStatus, 0, 2);
+            panelBottom.Controls.Add(panelActionButtons, 0, 3);
             return panelBottom;
         }
 
@@ -405,6 +533,17 @@ namespace BooruDatasetTagManager
             labelDownloadSource.Text = I18n.GetText("TaggerDownloadSource");
             labelSetMode.Text = I18n.GetText("TaggerSetMode");
             labelSortMode.Text = I18n.GetText("TaggerSortMode");
+            labelBatchSize.Text = I18n.GetText("TaggerBatchSize");
+            toolTip.SetToolTip(numericBatchSize, I18n.GetText("TaggerBatchSizeHint"));
+            labelInferenceDevice.Text = I18n.GetText("TaggerInferenceDevice");
+            checkProfessional.Text = I18n.GetText("TaggerProfessionalMode");
+            labelCopyright.Text = I18n.GetText("TaggerCopyrightThreshold");
+            labelStyle.Text = I18n.GetText("TaggerStyleThreshold");
+            labelMeta.Text = I18n.GetText("TaggerMetaThreshold");
+            labelRating.Text = I18n.GetText("TaggerRatingThreshold");
+            checkIncludeStyle.Text = I18n.GetText("TaggerIncludeStyle");
+            checkIncludeMeta.Text = I18n.GetText("TaggerIncludeMeta");
+            checkCharacterFirst.Text = I18n.GetText("TaggerCharacterFirst");
             labelSizeHint.Text = I18n.GetText("TaggerPixAiSizeHint");
             checkReplaceUnderscores.Text = I18n.GetText("TaggerReplaceUnderscores");
             labelTagPrefix.Text = I18n.GetText("TaggerTagPrefix");
@@ -464,6 +603,9 @@ namespace BooruDatasetTagManager
                 SelectEnum(comboDownloadSource, GetDownloadSourceForSelectedModel());
                 SelectEnum(comboSetMode, GetSetModeForSelectedModel());
                 SelectEnum(comboSortMode, GetSortModeForSelectedModel());
+                SelectEnum(comboInferenceDevice, Program.Settings.OnnxTaggerInferenceDevice);
+                numericBatchSize.Value = OnnxInferenceBatch.ClampSize(Program.Settings.OnnxTaggerBatchSize);
+                LoadProControls();
                 UpdateModelKindUi();
             }
             finally
@@ -522,8 +664,9 @@ namespace BooruDatasetTagManager
             if (entry.Kind == OnnxTaggerModelKind.PixAi)
             {
                 PixAiTaggerSettings settings = Program.Settings.PixAiTagger;
-                numericThreshold.Value = (decimal)Math.Clamp(settings.GeneralThreshold, (double)numericThreshold.Minimum, (double)numericThreshold.Maximum);
-                numericCharacterThreshold.Value = (decimal)Math.Clamp(settings.CharacterThreshold, (double)numericCharacterThreshold.Minimum, (double)numericCharacterThreshold.Maximum);
+                (double threshold, double characterThreshold) = settings.GetThresholdsForModel(entry.Id);
+                numericThreshold.Value = (decimal)Math.Clamp(threshold, (double)numericThreshold.Minimum, (double)numericThreshold.Maximum);
+                numericCharacterThreshold.Value = (decimal)Math.Clamp(characterThreshold, (double)numericCharacterThreshold.Minimum, (double)numericCharacterThreshold.Maximum);
             }
             else
             {
@@ -590,17 +733,138 @@ namespace BooruDatasetTagManager
 
         private void UpdateModelKindUi()
         {
-            OnnxTaggerModelKind kind = GetSelectedModel().Kind;
+            OnnxTaggerModelEntry entry = GetSelectedModel();
+            OnnxTaggerModelKind kind = entry.Kind;
             bool showCharacter = kind != OnnxTaggerModelKind.OppaiOracle;
             labelCharacterThreshold.Visible = showCharacter;
             numericCharacterThreshold.Visible = showCharacter;
             labelSizeHint.Visible = kind == OnnxTaggerModelKind.PixAi;
+            if (kind == OnnxTaggerModelKind.PixAi)
+            {
+                labelSizeHint.Text = string.Equals(entry.Id, PixAiOnnxTaggerService.V10Id, StringComparison.OrdinalIgnoreCase)
+                    ? I18n.GetText("TaggerPixAiV10SizeHint")
+                    : I18n.GetText("TaggerPixAiSizeHint");
+            }
             labelThreshold.Text = I18n.GetText("TaggerGeneralThreshold");
+            UpdateProVisibility();
+        }
+
+        private void LoadProControls()
+        {
+            loadingPro = true;
+            try
+            {
+                OnnxTaggerModelEntry entry = GetSelectedModel();
+                TaggerProProfile profile = TaggerProProfile.For(entry);
+                OnnxTaggerProOptions options = Program.Settings.GetProOptions(entry.Id, profile);
+                checkProfessional.Checked = Program.Settings.OnnxTaggerProfessionalMode;
+                numericCopyright.Value = ClampThreshold(options.CopyrightThreshold);
+                numericStyle.Value = ClampThreshold(options.StyleThreshold);
+                numericMeta.Value = ClampThreshold(options.MetaThreshold);
+                numericRating.Value = ClampThreshold(options.RatingThreshold);
+                checkIncludeStyle.Checked = options.IncludeStyle;
+                checkIncludeMeta.Checked = options.IncludeMeta;
+                checkCharacterFirst.Checked = options.CharacterFirst;
+            }
+            finally
+            {
+                loadingPro = false;
+            }
+        }
+
+        private static decimal ClampThreshold(double value)
+        {
+            decimal scaled = (decimal)value;
+            if (scaled < 0.01m)
+                return 0.01m;
+            if (scaled > 1.00m)
+                return 1.00m;
+            return scaled;
+        }
+
+        private void UpdateProVisibility()
+        {
+            TaggerProProfile profile = TaggerProProfile.For(GetSelectedModel());
+            bool open = checkProfessional.Checked;
+            var thresholds = new List<(Label Label, NumericUpDown Box)>();
+            if (open && profile.Copyright)
+                thresholds.Add((labelCopyright, numericCopyright));
+            if (open && profile.Style)
+                thresholds.Add((labelStyle, numericStyle));
+            if (open && profile.Meta)
+                thresholds.Add((labelMeta, numericMeta));
+            if (open && profile.Rating)
+                thresholds.Add((labelRating, numericRating));
+
+            var checks = new List<CheckBox>();
+            if (open && profile.IncludeStyle)
+                checks.Add(checkIncludeStyle);
+            if (open && profile.IncludeMeta)
+                checks.Add(checkIncludeMeta);
+            if (open && profile.CharacterFirst)
+                checks.Add(checkCharacterFirst);
+
+            labelCopyright.Visible = numericCopyright.Visible = false;
+            labelStyle.Visible = numericStyle.Visible = false;
+            labelMeta.Visible = numericMeta.Visible = false;
+            labelRating.Visible = numericRating.Visible = false;
+            checkIncludeStyle.Visible = false;
+            checkIncludeMeta.Visible = false;
+            checkCharacterFirst.Visible = false;
+
+            proPanel.SuspendLayout();
+            proPanel.Controls.Clear();
+            float rowHeight = ScaleLayout(34F);
+            int row = 0;
+            for (int i = 0; i < thresholds.Count; i += 2)
+            {
+                AddProCell(thresholds[i].Label, 0, row);
+                AddProCell(thresholds[i].Box, 1, row);
+                thresholds[i].Label.Visible = true;
+                thresholds[i].Box.Visible = true;
+                if (i + 1 < thresholds.Count)
+                {
+                    AddProCell(thresholds[i + 1].Label, 2, row);
+                    AddProCell(thresholds[i + 1].Box, 3, row);
+                    thresholds[i + 1].Label.Visible = true;
+                    thresholds[i + 1].Box.Visible = true;
+                }
+
+                proContentRows[row].Height = rowHeight;
+                row++;
+            }
+
+            for (int i = 0; i < checks.Count; i += 2)
+            {
+                AddProCell(checks[i], 0, row, 2);
+                checks[i].Visible = true;
+                if (i + 1 < checks.Count)
+                {
+                    AddProCell(checks[i + 1], 2, row, 2);
+                    checks[i + 1].Visible = true;
+                }
+
+                proContentRows[row].Height = rowHeight;
+                row++;
+            }
+
+            for (int i = row; i < proContentRows.Length; i++)
+                proContentRows[i].Height = 0F;
+
+            proRowStyle.Height = row * rowHeight;
+            proPanel.ResumeLayout();
+        }
+
+        private void AddProCell(Control control, int column, int row, int columnSpan = 1)
+        {
+            proPanel.Controls.Add(control, column, row);
+            if (columnSpan > 1)
+                proPanel.SetColumnSpan(control, columnSpan);
         }
 
         private void PersistSettings()
         {
-            if (loadingSettings)
+            if (loadingSettings || loadingPro)
                 return;
 
             SaveSettingsFromControls();
@@ -612,6 +876,21 @@ namespace BooruDatasetTagManager
             OnnxTaggerModelEntry entry = GetSelectedModel();
             Program.Settings.OnnxTaggerLastModelId = entry.Id;
 
+            Program.Settings.OnnxTaggerInferenceDevice = GetSelectedEnum<OnnxInferenceDevice>(comboInferenceDevice);
+            Program.Settings.OnnxTaggerProfessionalMode = checkProfessional.Checked;
+            Program.Settings.OnnxTaggerBatchSize = (int)numericBatchSize.Value;
+            TaggerProProfile profile = TaggerProProfile.For(entry);
+            Program.Settings.SetProOptions(entry.Id, new OnnxTaggerProOptions
+            {
+                CopyrightThreshold = (double)numericCopyright.Value,
+                StyleThreshold = (double)numericStyle.Value,
+                MetaThreshold = (double)numericMeta.Value,
+                RatingThreshold = (double)numericRating.Value,
+                IncludeStyle = checkIncludeStyle.Checked,
+                IncludeMeta = checkIncludeMeta.Checked,
+                CharacterFirst = checkCharacterFirst.Checked
+            });
+            bool characterFirst = checkProfessional.Checked && profile.CharacterFirst && checkCharacterFirst.Checked;
             HuggingFaceDownloadSource downloadSource = GetSelectedEnum<HuggingFaceDownloadSource>(comboDownloadSource);
             NetworkResultSetMode setMode = GetSelectedEnum<NetworkResultSetMode>(comboSetMode);
             AutoTaggerSort sortMode = GetSelectedEnum<AutoTaggerSort>(comboSortMode);
@@ -619,14 +898,17 @@ namespace BooruDatasetTagManager
             if (entry.Kind == OnnxTaggerModelKind.PixAi)
             {
                 PixAiTaggerSettings settings = Program.Settings.PixAiTagger;
-                settings.GeneralThreshold = (double)numericThreshold.Value;
-                settings.CharacterThreshold = (double)numericCharacterThreshold.Value;
+                settings.SetThresholdsForModel(
+                    entry.Id,
+                    (double)numericThreshold.Value,
+                    (double)numericCharacterThreshold.Value);
                 settings.ReplaceUnderscoresWithSpaces = checkReplaceUnderscores.Checked;
                 settings.TagPrefix = textTagPrefix.Text ?? string.Empty;
                 settings.TagSuffix = textTagSuffix.Text ?? string.Empty;
                 settings.DownloadSource = downloadSource;
                 settings.SetMode = setMode;
                 settings.SortMode = sortMode;
+                settings.CharacterFirst = characterFirst;
             }
             else
             {
@@ -641,7 +923,13 @@ namespace BooruDatasetTagManager
                 settings.DownloadSource = downloadSource;
                 settings.SetMode = setMode;
                 settings.SortMode = sortMode;
+                settings.CharacterFirst = characterFirst;
             }
+        }
+
+        private static bool TaggingOnCpu()
+        {
+            return OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice);
         }
 
         private static T GetSelectedEnum<T>(ComboBox combo) where T : struct, Enum
@@ -758,7 +1046,7 @@ namespace BooruDatasetTagManager
         {
             return entry.Kind switch
             {
-                OnnxTaggerModelKind.PixAi => pixAiService.IsModelReady(),
+                OnnxTaggerModelKind.PixAi => pixAiService.IsModelReady(entry.PixAiModel),
                 OnnxTaggerModelKind.ClTagger => clService.IsModelReady(entry.ClModel),
                 OnnxTaggerModelKind.OppaiOracle => oppaiService.IsModelReady(entry.OppaiModel),
                 _ => wd14Service.IsModelReady(entry.Repo)
@@ -816,7 +1104,7 @@ namespace BooruDatasetTagManager
                 });
 
                 if (entry.Kind == OnnxTaggerModelKind.PixAi)
-                    await pixAiService.DownloadModelAsync(GetSelectedDownloadSource(), progress, jobCancellation.Token).ConfigureAwait(true);
+                    await pixAiService.DownloadModelAsync(entry.PixAiModel, GetSelectedDownloadSource(), progress, jobCancellation.Token).ConfigureAwait(true);
                 else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
                     await clService.DownloadModelAsync(entry.ClModel, GetSelectedDownloadSource(), clAuthToken, progress, jobCancellation.Token).ConfigureAwait(true);
                 else if (entry.Kind == OnnxTaggerModelKind.OppaiOracle)
@@ -881,22 +1169,22 @@ namespace BooruDatasetTagManager
                     if (entry.Kind == OnnxTaggerModelKind.PixAi)
                     {
                         pixAiService.Unload();
-                        pixAiService.LoadModel();
+                        pixAiService.LoadModel(entry.PixAiModel, TaggingOnCpu());
                     }
                     else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
                     {
                         clService.Unload();
-                        clService.LoadModel(entry.ClModel);
+                        clService.LoadModel(entry.ClModel, TaggingOnCpu());
                     }
                     else if (entry.Kind == OnnxTaggerModelKind.OppaiOracle)
                     {
                         oppaiService.Unload();
-                        oppaiService.LoadModel(entry.OppaiModel);
+                        oppaiService.LoadModel(entry.OppaiModel, TaggingOnCpu());
                     }
                     else
                     {
                         wd14Service.Unload();
-                        wd14Service.LoadModel(entry.Repo);
+                        wd14Service.LoadModel(entry.Repo, TaggingOnCpu());
                     }
                 }, jobCancellation.Token).ConfigureAwait(true);
             }
@@ -929,7 +1217,7 @@ namespace BooruDatasetTagManager
         private void ClearModelCache(OnnxTaggerModelEntry entry)
         {
             if (entry.Kind == OnnxTaggerModelKind.PixAi)
-                pixAiService.ClearModelCache();
+                pixAiService.ClearModelCache(entry.PixAiModel);
             else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
                 clService.ClearModelCache(entry.ClModel);
             else if (entry.Kind == OnnxTaggerModelKind.OppaiOracle)
@@ -1015,12 +1303,16 @@ namespace BooruDatasetTagManager
                 if (entry.Kind == OnnxTaggerModelKind.PixAi)
                 {
                     PixAiTaggerSettings settings = Program.Settings.PixAiTagger;
+                    (double generalThreshold, double characterThreshold) = settings.GetThresholdsForModel(entry.Id);
+                    TaggerProFilter filter = TaggerProFilter.FromSettings(Program.Settings, entry, generalThreshold, characterThreshold);
+                    settings.CharacterFirst = filter.CharacterFirst;
+                    PixAiModelDefinition pixAiModel = entry.PixAiModel;
                     inferenceResults = await Task.Run(() =>
                     {
-                        pixAiService.LoadModel();
+                        pixAiService.LoadModel(pixAiModel, TaggingOnCpu());
                         return RunBatchInference(
                             inputs,
-                            input => pixAiService.TagImageWithTiming(input, settings.GeneralThreshold, settings.CharacterThreshold),
+                            chunk => pixAiService.TagImageBatch(chunk, filter, chunk.Count),
                             progressTracker,
                             progressReporter,
                             totalImages,
@@ -1035,12 +1327,14 @@ namespace BooruDatasetTagManager
                 {
                     Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
                     (double generalThreshold, double characterThreshold) = settings.GetThresholdsForRepo(ThresholdKey(entry));
+                    TaggerProFilter filter = TaggerProFilter.FromSettings(Program.Settings, entry, generalThreshold, characterThreshold);
+                    settings.CharacterFirst = filter.CharacterFirst;
                     inferenceResults = await Task.Run(() =>
                     {
-                        clService.LoadModel(entry.ClModel);
+                        clService.LoadModel(entry.ClModel, TaggingOnCpu());
                         return RunBatchInference(
                             inputs,
-                            input => clService.TagImageWithTiming(input, generalThreshold, characterThreshold),
+                            chunk => clService.TagImageBatch(chunk, filter, chunk.Count),
                             progressTracker,
                             progressReporter,
                             totalImages,
@@ -1058,12 +1352,13 @@ namespace BooruDatasetTagManager
                     (double generalThreshold, _) = settings.GetThresholdsForRepo(key);
                     if (!settings.HasThresholdsForRepo(key))
                         generalThreshold = entry.DefaultThreshold;
+                    settings.CharacterFirst = false;
                     inferenceResults = await Task.Run(() =>
                     {
-                        oppaiService.LoadModel(entry.OppaiModel);
+                        oppaiService.LoadModel(entry.OppaiModel, TaggingOnCpu());
                         return RunBatchInference(
                             inputs,
-                            input => oppaiService.TagImageWithTiming(input, generalThreshold),
+                            chunk => oppaiService.TagImageBatch(chunk, generalThreshold, chunk.Count),
                             progressTracker,
                             progressReporter,
                             totalImages,
@@ -1078,12 +1373,14 @@ namespace BooruDatasetTagManager
                 {
                     Wd14TaggerSettings settings = Program.Settings.Wd14Tagger;
                     (double generalThreshold, double characterThreshold) = settings.GetThresholdsForRepo(entry.Repo);
+                    TaggerProFilter filter = TaggerProFilter.FromSettings(Program.Settings, entry, generalThreshold, characterThreshold);
+                    settings.CharacterFirst = filter.CharacterFirst;
                     inferenceResults = await Task.Run(() =>
                     {
-                        wd14Service.LoadModel(entry.Repo);
+                        wd14Service.LoadModel(entry.Repo, TaggingOnCpu());
                         return RunBatchInference(
                             inputs,
-                            input => wd14Service.TagImageWithTiming(input, generalThreshold, characterThreshold),
+                            chunk => wd14Service.TagImageBatch(chunk, filter, chunk.Count),
                             progressTracker,
                             progressReporter,
                             totalImages,
@@ -1174,7 +1471,7 @@ namespace BooruDatasetTagManager
 
         private List<OnnxBatchItemResult> RunBatchInference(
             IReadOnlyList<string> inputs,
-            Func<string, OnnxTagResult> tagImage,
+            Func<IReadOnlyList<string>, IReadOnlyList<OnnxTagResult>> tagBatch,
             OnnxTaggerProgressTracker progressTracker,
             VideoProgressReporter progressReporter,
             int totalImages,
@@ -1183,9 +1480,11 @@ namespace BooruDatasetTagManager
             CancellationToken cancellationToken)
         {
             int done = 0;
-            List<OnnxBatchItemResult> results = OnnxBatchRunner.Run(
+            int batchSize = OnnxInferenceBatch.ClampSize(Program.Settings.OnnxTaggerBatchSize);
+            List<OnnxBatchItemResult> results = OnnxBatchRunner.RunInBatches(
                 inputs,
-                tagImage,
+                batchSize,
+                tagBatch,
                 errors,
                 cancellationToken,
                 (count, input) =>
@@ -1257,6 +1556,16 @@ namespace BooruDatasetTagManager
             comboDownloadSource.Enabled = !running;
             comboSetMode.Enabled = !running;
             comboSortMode.Enabled = !running;
+            comboInferenceDevice.Enabled = !running;
+            checkProfessional.Enabled = !running;
+            numericCopyright.Enabled = !running;
+            numericStyle.Enabled = !running;
+            numericMeta.Enabled = !running;
+            numericRating.Enabled = !running;
+            checkIncludeStyle.Enabled = !running;
+            checkIncludeMeta.Enabled = !running;
+            checkCharacterFirst.Enabled = !running;
+            numericBatchSize.Enabled = !running;
         }
     }
 }

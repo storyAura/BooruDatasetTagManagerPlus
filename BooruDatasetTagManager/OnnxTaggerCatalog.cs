@@ -20,6 +20,8 @@ namespace BooruDatasetTagManager
         public string Repo { get; init; }
         public double DefaultThreshold { get; init; }
         public double? DefaultCharacterThreshold { get; init; }
+        /// <summary>Non-null for Kind == PixAi.</summary>
+        public PixAiModelDefinition PixAiModel { get; init; }
         /// <summary>Non-null for Kind == ClTagger.</summary>
         public ClTaggerModelDefinition ClModel { get; init; }
         /// <summary>Non-null for Kind == OppaiOracle.</summary>
@@ -33,7 +35,7 @@ namespace BooruDatasetTagManager
 
     public static class OnnxTaggerCatalog
     {
-        public const string PixAiModelId = "pixai:v0.9";
+        public const string PixAiModelId = PixAiOnnxTaggerService.V09Id;
 
         public static IReadOnlyList<OnnxTaggerModelEntry> AllModels { get; }
 
@@ -53,15 +55,19 @@ namespace BooruDatasetTagManager
                 });
             }
 
-            models.Add(new OnnxTaggerModelEntry
+            foreach (PixAiModelDefinition model in PixAiOnnxTaggerService.Models)
             {
-                Id = PixAiModelId,
-                Kind = OnnxTaggerModelKind.PixAi,
-                DisplayName = "[PixAI] pixai-tagger v0.9",
-                Repo = PixAiOnnxTaggerService.ModelRepo,
-                DefaultThreshold = 0.3,
-                DefaultCharacterThreshold = 0.85
-            });
+                models.Add(new OnnxTaggerModelEntry
+                {
+                    Id = model.Id,
+                    Kind = OnnxTaggerModelKind.PixAi,
+                    DisplayName = "[PixAI] " + model.ShortName,
+                    Repo = model.Repo,
+                    DefaultThreshold = model.DefaultGeneralThreshold,
+                    DefaultCharacterThreshold = model.DefaultCharacterThreshold,
+                    PixAiModel = model
+                });
+            }
 
             foreach (ClTaggerModelDefinition model in ClTaggerOnnxService.Models)
             {
@@ -116,7 +122,7 @@ namespace BooruDatasetTagManager
             }
 
             string repo = string.IsNullOrWhiteSpace(wd14SelectedRepo)
-                ? Wd14OnnxTaggerService.Models[^1].Repo
+                ? Wd14OnnxTaggerService.DefaultRepo
                 : wd14SelectedRepo;
             return "wd:" + repo;
         }

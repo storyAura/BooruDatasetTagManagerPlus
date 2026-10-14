@@ -503,7 +503,13 @@ public sealed class CharacterTagAuditTests
             + "frills,general,,,0,,1,服装,服装,\n"
             + "\"frilled_dress\",general,,,1,\"dress, frills\",1,服装,裙子,\n"
             + "hairband,general,,,0,,1,饰品,发箍,\n"
-            + "hair_ornament,general,,,0,,1,饰品,发饰,\n");
+            + "hair_ornament,general,,,0,,1,饰品,发饰,\n"
+            + "red_bow,general,,,1,bow,1,饰品,蝴蝶结,\n"
+            + "choker,general,,,0,,1,饰品,项圈,\n"
+            + "black_choker,general,,,1,choker,1,饰品,项圈,\n"
+            + "skirt,general,,,0,,1,服装,裙子,\n"
+            + "black_skirt,general,,,1,skirt,1,服装,裙子,\n"
+            + "black_hairband,general,,,1,hairband,1,饰品,发箍,\n");
         foreach (string row in extraRows)
             text.Append(row).Append('\n');
         using var reader = new StringReader(text.ToString());
@@ -736,8 +742,19 @@ public sealed class CharacterTagAuditTests
                 category: CharacterTagCategory.Clothing, includeInPrompt: true)
         };
         CharacterTagResultCanonicalizer.Apply(elbow, CharacterTagAuditStyle.Full, WearableVocabulary());
-        Assert.Equal(CharacterTagDecision.Replace, elbow[0].FinalDecision);
-        Assert.Equal("black elbow gloves", elbow[0].ReplacementTag);
+        // "color + a real tag" is not a tag: danbooru has no black elbow gloves.
+        Assert.Equal(CharacterTagDecision.Keep, elbow[0].FinalDecision);
+        Assert.Equal("elbow gloves", elbow[0].EffectiveTag);
+
+        var sleeves = new List<CharacterTagAuditItem>
+        {
+            AuditItem("long sleeves", CharacterTagDecision.Replace, "white long sleeves",
+                category: CharacterTagCategory.Clothing, includeInPrompt: true)
+        };
+        CharacterTagResultCanonicalizer.Apply(sleeves, CharacterTagAuditStyle.Full,
+            WearableVocabulary("long_sleeves,general,,,0,,1,服装,袖子,"));
+        Assert.Equal(CharacterTagDecision.Keep, sleeves[0].FinalDecision);
+        Assert.Equal("long sleeves", CharacterTagPromptBuilder.Build(sleeves, string.Empty));
     }
 
     [Fact]
@@ -1283,6 +1300,140 @@ public sealed class CharacterTagAuditTests
         }, new List<CharacterTagAuditItem>()));
     }
 
+    private static CharacterTagAuditOptions MinimalOptions(string referenceImage)
+    {
+        return new CharacterTagAuditOptions
+        {
+            Inventory = CharacterTagInventory.Create(new[] { new[] { "trigger" } }),
+            MinimumCount = 1,
+            TriggerWord = "trigger",
+            Model = "test",
+            ReferenceImagePath = referenceImage,
+            CharacterAuditorSkill = "rules",
+            PromptPyramidSkill = "pyramid"
+        };
+    }
+
+    [Fact]
+    public async Task ServiceRetriesTransportErrorsAtLowTemperatureAndDropsARejectedTemperature()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+        var sent = new List<(CharacterTagAuditStage Stage, float? Temperature)>();
+        var replies = new Queue<CharacterTagModelResponse>(new[]
+        {
+            // the proxy hiccup seen in the phoenix test runs
+            new CharacterTagModelResponse(null, "HTTP 400 (new_api_error: get_channel_failed)"),
+            new CharacterTagModelResponse(ValidJson(("trigger", "keep")), string.Empty),
+            // a reasoning model refusing the temperature on the visual stage
+            new CharacterTagModelResponse(null, "HTTP 400 (Unsupported value: 'temperature' does not support 0.5)"),
+            new CharacterTagModelResponse(ValidJson(("trigger", "keep")), string.Empty)
+        });
+        var service = new CharacterTagAuditService((request, _) =>
+        {
+            sent.Add((request.Stage, request.Temperature));
+            return Task.FromResult(replies.Dequeue());
+        })
+        {
+            RetryDelay = TimeSpan.Zero
+        };
+
+        CharacterTagAuditResult result = await service.ExecuteAsync(MinimalOptions(referenceImage));
+
+        Assert.Equal("trigger", result.FinalPrompt);
+        Assert.Equal(new (CharacterTagAuditStage, float?)[]
+        {
+            (CharacterTagAuditStage.TextScreening, CharacterTagAuditService.DefaultTemperature),
+            (CharacterTagAuditStage.TextScreening, CharacterTagAuditService.DefaultTemperature),
+            (CharacterTagAuditStage.VisualReview, CharacterTagAuditService.DefaultTemperature),
+            (CharacterTagAuditStage.VisualReview, null)
+        }, sent);
+        Assert.Equal(4, result.Metrics.Requests.Count);
+        Assert.Contains("rejected temperature 0.5", result.Metrics.TemperatureWarning);
+        Assert.Contains("provider default", result.Metrics.TemperatureWarning);
+    }
+
+    [Fact]
+    public async Task ServiceSendsTheConfiguredTemperatureAndClampsInvalidValues()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+        var sent = new List<float?>();
+        var service = new CharacterTagAuditService((request, _) =>
+        {
+            sent.Add(request.Temperature);
+            return Task.FromResult(new CharacterTagModelResponse(ValidJson(("trigger", "keep")), string.Empty));
+        })
+        {
+            Temperature = 0.2f
+        };
+
+        CharacterTagAuditResult result = await service.ExecuteAsync(MinimalOptions(referenceImage));
+
+        Assert.Equal(new float?[] { 0.2f, 0.2f }, sent);
+        Assert.Null(result.Metrics.TemperatureWarning);
+
+        service.Temperature = 9f;
+        Assert.Equal(CharacterTagAuditService.MaxTemperature, service.Temperature);
+        service.Temperature = -1f;
+        Assert.Equal(0f, service.Temperature);
+        service.Temperature = float.NaN;
+        Assert.Equal(CharacterTagAuditService.DefaultTemperature, service.Temperature);
+    }
+
+    [Fact]
+    public async Task ServiceGivesUpAfterThreeTransportFailuresAndTimesOutHungCalls()
+    {
+        using var temp = new TemporaryDirectory();
+        string referenceImage = Path.Combine(temp.Path, "reference.png");
+        File.WriteAllBytes(referenceImage, new byte[] { 1 });
+
+        int calls = 0;
+        var down = new CharacterTagAuditService((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(new CharacterTagModelResponse(null, "HTTP 503"));
+        })
+        {
+            RetryDelay = TimeSpan.Zero
+        };
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => down.ExecuteAsync(MinimalOptions(referenceImage)));
+        Assert.Contains("HTTP 503", error.Message);
+        Assert.Equal(CharacterTagAuditService.MaxTransportAttempts, calls);
+
+        // A hung call is cut off by RequestTimeout and retried; the second answers.
+        int hungCalls = 0;
+        var hung = new CharacterTagAuditService(async (_, token) =>
+        {
+            if (++hungCalls == 1)
+                await Task.Delay(Timeout.Infinite, token);
+            return new CharacterTagModelResponse(ValidJson(("trigger", "keep")), string.Empty);
+        })
+        {
+            RequestTimeout = TimeSpan.FromMilliseconds(50),
+            RetryDelay = TimeSpan.Zero
+        };
+        CharacterTagAuditResult result = await hung.ExecuteAsync(MinimalOptions(referenceImage));
+        Assert.Equal("trigger", result.FinalPrompt);
+        Assert.Equal(3, hungCalls);
+
+        // The user's own cancel is never turned into a retry.
+        using var cancel = new CancellationTokenSource();
+        int cancelledCalls = 0;
+        var userCancel = new CharacterTagAuditService(async (_, token) =>
+        {
+            cancelledCalls++;
+            cancel.Cancel();
+            await Task.Delay(Timeout.Infinite, token);
+            return null;
+        });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => userCancel.ExecuteAsync(MinimalOptions(referenceImage), cancellationToken: cancel.Token));
+        Assert.Equal(1, cancelledCalls);
+    }
+
     [Fact]
     public async Task ServiceAggregatesUsageAcrossRepairAndBothStages()
     {
@@ -1484,7 +1635,7 @@ public sealed class CharacterTagAuditTests
         string todoLine = visual.UserPrompt.Split('\n').Single(line => line.StartsWith("Color-less wearable tags you MUST resolve now:", StringComparison.Ordinal));
         Assert.Contains("bow", todoLine);
         Assert.Contains("choker", todoLine);
-        Assert.Contains("hair ribbon", todoLine);
+        Assert.DoesNotContain("hair ribbon", todoLine);
         Assert.Contains("skirt", todoLine);
         Assert.DoesNotContain("frills", todoLine);
         Assert.DoesNotContain("jewelry", todoLine);
@@ -1533,9 +1684,10 @@ public sealed class CharacterTagAuditTests
             Assert.Equal("black hairband", item.ReplacementTag);
         }
         Assert.Equal("black hairband", result.Items.Single(item => item.Tag == "hair ornament").ReplacementTag);
-        Assert.Equal("blue earrings", result.Items.Single(item => item.Tag == "jewelry").ReplacementTag);
+        Assert.Equal("earrings", result.Items.Single(item => item.Tag == "jewelry").ReplacementTag);
+        Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "earrings").FinalDecision);
         Assert.Equal("black dress", result.Items.Single(item => item.Tag == "dress").ReplacementTag);
-        Assert.Equal("black elbow gloves", result.Items.Single(item => item.Tag == "gloves").ReplacementTag);
+        Assert.Equal("elbow gloves", result.Items.Single(item => item.Tag == "elbow gloves").EffectiveTag);
         Assert.Equal(CharacterTagDecision.Delete, result.Items.Single(item => item.Tag == "frills").FinalDecision);
         Assert.Equal(CharacterTagDecision.Keep, result.Items.Single(item => item.Tag == "black dress").FinalDecision);
 
@@ -1549,8 +1701,9 @@ public sealed class CharacterTagAuditTests
         Assert.DoesNotContain("bow", prompt);
         Assert.DoesNotContain("hair ornament", prompt);
         Assert.DoesNotContain("jewelry", prompt);
-        Assert.Contains("black elbow gloves", prompt);
-        Assert.DoesNotContain("black gloves", prompt);
+        Assert.DoesNotContain("black elbow gloves", prompt);
+        Assert.DoesNotContain("blue earrings", prompt);
+        Assert.Contains("elbow gloves", prompt);
         Assert.Equal(prompt.Length, prompt.Distinct().Count());
     }
 
@@ -1585,7 +1738,10 @@ public sealed class CharacterTagAuditTests
         var failing = new CharacterTagAuditService((request, _) => Task.FromResult(
             request.Stage == CharacterTagAuditStage.Resolution
                 ? new CharacterTagModelResponse(string.Empty, "rate limited")
-                : new CharacterTagModelResponse(KanonnoVisualJson(), string.Empty)));
+                : new CharacterTagModelResponse(KanonnoVisualJson(), string.Empty)))
+        {
+            RetryDelay = TimeSpan.Zero
+        };
         CharacterTagAuditResult degraded = await failing.ExecuteAsync(KanonnoOptions(referenceImage, KanonnoInventory()));
         Assert.Equal(CharacterTagDecision.Keep, degraded.Items.Single(item => item.Tag == "skirt").FinalDecision);
     }
@@ -1648,6 +1804,35 @@ public sealed class CharacterTagAuditTests
     }
 
     [Fact]
+    public void BodyFramingAndOutfitMetaNeverEnterThePrompt()
+    {
+        // phoenix reffaella regression: breasts / thighs / official alternate
+        // costume reached both the sparse and the full prompt.
+        CharacterTagInventory inventory = CharacterTagInventory.Create(new[]
+        {
+            new[] { "trigger", "1girl", "official alternate costume", "breasts", "thighs", "small breasts", "animal ears" }
+        });
+        foreach (CharacterTagAuditStyle style in new[] { CharacterTagAuditStyle.Full, CharacterTagAuditStyle.Sparse })
+        {
+            List<CharacterTagAuditItem> items = CharacterTagAuditResponseParser.ParseAndValidate(FullJson(
+                ("trigger", "keep", "identity", true, ""),
+                ("1girl", "keep", "identity", true, ""),
+                ("official alternate costume", "keep", "identity", true, ""),
+                ("breasts", "keep", "body", true, ""),
+                ("thighs", "keep", "body", true, ""),
+                ("small breasts", "keep", "body", true, ""),
+                ("animal ears", "keep", "body", true, "")), inventory, "trigger").ToList();
+            CharacterTagResultCanonicalizer.Apply(items, style, WearableVocabulary());
+
+            string expected = style == CharacterTagAuditStyle.Full
+                ? "trigger, 1girl, small breasts, animal ears"
+                : "trigger, 1girl, animal ears";
+            Assert.Equal(expected, CharacterTagPromptBuilder.Build(items, "trigger"));
+            Assert.All(items, item => Assert.NotEqual(CharacterTagDecision.Delete, item.FinalDecision));
+        }
+    }
+
+    [Fact]
     public void ResolutionCollectorsSkipDecorationContainersAndParentChildPairs()
     {
         var items = new List<CharacterTagAuditItem>
@@ -1663,8 +1848,11 @@ public sealed class CharacterTagAuditTests
             AuditItem("smile", CharacterTagDecision.Keep, category: CharacterTagCategory.Expression, includeInPrompt: true)
         };
 
+        // gloves is skipped: its colored form black gloves is already confirmed.
         IReadOnlyList<string> colorless = CharacterTagResolution.CollectColorlessWearables(items);
-        Assert.Equal(new[] { "choker", "gloves", "elbow gloves" }, colorless);
+        Assert.Equal(new[] { "choker", "elbow gloves" }, colorless);
+        // With the vocabulary only colorable words are asked about.
+        Assert.Equal(new[] { "choker" }, CharacterTagResolution.CollectColorlessWearables(items, WearableVocabulary()));
 
         IReadOnlyList<CharacterTagCluster> clusters = CharacterTagResolution.BuildClusters(
             items, AccessoryNearSynonyms(), WearableVocabulary());

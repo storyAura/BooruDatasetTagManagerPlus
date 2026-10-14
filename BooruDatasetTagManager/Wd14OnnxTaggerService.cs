@@ -26,6 +26,8 @@ namespace BooruDatasetTagManager
     {
         public const string ModelFileName = "model.onnx";
         public const string LabelsFileName = "selected_tags.csv";
+        public const string DefaultRepo = "SmilingWolf/wd-eva02-large-tagger-v3";
+        public const string CanaryRepo = "Misaka41Z/wd-eva02-tagger-2026-canary-onnx-v2";
 
         public static IReadOnlyList<Wd14ModelDefinition> Models { get; } = new[]
         {
@@ -40,14 +42,19 @@ namespace BooruDatasetTagManager
             new Wd14ModelDefinition { Repo = "SmilingWolf/wd-swinv2-tagger-v3", DefaultThreshold = 0.25, ShortName = "swinv2 v3" },
             new Wd14ModelDefinition { Repo = "SmilingWolf/wd-convnext-tagger-v3", DefaultThreshold = 0.25, ShortName = "convnext v3" },
             new Wd14ModelDefinition { Repo = "SmilingWolf/wd-vit-large-tagger-v3", DefaultThreshold = 0.26, ShortName = "vit-large v3" },
-            new Wd14ModelDefinition { Repo = "SmilingWolf/wd-eva02-large-tagger-v3", DefaultThreshold = 0.52, ShortName = "eva02-large v3" },
+            new Wd14ModelDefinition { Repo = DefaultRepo, DefaultThreshold = 0.52, ShortName = "eva02-large v3" },
+            // Same eva02_large_patch14_448 head as v3, vocabulary extended to 2026-05.
+            // The published P=R operating point is 0.6094 for every category.
+            new Wd14ModelDefinition { Repo = CanaryRepo, DefaultThreshold = 0.61, DefaultCharacterThreshold = 0.61, ShortName = "eva02-large 2026 canary" },
         };
 
         private readonly HuggingFaceModelDownloader downloader = new HuggingFaceModelDownloader();
         private InferenceSession session;
         private bool usesDirectMlProvider;
+        private bool loadedForceCpu;
         private string inputName;
         private string outputName;
+        private bool outputRequiresSigmoid;
         private string loadedModelPath;
         private List<(string Name, int Category)> labels = new List<(string, int)>();
         private string loadedRepo;
@@ -60,7 +67,7 @@ namespace BooruDatasetTagManager
         public static Wd14ModelDefinition GetModel(string repo)
         {
             return Models.FirstOrDefault(model => string.Equals(model.Repo, repo, StringComparison.OrdinalIgnoreCase))
-                ?? Models[^1];
+                ?? Models.First(model => string.Equals(model.Repo, DefaultRepo, StringComparison.OrdinalIgnoreCase));
         }
 
         public bool IsModelReady(string repo)
@@ -94,10 +101,14 @@ namespace BooruDatasetTagManager
             }
         }
 
-        public void LoadModel(string repo)
+        public void LoadModel(string repo, bool forceCpu = false)
         {
-            if (string.Equals(loadedRepo, repo, StringComparison.OrdinalIgnoreCase) && session != null)
+            if (string.Equals(loadedRepo, repo, StringComparison.OrdinalIgnoreCase)
+                && session != null
+                && loadedForceCpu == forceCpu)
+            {
                 return;
+            }
 
             Unload();
             string modelPath = HuggingFaceModelDownloader.GetLocalPath(repo, ModelFileName);
@@ -117,7 +128,7 @@ namespace BooruDatasetTagManager
                     loadedModelPath = modelPath;
                     try
                     {
-                        session = CreateSession(modelPath);
+                        session = CreateSession(modelPath, forceCpu);
                     }
                     catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
                     {
@@ -142,9 +153,15 @@ namespace BooruDatasetTagManager
                 throw;
             }
             loadedRepo = repo;
+            loadedForceCpu = !usesDirectMlProvider;
         }
 
         public OnnxTagResult TagImageWithTiming(string imagePath, double generalThreshold, double characterThreshold)
+        {
+            return TagImageWithTiming(imagePath, TaggerProFilter.Basic(generalThreshold, characterThreshold));
+        }
+
+        public OnnxTagResult TagImageWithTiming(string imagePath, TaggerProFilter filter)
         {
             if (session == null)
                 throw new InvalidOperationException("Model is not loaded.");
@@ -154,7 +171,7 @@ namespace BooruDatasetTagManager
             // full-resolution GDI bitmap before the 448-ish letterbox.
             using Image image = ImageLoader.GetImageForInference(imagePath, GetInputSize(session))
                 ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
-            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, generalThreshold, characterThreshold);
+            IReadOnlyList<AutoTagProviderItem> tags = TagImage(image, filter);
             stopwatch.Stop();
             return new OnnxTagResult
             {
@@ -168,6 +185,11 @@ namespace BooruDatasetTagManager
             return TagImageWithTiming(imagePath, generalThreshold, characterThreshold).Tags;
         }
 
+        public IReadOnlyList<AutoTagProviderItem> TagImage(string imagePath, TaggerProFilter filter)
+        {
+            return TagImageWithTiming(imagePath, filter).Tags;
+        }
+
         public IReadOnlyList<AutoTagProviderItem> TagImage(string imagePath, double threshold)
         {
             return TagImage(imagePath, threshold, 0.85);
@@ -175,33 +197,73 @@ namespace BooruDatasetTagManager
 
         public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, double generalThreshold, double characterThreshold)
         {
+            return TagImage(image, TaggerProFilter.Basic(generalThreshold, characterThreshold));
+        }
+
+        public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, TaggerProFilter filter)
+        {
             if (session == null)
                 throw new InvalidOperationException("Model is not loaded.");
 
-            int targetSize = GetInputSize(session);
-            DenseTensor<float> input = Wd14OnnxImagePreprocessor.CreateInputTensor(image, targetSize);
+            filter ??= TaggerProFilter.Basic(0.35, 0.85);
+            IReadOnlyList<int> dims = session.InputMetadata[inputName].Dimensions;
+            int targetSize = ResolveInputSize(dims);
+            // SmilingWolf ONNX is NHWC. A torch export of the same architecture
+            // (the 2026 canary) may be NCHW; the pixel values stay BGR 0-255.
+            DenseTensor<float> input = IsNchwLayout(dims)
+                ? Wd14OnnxImagePreprocessor.CreateInputTensorNchw(image, targetSize)
+                : Wd14OnnxImagePreprocessor.CreateInputTensor(image, targetSize);
             float[] output = RunPrediction(session, input);
+            return DecodeTags(output, filter);
+        }
 
+        public IReadOnlyList<OnnxTagResult> TagImageBatch(IReadOnlyList<string> paths, TaggerProFilter filter, int batchSize)
+        {
+            if (session == null)
+                throw new InvalidOperationException("Model is not loaded.");
+
+            filter ??= TaggerProFilter.Basic(0.35, 0.85);
+            return OnnxInferenceBatch.Execute(
+                paths,
+                batchSize,
+                session.InputMetadata[inputName].Dimensions,
+                EncodePath,
+                tensor => RunPrediction(session, tensor),
+                row => DecodeTags(row, filter));
+        }
+
+        private (DenseTensor<float> Tensor, string Error) EncodePath(string path)
+        {
+            try
+            {
+                IReadOnlyList<int> dims = session.InputMetadata[inputName].Dimensions;
+                int targetSize = ResolveInputSize(dims);
+                using Image image = ImageLoader.GetImageForInference(path, targetSize)
+                    ?? throw new InvalidOperationException(I18n.GetText("TaggerImageLoadFailed"));
+                DenseTensor<float> tensor = IsNchwLayout(dims)
+                    ? Wd14OnnxImagePreprocessor.CreateInputTensorNchw(image, targetSize)
+                    : Wd14OnnxImagePreprocessor.CreateInputTensor(image, targetSize);
+                return (tensor, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, ex.Message);
+            }
+        }
+
+        private IReadOnlyList<AutoTagProviderItem> DecodeTags(float[] output, TaggerProFilter filter)
+        {
             var items = new List<AutoTagProviderItem>();
             int count = Math.Min(labels.Count, output.Length);
             for (int i = 0; i < count; i++)
             {
                 (string name, int category) = labels[i];
-                double threshold = category switch
-                {
-                    0 => generalThreshold,
-                    4 => characterThreshold,
-                    _ => double.PositiveInfinity
-                };
-
-                if (category is not (0 or 4))
-                    continue;
-
-                if (output[i] >= threshold)
-                    items.Add(new AutoTagProviderItem { Tag = name, Confidence = output[i] });
+                if (TaggerCategoryFilter.TryAccept(name, category, output[i], filter, out AutoTagProviderItem item))
+                    items.Add(item);
             }
 
-            return TagWriteService.OrderByConfidenceDescending(items);
+            List<AutoTagProviderItem> ordered = TagWriteService.OrderByConfidenceDescending(items);
+            return filter.CharacterFirst ? TagWriteService.PlaceCharactersFirst(ordered) : ordered;
         }
 
         public IReadOnlyList<AutoTagProviderItem> TagImage(Image image, double threshold)
@@ -215,6 +277,7 @@ namespace BooruDatasetTagManager
             session = null;
             loadedRepo = null;
             loadedModelPath = null;
+            loadedForceCpu = false;
             labels.Clear();
         }
 
@@ -288,9 +351,45 @@ namespace BooruDatasetTagManager
             return 448;
         }
 
+        internal static bool IsNchwLayout(IReadOnlyList<int> dims)
+        {
+            if (dims == null || dims.Count < 4)
+                return false;
+
+            // NHWC stores channels last. Anything else with channels in dim 1 is NCHW.
+            if (dims[3] == 3)
+                return false;
+
+            return dims[1] == 3 && dims[2] > 0;
+        }
+
+        internal static bool ValuesLookLikeLogits(IReadOnlyList<float> values)
+        {
+            if (values == null)
+                return false;
+
+            for (int i = 0; i < values.Count; i++)
+            {
+                float value = values[i];
+                if (value < 0f || value > 1f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        internal static float[] ApplySigmoid(IReadOnlyList<float> values)
+        {
+            var output = new float[values.Count];
+            for (int i = 0; i < values.Count; i++)
+                output[i] = 1f / (1f + MathF.Exp(-values[i]));
+            return output;
+        }
+
         private void ConfigureSessionMetadata(InferenceSession loadedSession)
         {
             (inputName, outputName) = ResolveSessionMetadata(loadedSession);
+            outputRequiresSigmoid = string.Equals(outputName, "logits", StringComparison.OrdinalIgnoreCase);
         }
 
         private float[] RunPrediction(InferenceSession activeSession, DenseTensor<float> input)
@@ -303,6 +402,7 @@ namespace BooruDatasetTagManager
             {
                 activeSession.Dispose();
                 session = CreateSession(loadedModelPath, forceCpu: true);
+                loadedForceCpu = true;
                 ConfigureSessionMetadata(session);
                 try
                 {
@@ -320,7 +420,12 @@ namespace BooruDatasetTagManager
             using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = activeSession.Run(
                 new[] { NamedOnnxValue.CreateFromTensor(inputName, input) },
                 new[] { outputName });
-            return ExtractFloatVector(results.First());
+            float[] output = ExtractFloatVector(results.First());
+            // SmilingWolf graphs already end in a sigmoid. A raw torch export
+            // (output name "logits", or unbounded scores) still needs one.
+            if (outputRequiresSigmoid || ValuesLookLikeLogits(output))
+                output = ApplySigmoid(output);
+            return output;
         }
 
         private InferenceSession CreateSession(string modelPath, bool forceCpu = false)
@@ -459,6 +564,43 @@ namespace BooruDatasetTagManager
                         tensor[0, y, x, 0] = buffer[offset + 0]; // B
                         tensor[0, y, x, 1] = buffer[offset + 1]; // G
                         tensor[0, y, x, 2] = buffer[offset + 2]; // R
+                    }
+                }
+            }
+            finally
+            {
+                prepared.UnlockBits(data);
+            }
+
+            return tensor;
+        }
+
+        public static DenseTensor<float> CreateInputTensorNchw(Image source, int targetSize)
+        {
+            using Bitmap prepared = PrepareBitmap(source, targetSize);
+            int width = prepared.Width;
+            int height = prepared.Height;
+            var tensor = new DenseTensor<float>(new[] { 1, 3, height, width });
+            BitmapData data = prepared.LockBits(
+                new Rectangle(0, 0, width, height),
+                ImageLockMode.ReadOnly,
+                PixelFormat.Format24bppRgb);
+            try
+            {
+                int stride = data.Stride;
+                int bytes = Math.Abs(stride) * height;
+                byte[] buffer = new byte[bytes];
+                Marshal.Copy(data.Scan0, buffer, 0, bytes);
+                for (int y = 0; y < height; y++)
+                {
+                    int row = y * stride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int offset = row + (x * 3);
+                        // Same BGR 0-255 values as the NHWC tensor, channels first.
+                        tensor[0, 0, y, x] = buffer[offset + 0];
+                        tensor[0, 1, y, x] = buffer[offset + 1];
+                        tensor[0, 2, y, x] = buffer[offset + 2];
                     }
                 }
             }

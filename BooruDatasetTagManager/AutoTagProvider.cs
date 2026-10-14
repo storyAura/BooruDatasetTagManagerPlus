@@ -56,6 +56,7 @@ namespace BooruDatasetTagManager
     {
         public string Tag { get; set; } = string.Empty;
         public float Confidence { get; set; }
+        public bool IsCharacter { get; set; }
     }
 
     public sealed class AutoTagProviderResult

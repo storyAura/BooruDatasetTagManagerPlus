@@ -406,3 +406,6 @@ docs/UI_STRUCTURE_zh_CN.md
 # Contributor guide kept locally, not published
 AGENTS.md
 AUDIT_REMAINING_TODO.md
+
+# Promo image source (HTML + base screenshot); only docs/images/promo.png is published
+docs/promo/

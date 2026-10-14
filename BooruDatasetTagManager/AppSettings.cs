@@ -121,6 +121,8 @@ namespace BooruDatasetTagManager
         public CharacterTagAuditStyle CharacterTagAuditStyle { get; set; } = CharacterTagAuditStyle.Sparse;
         public CharacterTagAuditExecutionMode CharacterTagAuditExecutionMode { get; set; } = CharacterTagAuditExecutionMode.Review;
         public int CharacterTagAuditMinimumCount { get; set; } = 10;
+        // Sent with every audit request; a model that rejects it falls back to the provider default.
+        public float CharacterTagAuditTemperature { get; set; } = CharacterTagAuditService.DefaultTemperature;
         // Single- vs multi-character audit and the per-slot genders used by
         // the multi mode's subject-count tags (2girls / multiple girls, ...).
         public CharacterTagAuditSubjectMode CharacterTagAuditSubjectMode { get; set; } = CharacterTagAuditSubjectMode.Single;
@@ -143,6 +145,32 @@ namespace BooruDatasetTagManager
         public Wd14TaggerSettings Wd14Tagger { get; set; } = new Wd14TaggerSettings();
         public PixAiTaggerSettings PixAiTagger { get; set; } = new PixAiTaggerSettings();
         public string OnnxTaggerLastModelId { get; set; } = string.Empty;
+        public OnnxInferenceDevice OnnxTaggerInferenceDevice { get; set; } = OnnxInferenceDevice.OnnxDeviceGpu;
+        public bool OnnxTaggerProfessionalMode { get; set; }
+        public int OnnxTaggerBatchSize { get; set; } = 1;
+        public Dictionary<string, OnnxTaggerProOptions> OnnxTaggerProByModel { get; set; } = new Dictionary<string, OnnxTaggerProOptions>(StringComparer.OrdinalIgnoreCase);
+
+        public OnnxTaggerProOptions GetProOptions(string modelId, TaggerProProfile profile)
+        {
+            OnnxTaggerProByModel ??= new Dictionary<string, OnnxTaggerProOptions>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(modelId)
+                && OnnxTaggerProByModel.TryGetValue(modelId, out OnnxTaggerProOptions stored)
+                && stored != null)
+            {
+                return stored;
+            }
+
+            return profile?.CreateDefaults() ?? new OnnxTaggerProOptions();
+        }
+
+        public void SetProOptions(string modelId, OnnxTaggerProOptions options)
+        {
+            if (string.IsNullOrWhiteSpace(modelId) || options == null)
+                return;
+
+            OnnxTaggerProByModel ??= new Dictionary<string, OnnxTaggerProOptions>(StringComparer.OrdinalIgnoreCase);
+            OnnxTaggerProByModel[modelId] = options;
+        }
         public string BackgroundRemoverModelId { get; set; } = string.Empty;
         // Background-removal output options (see Form_BGRemover).
         public bool BackgroundRemoverFillBackground { get; set; } = true;   // true = solid color, false = transparent
@@ -525,6 +553,9 @@ namespace BooruDatasetTagManager
                 CharacterTagAuditStyle = tempSettings.CharacterTagAuditStyle;
                 CharacterTagAuditExecutionMode = tempSettings.CharacterTagAuditExecutionMode;
                 CharacterTagAuditMinimumCount = tempSettings.CharacterTagAuditMinimumCount <= 0 ? 10 : tempSettings.CharacterTagAuditMinimumCount;
+                CharacterTagAuditTemperature = float.IsFinite(tempSettings.CharacterTagAuditTemperature)
+                    ? Math.Clamp(tempSettings.CharacterTagAuditTemperature, 0f, CharacterTagAuditService.MaxTemperature)
+                    : CharacterTagAuditService.DefaultTemperature;
                 CharacterTagAuditSubjectMode = tempSettings.CharacterTagAuditSubjectMode;
                 CharacterTagAuditGenders = NormalizeAuditGenders(tempSettings.CharacterTagAuditGenders);
                 ImageEditorSaveMode = tempSettings.ImageEditorSaveMode;
@@ -541,7 +572,22 @@ namespace BooruDatasetTagManager
                 Wd14Tagger = tempSettings.Wd14Tagger ?? new Wd14TaggerSettings();
                 Wd14Tagger.EnsureLegacyThresholdMigrated();
                 PixAiTagger = tempSettings.PixAiTagger ?? new PixAiTaggerSettings();
+                PixAiTagger.EnsureLegacyThresholdMigrated();
                 OnnxTaggerLastModelId = tempSettings.OnnxTaggerLastModelId ?? string.Empty;
+                OnnxTaggerInferenceDevice = Enum.IsDefined(typeof(OnnxInferenceDevice), tempSettings.OnnxTaggerInferenceDevice)
+                    ? tempSettings.OnnxTaggerInferenceDevice
+                    : OnnxInferenceDevice.OnnxDeviceGpu;
+                OnnxTaggerProfessionalMode = tempSettings.OnnxTaggerProfessionalMode;
+                OnnxTaggerBatchSize = OnnxInferenceBatch.ClampSize(tempSettings.OnnxTaggerBatchSize);
+                OnnxTaggerProByModel = new Dictionary<string, OnnxTaggerProOptions>(StringComparer.OrdinalIgnoreCase);
+                if (tempSettings.OnnxTaggerProByModel != null)
+                {
+                    foreach (KeyValuePair<string, OnnxTaggerProOptions> pair in tempSettings.OnnxTaggerProByModel)
+                    {
+                        if (!string.IsNullOrWhiteSpace(pair.Key) && pair.Value != null)
+                            OnnxTaggerProByModel[pair.Key] = pair.Value;
+                    }
+                }
                 BackgroundRemoverModelId = tempSettings.BackgroundRemoverModelId ?? string.Empty;
                 BackgroundRemoverFillBackground = tempSettings.BackgroundRemoverFillBackground;
                 BackgroundRemoverColorArgb = tempSettings.BackgroundRemoverColorArgb;
@@ -947,6 +993,7 @@ namespace BooruDatasetTagManager
     {
         public string ConnectionAddress { get; set; } = "http://127.0.0.1:50051";
         public AutoTaggerSort SortMode { get; set; } = AutoTaggerSort.Confidence;
+        public bool CharacterFirst { get; set; }
         public NetworkResultSetMode SetMode { get; set; } = NetworkResultSetMode.AllWithReplacement;
         public TagFilteringMode TagFilteringMode { get; set; } = TagFilteringMode.None;
         public string TagFilter { get; set; } = "";
@@ -983,7 +1030,7 @@ namespace BooruDatasetTagManager
 
     public class Wd14TaggerSettings : TaggerSettings
     {
-        public string SelectedModelRepo { get; set; } = "SmilingWolf/wd-eva02-large-tagger-v3";
+        public string SelectedModelRepo { get; set; } = Wd14OnnxTaggerService.DefaultRepo;
         public double Threshold { get; set; } = 0.52;
         public double CharacterThreshold { get; set; } = 0.85;
         public bool ReplaceUnderscoresWithSpaces { get; set; } = true;
@@ -1055,6 +1102,56 @@ namespace BooruDatasetTagManager
         public double CharacterThreshold { get; set; } = 0.85;
         public bool ReplaceUnderscoresWithSpaces { get; set; } = true;
         public HuggingFaceDownloadSource DownloadSource { get; set; } = HuggingFaceDownloadSource.HfMirror;
+        public Dictionary<string, Wd14ModelThresholds> ModelThresholds { get; set; } = new Dictionary<string, Wd14ModelThresholds>(StringComparer.OrdinalIgnoreCase);
+
+        public bool HasThresholdsForModel(string id)
+        {
+            return !string.IsNullOrWhiteSpace(id)
+                && ModelThresholds != null
+                && ModelThresholds.ContainsKey(id);
+        }
+
+        public (double Threshold, double CharacterThreshold) GetThresholdsForModel(string id)
+        {
+            EnsureLegacyThresholdMigrated();
+            if (HasThresholdsForModel(id))
+            {
+                Wd14ModelThresholds stored = ModelThresholds[id];
+                return (stored.Threshold, stored.CharacterThreshold);
+            }
+
+            PixAiModelDefinition model = PixAiOnnxTaggerService.GetById(id);
+            return (model.DefaultGeneralThreshold, model.DefaultCharacterThreshold);
+        }
+
+        public void SetThresholdsForModel(string id, double threshold, double characterThreshold)
+        {
+            EnsureLegacyThresholdMigrated();
+            ModelThresholds[id] = new Wd14ModelThresholds
+            {
+                Threshold = threshold,
+                CharacterThreshold = characterThreshold
+            };
+
+            if (string.Equals(id, PixAiOnnxTaggerService.V09Id, StringComparison.OrdinalIgnoreCase))
+            {
+                GeneralThreshold = threshold;
+                CharacterThreshold = characterThreshold;
+            }
+        }
+
+        public void EnsureLegacyThresholdMigrated()
+        {
+            ModelThresholds ??= new Dictionary<string, Wd14ModelThresholds>(StringComparer.OrdinalIgnoreCase);
+            if (ModelThresholds.ContainsKey(PixAiOnnxTaggerService.V09Id))
+                return;
+
+            ModelThresholds[PixAiOnnxTaggerService.V09Id] = new Wd14ModelThresholds
+            {
+                Threshold = GeneralThreshold,
+                CharacterThreshold = CharacterThreshold
+            };
+        }
     }
 
     public class AdditionalParameters

@@ -73,11 +73,14 @@ public class AiServerSetMigrationAndDocumentationTests
         Assert.True(File.Exists(Path.Combine(project, "AiPromptTemplateEditorPanel.cs")));
     }
 
+    // The READMEs are kept short (promo image, feature bullets, quick start);
+    // the per-feature sections and screenshots live in the linked guides.
     [Theory]
-    [InlineData("README_en.md", "## Getting started", "### LLM tagging", "### Character tag audit", "## Acknowledgments & license")]
-    [InlineData("README.md", "## 快速开始", "### LLM 打标", "### 角色标签审查", "## 致谢与许可")]
-    public void BilingualReadmesContainFeatureSectionsAndImages(
+    [InlineData("README_en.md", "docs/FEATURES_en.md", "## Getting started", "## LLM tagging", "## Character tag audit", "## Acknowledgments & license")]
+    [InlineData("README.md", "docs/FEATURES.md", "## 快速开始", "## LLM 打标", "## 角色标签审查", "## 致谢与许可")]
+    public void BilingualReadmesLinkFeatureGuidesWithSectionsAndImages(
         string fileName,
+        string guideName,
         string quickStartHeading,
         string llmHeading,
         string auditHeading,
@@ -85,19 +88,25 @@ public class AiServerSetMigrationAndDocumentationTests
     {
         string root = FindRepoRoot();
         string readme = File.ReadAllText(Path.Combine(root, fileName));
+        string guide = File.ReadAllText(Path.Combine(root, guideName));
 
         Assert.Contains(quickStartHeading, readme);
-        Assert.Contains(llmHeading, readme);
-        Assert.Contains(auditHeading, readme);
         Assert.Contains(creditsHeading, readme);
         Assert.Contains("github.com/starik222/BooruDatasetTagManager", readme);
-        Assert.Contains("docs/images/main-window-dataset-browser.png", readme);
-        Assert.Contains("docs/images/llm-settings.png", readme);
-        Assert.Contains("docs/images/llm-tagger.png", readme);
-        Assert.Contains("docs/images/onnx-tagger.png", readme);
-        Assert.Contains("docs/images/character-tag-audit-review.png", readme);
-        Assert.Contains("docs/images/crop-image-multi-region.png", readme);
-        Assert.Contains("docs/images/tag-category-filter.png", readme);
+        Assert.Contains("docs/images/promo.png", readme);
+        Assert.Contains("](" + guideName + ")", readme);
+
+        Assert.Contains(llmHeading, guide);
+        Assert.Contains(auditHeading, guide);
+        foreach (string image in new[]
+        {
+            "main-window-dataset-browser.png", "llm-settings.png", "llm-tagger.png", "onnx-tagger.png",
+            "character-tag-audit-review.png", "crop-image-multi-region.png", "tag-category-filter.png"
+        })
+        {
+            Assert.Contains("](images/" + image + ")", guide);
+            Assert.True(File.Exists(Path.Combine(root, "docs", "images", image)), image);
+        }
     }
 
     private static string FindRepoRoot()

@@ -57,6 +57,44 @@ namespace BooruDatasetTagManager
         HfMirror
     }
 
+    // Tag-tagger execution device. Member names are i18n keys. GPU is DirectML.
+    public enum OnnxInferenceDevice
+    {
+        OnnxDeviceGpu,
+        OnnxDeviceCpu
+    }
+
+    public static class OnnxInferenceDeviceParser
+    {
+        public static bool TryParse(string text, out OnnxInferenceDevice device)
+        {
+            device = OnnxInferenceDevice.OnnxDeviceGpu;
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            if (text.Equals("gpu", StringComparison.OrdinalIgnoreCase)
+                || text.Equals(nameof(OnnxInferenceDevice.OnnxDeviceGpu), StringComparison.OrdinalIgnoreCase))
+            {
+                device = OnnxInferenceDevice.OnnxDeviceGpu;
+                return true;
+            }
+
+            if (text.Equals("cpu", StringComparison.OrdinalIgnoreCase)
+                || text.Equals(nameof(OnnxInferenceDevice.OnnxDeviceCpu), StringComparison.OrdinalIgnoreCase))
+            {
+                device = OnnxInferenceDevice.OnnxDeviceCpu;
+                return true;
+            }
+
+            return false;
+        }
+
+        public static bool PreferCpu(OnnxInferenceDevice device)
+        {
+            return device == OnnxInferenceDevice.OnnxDeviceCpu;
+        }
+    }
+
     public enum NetworkUnionMode
     {
         Addition,

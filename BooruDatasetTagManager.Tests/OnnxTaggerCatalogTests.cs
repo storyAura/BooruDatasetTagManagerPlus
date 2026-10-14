@@ -6,11 +6,11 @@ namespace BooruDatasetTagManager.Tests;
 public sealed class OnnxTaggerCatalogTests
 {
     [Fact]
-    public void AllModels_contains_twelve_wd14_one_pixai_three_cl_and_two_oppai_entries()
+    public void AllModels_contains_thirteen_wd14_two_pixai_three_cl_and_two_oppai_entries()
     {
-        Assert.Equal(18, OnnxTaggerCatalog.AllModels.Count);
-        Assert.Equal(12, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.Wd14));
-        Assert.Single(OnnxTaggerCatalog.AllModels, model => model.Kind == OnnxTaggerModelKind.PixAi);
+        Assert.Equal(20, OnnxTaggerCatalog.AllModels.Count);
+        Assert.Equal(13, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.Wd14));
+        Assert.Equal(2, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.PixAi));
         Assert.Equal(3, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.ClTagger));
         Assert.Equal(2, OnnxTaggerCatalog.AllModels.Count(model => model.Kind == OnnxTaggerModelKind.OppaiOracle));
     }
@@ -40,6 +40,10 @@ public sealed class OnnxTaggerCatalogTests
     {
         Assert.Equal("[PixAI] pixai-tagger v0.9",
             OnnxTaggerCatalog.GetById(OnnxTaggerCatalog.PixAiModelId).DisplayName);
+        Assert.Equal("[PixAI] pixai-tagger v1.0",
+            OnnxTaggerCatalog.GetById(PixAiOnnxTaggerService.V10Id).DisplayName);
+        Assert.Equal("[WD14] eva02-large 2026 canary",
+            OnnxTaggerCatalog.GetById("wd:" + Wd14OnnxTaggerService.CanaryRepo).DisplayName);
         Assert.Equal("[CL] cl_tagger v1.02",
             OnnxTaggerCatalog.GetById("cl:Nonene/cl_tagger:1_02").DisplayName);
         Assert.Equal("[CL] cl_tagger_v2 v2.00 🔒",
@@ -60,6 +64,36 @@ public sealed class OnnxTaggerCatalogTests
         Assert.Equal(PixAiOnnxTaggerService.ModelRepo, pixAi.Repo);
         Assert.Equal(0.3, pixAi.DefaultThreshold, 2);
         Assert.Equal(0.85, pixAi.DefaultCharacterThreshold.GetValueOrDefault(), 2);
+
+        OnnxTaggerModelEntry pixAiV1 = OnnxTaggerCatalog.GetById(PixAiOnnxTaggerService.V10Id);
+        Assert.Equal(PixAiOnnxTaggerService.V10Repo, pixAiV1.Repo);
+        Assert.Equal(0.17, pixAiV1.DefaultThreshold, 2);
+        Assert.Equal(0.27, pixAiV1.DefaultCharacterThreshold.GetValueOrDefault(), 2);
+        Assert.Equal("model.onnx.data", pixAiV1.PixAiModel.ExternalDataFile);
+        Assert.Equal("tags.json", pixAiV1.PixAiModel.LabelsFile);
+    }
+
+    [Fact]
+    public void Canary_entry_uses_onnx_repo_and_shared_operating_point()
+    {
+        OnnxTaggerModelEntry canary = OnnxTaggerCatalog.GetById("wd:" + Wd14OnnxTaggerService.CanaryRepo);
+
+        Assert.Equal(OnnxTaggerModelKind.Wd14, canary.Kind);
+        Assert.Equal(Wd14OnnxTaggerService.CanaryRepo, canary.Repo);
+        Assert.Equal(0.61, canary.DefaultThreshold, 2);
+        Assert.Equal(0.61, canary.DefaultCharacterThreshold.GetValueOrDefault(), 2);
+    }
+
+    [Fact]
+    public void Unknown_wd14_repo_and_empty_selection_stay_on_eva02_v3()
+    {
+        Assert.Equal(Wd14OnnxTaggerService.DefaultRepo, Wd14OnnxTaggerService.GetModel("not-a-repo").Repo);
+        Assert.Equal(
+            "wd:" + Wd14OnnxTaggerService.DefaultRepo,
+            OnnxTaggerCatalog.ResolveInitialModelId(null, null));
+        Assert.Equal(
+            "wd:" + Wd14OnnxTaggerService.DefaultRepo,
+            OnnxTaggerCatalog.ResolveInitialModelId("   ", ""));
     }
 
     [Fact]

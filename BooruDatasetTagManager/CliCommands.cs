@@ -155,8 +155,10 @@ namespace BooruDatasetTagManager
             output.WriteLine("      [--write-mode skip|append|replace]  (default skip: only untagged images)");
             output.WriteLine("      [--sort none|confidence|alphabetical] [--no-download]");
             output.WriteLine("      [--download-source NAME] [--hf-token TOKEN]");
+            output.WriteLine("      [--device cpu|gpu]  (default: the saved Tag tagger device, GPU)");
+            output.WriteLine("      [--batch-size N]  (default: saved Tag tagger batch size, 1; max 8)");
             output.WriteLine("  audit <folder> --trigger TAG --reference IMG   LLM character-tag audit");
-            output.WriteLine("      [--gender girl|boy] [--style sparse|dense] [--min-count N]");
+            output.WriteLine("      [--gender girl|boy] [--style sparse|full] [--min-count N]");
             output.WriteLine("      [--model NAME] [--report FILE]");
             output.WriteLine("  help | version");
             output.WriteLine();

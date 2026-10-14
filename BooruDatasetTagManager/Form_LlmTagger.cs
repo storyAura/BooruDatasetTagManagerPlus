@@ -1083,6 +1083,10 @@ namespace BooruDatasetTagManager
             }
 
             (double generalThreshold, double characterThreshold) = Program.Settings.Wd14Tagger.GetThresholdsForRepo(repo);
+            OnnxTaggerModelEntry wdEntry = OnnxTaggerCatalog.AllModels.FirstOrDefault(model =>
+                model.Kind == OnnxTaggerModelKind.Wd14
+                && string.Equals(model.Repo, repo, StringComparison.OrdinalIgnoreCase));
+            TaggerProFilter proFilter = TaggerProFilter.FromSettings(Program.Settings, wdEntry, generalThreshold, characterThreshold);
             int total = untagged.Count;
             var reporter = VideoProgressReporter.CreateForControl(this, UpdateStatus, throttleMilliseconds: 100);
 
@@ -1091,14 +1095,14 @@ namespace BooruDatasetTagManager
             {
                 tagged = await Task.Run(() =>
                 {
-                    wd14Service.LoadModel(repo);
+                    wd14Service.LoadModel(repo, OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice));
                     var list = new List<(DataItem, IReadOnlyList<AutoTagProviderItem>)>(total);
                     int done = 0;
                     foreach ((string path, DataItem item) in untagged)
                     {
                         if (jobCancellation.Token.IsCancellationRequested)
                             break;
-                        list.Add((item, wd14Service.TagImage(path, generalThreshold, characterThreshold)));
+                        list.Add((item, wd14Service.TagImage(path, proFilter)));
                         done++;
                         ReportBatchProgress(done, total);
                         reporter.Report(string.Format(I18n.GetText("LlmTaggerOnnxProgress"), done, total, Path.GetFileName(path)));
@@ -1117,6 +1121,7 @@ namespace BooruDatasetTagManager
                 return true;
 
             Wd14TaggerSettings wd14Settings = Program.Settings.Wd14Tagger;
+            wd14Settings.CharacterFirst = proFilter.CharacterFirst;
             owner.PrepareForBulkTagWrite();
             try
             {

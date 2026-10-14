@@ -41,16 +41,34 @@ namespace BooruDatasetTagManager
             "frills", "ruffles", "pleated", "lace trim", "jewelry", "hair ornament", "hair accessory", "headwear", "legwear"
         };
 
-        public static IReadOnlyList<string> CollectColorlessWearables(IEnumerable<CharacterTagAuditItem> items)
+        /// <summary>
+        /// Color-less wearables worth a color question: danbooru must have a
+        /// colored form (<see cref="CharacterTagResultCanonicalizer.IsColorable"/>)
+        /// and no colored specialization may already be confirmed — asking
+        /// about <c>one-piece swimsuit</c> beside <c>blue one-piece swimsuit</c>
+        /// produced a second, contradicting color for the same garment.
+        /// </summary>
+        public static IReadOnlyList<string> CollectColorlessWearables(
+            IEnumerable<CharacterTagAuditItem> items,
+            GeneralTagCategoryCatalog vocabulary = null)
         {
             if (items == null)
                 return Array.Empty<string>();
-            return items
+            List<CharacterTagAuditItem> verified = items
                 .Where(CharacterTagResultCanonicalizer.IsVerifiedWearableItem)
+                .ToList();
+            var effective = verified
+                .Select(item => item.EffectiveTag?.Trim())
+                .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .ToList();
+            return verified
                 .Select(item => (Tag: item.EffectiveTag?.Trim(), item.PromptOrder))
                 .Where(pair => !string.IsNullOrWhiteSpace(pair.Tag)
                     && !ColorlessExclusions.Contains(pair.Tag)
-                    && !pair.Tag.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(CharacterTagResultCanonicalizer.Colors.Contains))
+                    && !CharacterTagResultCanonicalizer.ContainsColorWord(pair.Tag)
+                    && CharacterTagResultCanonicalizer.IsColorable(pair.Tag, vocabulary)
+                    && !effective.Any(other => CharacterTagResultCanonicalizer.ContainsColorWord(other)
+                        && CharacterTagResultCanonicalizer.IsWordSpecialization(pair.Tag, other)))
                 .OrderBy(pair => pair.PromptOrder)
                 .ThenBy(pair => pair.Tag, StringComparer.Ordinal)
                 .Select(pair => pair.Tag)
@@ -195,6 +213,8 @@ namespace BooruDatasetTagManager
                         continue;
                     }
                     string composed = color + " " + tag;
+                    if (!CharacterTagResultCanonicalizer.IsCanonicalForm(composed, vocabulary))
+                        continue;
                     foreach (CharacterTagAuditItem item in items.Where(item =>
                         CharacterTagResultCanonicalizer.IsVerifiedWearableItem(item)
                         && string.Equals(item.EffectiveTag?.Trim(), tag, StringComparison.Ordinal)))

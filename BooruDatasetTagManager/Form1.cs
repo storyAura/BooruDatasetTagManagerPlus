@@ -4067,6 +4067,7 @@ namespace BooruDatasetTagManager
         private ToolStripButton toolStripImageTagsSearchClear;
         private Color imageTagsSearchDefaultBackColor = SystemColors.Window;
         private Form_FindTag formFindTag;
+        private bool syncingImageTagsSearchBox;
 
         private void BtnTagFindInImage_Click(object sender, EventArgs e)
         {
@@ -4106,10 +4107,20 @@ namespace BooruDatasetTagManager
                 return;
             }
 
-            // Sync with header search box if present
+            // Sync with header search box if present. Its TextChanged jumps to the
+            // first match from row 0, which would move CurrentCell before we read
+            // it and make the first "find next" skip a match — so mute it here.
             if (toolStripImageTagsSearchBox != null && toolStripImageTagsSearchBox.Text != query)
             {
-                toolStripImageTagsSearchBox.Text = query;
+                syncingImageTagsSearchBox = true;
+                try
+                {
+                    toolStripImageTagsSearchBox.Text = query;
+                }
+                finally
+                {
+                    syncingImageTagsSearchBox = false;
+                }
             }
 
             int count = gridViewTags.RowCount;
@@ -4168,7 +4179,11 @@ namespace BooruDatasetTagManager
             toolStripTagsHeader.Items.Insert(insertIndex, toolStripImageTagsSearchClear);
             toolStripTagsHeader.Items.Insert(insertIndex, toolStripImageTagsSearchBox);
             imageTagsSearchDefaultBackColor = toolStripImageTagsSearchBox.BackColor;
-            toolStripImageTagsSearchBox.TextChanged += (_, _) => LocateImageTagsSearchMatch(0);
+            toolStripImageTagsSearchBox.TextChanged += (_, _) =>
+            {
+                if (!syncingImageTagsSearchBox)
+                    LocateImageTagsSearchMatch(0);
+            };
             toolStripImageTagsSearchBox.KeyDown += ImageTagsSearchBox_KeyDown;
             toolStripImageTagsSearchClear.Click += (_, _) => ResetImageTagsSearch();
         }

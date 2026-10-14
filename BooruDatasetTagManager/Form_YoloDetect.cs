@@ -1032,22 +1032,22 @@ namespace BooruDatasetTagManager
                 case OnnxTaggerModelKind.Wd14:
                     if (!wd14Service.IsModelReady(entry.Repo))
                         return false;
-                    wd14Service.LoadModel(entry.Repo);
+                    wd14Service.LoadModel(entry.Repo, OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice));
                     return true;
                 case OnnxTaggerModelKind.PixAi:
-                    if (!pixAiService.IsModelReady())
+                    if (entry.PixAiModel == null || !pixAiService.IsModelReady(entry.PixAiModel))
                         return false;
-                    pixAiService.LoadModel();
+                    pixAiService.LoadModel(entry.PixAiModel, OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice));
                     return true;
                 case OnnxTaggerModelKind.ClTagger:
                     if (entry.ClModel == null || !clService.IsModelReady(entry.ClModel))
                         return false;
-                    clService.LoadModel(entry.ClModel);
+                    clService.LoadModel(entry.ClModel, OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice));
                     return true;
                 case OnnxTaggerModelKind.OppaiOracle:
                     if (entry.OppaiModel == null || !oppaiService.IsModelReady(entry.OppaiModel))
                         return false;
-                    oppaiService.LoadModel(entry.OppaiModel);
+                    oppaiService.LoadModel(entry.OppaiModel, OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice));
                     return true;
                 default:
                     return false;
@@ -1063,17 +1063,15 @@ namespace BooruDatasetTagManager
             {
                 case OnnxTaggerModelKind.Wd14:
                     (double g, double c) = Program.Settings.Wd14Tagger.GetThresholdsForRepo(entry.Repo);
-                    return wd14Service.TagImageWithTiming(path, g, c).Tags;
+                    return wd14Service.TagImageWithTiming(path, TaggerProFilter.FromSettings(Program.Settings, entry, g, c)).Tags;
                 case OnnxTaggerModelKind.PixAi:
-                    return pixAiService.TagImageWithTiming(
-                        path,
-                        Program.Settings.PixAiTagger.GeneralThreshold,
-                        Program.Settings.PixAiTagger.CharacterThreshold).Tags;
+                    (double pixGeneral, double pixCharacter) = Program.Settings.PixAiTagger.GetThresholdsForModel(entry.Id);
+                    return pixAiService.TagImageWithTiming(path, TaggerProFilter.FromSettings(Program.Settings, entry, pixGeneral, pixCharacter)).Tags;
                 case OnnxTaggerModelKind.ClTagger:
+                    double clThreshold = entry.DefaultCharacterThreshold ?? entry.DefaultThreshold;
                     return clService.TagImageWithTiming(
                         path,
-                        entry.DefaultThreshold,
-                        entry.DefaultCharacterThreshold ?? entry.DefaultThreshold).Tags;
+                        TaggerProFilter.FromSettings(Program.Settings, entry, entry.DefaultThreshold, clThreshold)).Tags;
                 case OnnxTaggerModelKind.OppaiOracle:
                     return oppaiService.TagImageWithTiming(path, ResolveOppaiOracleThreshold(entry)).Tags;
                 default:

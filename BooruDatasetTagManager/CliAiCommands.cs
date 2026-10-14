@@ -104,7 +104,7 @@ namespace BooruDatasetTagManager
                 bool ready = entry.Kind switch
                 {
                     OnnxTaggerModelKind.Wd14 => wd14.IsModelReady(entry.Repo),
-                    OnnxTaggerModelKind.PixAi => pixai.IsModelReady(),
+                    OnnxTaggerModelKind.PixAi => pixai.IsModelReady(entry.PixAiModel),
                     OnnxTaggerModelKind.ClTagger => cl.IsModelReady(entry.ClModel),
                     OnnxTaggerModelKind.OppaiOracle => oppai.IsModelReady(entry.OppaiModel),
                     _ => false
@@ -152,8 +152,12 @@ namespace BooruDatasetTagManager
             }
 
             (double threshold, double characterThreshold) = ResolveThresholds(entry, options);
+            bool forceCpu = ResolveForceCpu(options);
+            int batchSize = ResolveBatchSize(options);
+            TaggerProFilter proFilter = TaggerProFilter.FromSettings(Program.Settings, entry, threshold, characterThreshold);
             output.WriteLine($"model: {entry.Id}, images: {inputs.Count}, threshold: {threshold}, "
-                + $"character-threshold: {characterThreshold}, write-mode: {WriteModeName(setMode)}");
+                + $"character-threshold: {characterThreshold}, write-mode: {WriteModeName(setMode)}, "
+                + $"device: {(forceCpu ? "cpu" : "gpu")}, batch: {batchSize}");
 
             using var wd14 = new Wd14OnnxTaggerService();
             using var pixai = new PixAiOnnxTaggerService();
@@ -161,51 +165,72 @@ namespace BooruDatasetTagManager
             using var oppai = new OppaiOracleOnnxService();
             await EnsureModelDownloadedAsync(entry, options, wd14, pixai, cl, oppai, output, token).ConfigureAwait(false);
 
-            Func<string, OnnxTagResult> tagImage;
+            Func<IReadOnlyList<string>, IReadOnlyList<OnnxTagResult>> tagBatch;
             switch (entry.Kind)
             {
                 case OnnxTaggerModelKind.PixAi:
-                    pixai.LoadModel();
-                    tagImage = path => pixai.TagImageWithTiming(path, threshold, characterThreshold);
+                    pixai.LoadModel(entry.PixAiModel, forceCpu);
+                    tagBatch = chunk => pixai.TagImageBatch(chunk, proFilter, chunk.Count);
                     break;
                 case OnnxTaggerModelKind.ClTagger:
-                    cl.LoadModel(entry.ClModel);
-                    tagImage = path => cl.TagImageWithTiming(path, threshold, characterThreshold);
+                    cl.LoadModel(entry.ClModel, forceCpu);
+                    tagBatch = chunk => cl.TagImageBatch(chunk, proFilter, chunk.Count);
                     break;
                 case OnnxTaggerModelKind.OppaiOracle:
-                    oppai.LoadModel(entry.OppaiModel);
-                    tagImage = path => oppai.TagImageWithTiming(path, threshold);
+                    oppai.LoadModel(entry.OppaiModel, forceCpu);
+                    tagBatch = chunk => oppai.TagImageBatch(chunk, threshold, chunk.Count);
                     break;
                 default:
-                    wd14.LoadModel(entry.Repo);
-                    tagImage = path => wd14.TagImageWithTiming(path, threshold, characterThreshold);
+                    wd14.LoadModel(entry.Repo, forceCpu);
+                    tagBatch = chunk => wd14.TagImageBatch(chunk, proFilter, chunk.Count);
                     break;
             }
 
             var results = new List<(DataItem Item, OnnxTagResult Result)>(inputs.Count);
             var fileErrors = new List<string>();
             bool cancelled = false;
-            for (int i = 0; i < inputs.Count; i++)
+            for (int offset = 0; offset < inputs.Count; offset += batchSize)
             {
-                // Stop instead of throwing so results computed so far still get
-                // applied and saved, matching the GUI's cancel behavior.
                 if (token.IsCancellationRequested)
                 {
                     cancelled = true;
                     break;
                 }
-                DataItem item = inputs[i];
+
+                int count = Math.Min(batchSize, inputs.Count - offset);
+                var chunkItems = new DataItem[count];
+                var chunkPaths = new string[count];
+                for (int i = 0; i < count; i++)
+                {
+                    chunkItems[i] = inputs[offset + i];
+                    chunkPaths[i] = chunkItems[i].ImageFilePath;
+                }
+
+                IReadOnlyList<OnnxTagResult> tagged = null;
+                string chunkError = null;
                 try
                 {
-                    OnnxTagResult result = await Task.Run(() => tagImage(item.ImageFilePath), CancellationToken.None)
-                        .ConfigureAwait(false);
-                    results.Add((item, result));
-                    output.WriteLine($"[{i + 1}/{inputs.Count}] {item.Name}: {result.Tags.Count} tags");
+                    tagged = await Task.Run(() => tagBatch(chunkPaths), CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    fileErrors.Add(item.ImageFilePath + ": " + ex.Message);
-                    error.WriteLine($"[{i + 1}/{inputs.Count}] {item.Name}: {ex.Message}");
+                    chunkError = ex.Message;
+                }
+
+                for (int i = 0; i < count; i++)
+                {
+                    int index = offset + i;
+                    DataItem item = chunkItems[i];
+                    if (chunkError != null || tagged == null || i >= tagged.Count || !string.IsNullOrEmpty(tagged[i].Error))
+                    {
+                        string message = chunkError ?? tagged?[i].Error ?? "batch failed";
+                        fileErrors.Add(item.ImageFilePath + ": " + message);
+                        error.WriteLine($"[{index + 1}/{inputs.Count}] {item.Name}: {message}");
+                        continue;
+                    }
+
+                    results.Add((item, tagged[i]));
+                    output.WriteLine($"[{index + 1}/{inputs.Count}] {item.Name}: {tagged[i].Tags.Count} tags");
                 }
             }
 
@@ -215,6 +240,7 @@ namespace BooruDatasetTagManager
             // Runtime-only overrides: the CLI never calls SaveSettings, so the
             // user's stored GUI preferences stay untouched on disk.
             writeSettings.SetMode = setMode;
+            writeSettings.CharacterFirst = proFilter.CharacterFirst;
             AutoTaggerSort? sort = ParseSort(options.GetValue("sort"));
             if (sort.HasValue)
                 writeSettings.SortMode = sort.Value;
@@ -265,6 +291,36 @@ namespace BooruDatasetTagManager
                 : entry.Repo;
         }
 
+        private static bool ResolveForceCpu(CliCommands.CliOptions options)
+        {
+            string requested = options.GetValue("device");
+            if (string.IsNullOrWhiteSpace(requested))
+                return OnnxInferenceDeviceParser.PreferCpu(Program.Settings.OnnxTaggerInferenceDevice);
+
+            if (!OnnxInferenceDeviceParser.TryParse(requested, out OnnxInferenceDevice device))
+            {
+                throw new CliCommands.CliUsageException(
+                    $"Unknown --device '{requested}'. Valid: cpu, gpu");
+            }
+
+            return OnnxInferenceDeviceParser.PreferCpu(device);
+        }
+
+        private static int ResolveBatchSize(CliCommands.CliOptions options)
+        {
+            int saved = OnnxInferenceBatch.ClampSize(Program.Settings.OnnxTaggerBatchSize);
+            string requested = options.GetValue("batch-size");
+            if (string.IsNullOrWhiteSpace(requested))
+                return saved;
+            if (!int.TryParse(requested, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int parsed))
+            {
+                throw new CliCommands.CliUsageException(
+                    $"Unknown --batch-size '{requested}'. Use an integer from {OnnxInferenceBatch.MinSize} to {OnnxInferenceBatch.MaxSize}.");
+            }
+
+            return OnnxInferenceBatch.ClampSize(parsed);
+        }
+
         private static (double Threshold, double CharacterThreshold) ResolveThresholds(
             OnnxTaggerModelEntry entry, CliCommands.CliOptions options)
         {
@@ -272,8 +328,7 @@ namespace BooruDatasetTagManager
             double characterThreshold;
             if (entry.Kind == OnnxTaggerModelKind.PixAi)
             {
-                threshold = Program.Settings.PixAiTagger.GeneralThreshold;
-                characterThreshold = Program.Settings.PixAiTagger.CharacterThreshold;
+                (threshold, characterThreshold) = Program.Settings.PixAiTagger.GetThresholdsForModel(entry.Id);
             }
             else
             {
@@ -307,7 +362,7 @@ namespace BooruDatasetTagManager
             bool ready = entry.Kind switch
             {
                 OnnxTaggerModelKind.Wd14 => wd14.IsModelReady(entry.Repo),
-                OnnxTaggerModelKind.PixAi => pixai.IsModelReady(),
+                OnnxTaggerModelKind.PixAi => pixai.IsModelReady(entry.PixAiModel),
                 OnnxTaggerModelKind.ClTagger => cl.IsModelReady(entry.ClModel),
                 OnnxTaggerModelKind.OppaiOracle => oppai.IsModelReady(entry.OppaiModel),
                 _ => false
@@ -325,7 +380,7 @@ namespace BooruDatasetTagManager
             output.WriteLine($"downloading model {entry.Id} from {source}...");
             if (entry.Kind == OnnxTaggerModelKind.PixAi)
             {
-                await pixai.DownloadModelAsync(source, progress, token).ConfigureAwait(false);
+                await pixai.DownloadModelAsync(entry.PixAiModel, source, progress, token).ConfigureAwait(false);
             }
             else if (entry.Kind == OnnxTaggerModelKind.ClTagger)
             {
@@ -491,16 +546,22 @@ namespace BooruDatasetTagManager
                     UserPrompt = request.UserPrompt
                 };
                 openAiRequest.ImagePath.AddRange(request.ImagePaths);
+                if (request.Temperature.HasValue)
+                    openAiRequest.Temperature = request.Temperature.Value;
                 OpenAiDetailedResponse response = await Program.OpenAiAutoTagger
                     .SendDetailedRequestAsync(openAiRequest, requestToken).ConfigureAwait(false);
                 CharacterTagTokenUsage usage = response.TotalTokens.HasValue
                     ? new CharacterTagTokenUsage(response.InputTokens ?? 0, response.OutputTokens ?? 0, response.TotalTokens.Value)
                     : null;
                 return new CharacterTagModelResponse(response.Result, response.ErrMessage, usage);
-            });
+            })
+            {
+                Temperature = Program.Settings.CharacterTagAuditTemperature
+            };
 
             output.WriteLine($"audit: trigger='{trigger}', model={model}, style={style}, "
-                + $"min-count={minimumCount}, tags={inventory.Tags.Count}, 2 model requests");
+                + $"min-count={minimumCount}, temperature={service.Temperature:0.##}, tags={inventory.Tags.Count}, "
+                + $"up to {CharacterTagAuditService.MaxRequestsPerProfile} model requests");
             var progress = new SimpleProgress<CharacterTagAuditProgress>(update =>
                 output.WriteLine($"stage: {update.Stage} ({update.CompletedSteps}/{update.TotalSteps})"));
             CharacterTagAuditResult result = await service.ExecuteAsync(auditOptions, progress, token).ConfigureAwait(false);
@@ -518,6 +579,8 @@ namespace BooruDatasetTagManager
             output.WriteLine($"decisions: keep {result.Items.Count - deletions - replacements}, "
                 + $"delete {deletions}, replace {replacements} (excluded below min-count: {result.ExcludedItems.Count})");
             output.WriteLine("final-prompt: " + finalPrompt);
+            if (!string.IsNullOrEmpty(result.Metrics.TemperatureWarning))
+                error.WriteLine("warning: " + result.Metrics.TemperatureWarning);
 
             // Apply with per-tag weights preserved (clone + rename, exactly the
             // wizard's transform), then commit through the same transactional
@@ -610,7 +673,7 @@ namespace BooruDatasetTagManager
             if (raw == null)
                 return Program.Settings.CharacterTagAuditStyle;
             if (!Enum.TryParse(raw, ignoreCase: true, out CharacterTagAuditStyle parsed))
-                throw new CliCommands.CliUsageException($"Unknown --style '{raw}' (sparse|dense).");
+                throw new CliCommands.CliUsageException($"Unknown --style '{raw}' (sparse|full).");
             return parsed;
         }
 

@@ -51,4 +51,24 @@ public sealed class Wd14OnnxImagePreprocessorTests
         Assert.Equal(0f, tensor[0, size / 2, size / 2, 1]);
         Assert.Equal(255f, tensor[0, size / 2, size / 2, 2]);
     }
+
+    [Fact]
+    public void CreateInputTensorNchw_packs_the_same_bgr_values_channels_first()
+    {
+        const int size = 8;
+        using var source = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(source))
+        {
+            graphics.Clear(Color.FromArgb(255, 255, 0, 0));
+        }
+
+        DenseTensor<float> tensor = Wd14OnnxImagePreprocessor.CreateInputTensorNchw(source, size);
+
+        Assert.Equal(new[] { 1, 3, size, size }, tensor.Dimensions.ToArray());
+        int x = size / 2;
+        int y = size / 2;
+        Assert.Equal(0f, tensor[0, 0, y, x]);
+        Assert.Equal(0f, tensor[0, 1, y, x]);
+        Assert.Equal(255f, tensor[0, 2, y, x]);
+    }
 }

@@ -18,7 +18,7 @@ public sealed class CharacterTagAuditIntegrationTests
     }
 
     [Fact]
-    public void ProjectPublishesAgentSkillsAndVersionIs127()
+    public void ProjectPublishesAgentSkillsAndVersionIs128()
     {
         string project = ProjectDirectory();
         string csproj = File.ReadAllText(Path.Combine(project, "BooruDatasetTagManager.csproj"));
@@ -27,10 +27,10 @@ public sealed class CharacterTagAuditIntegrationTests
         Assert.Contains("..\\Agent\\skills\\**\\*", csproj);
         Assert.Contains("Data\\danbooru_tag_near_synonyms.csv", csproj);
         Assert.True(File.Exists(Path.Combine(project, "Data", "danbooru_tag_near_synonyms.csv")));
-        Assert.Contains("<ApplicationVersion>1.2.7.0</ApplicationVersion>", csproj);
-        Assert.Contains("AssemblyVersion(\"1.2.7.0\")", assembly);
-        Assert.Contains("AssemblyFileVersion(\"1.2.7.0\")", assembly);
-        Assert.Contains("AssemblyInformationalVersion(\"1.2.7\")", assembly);
+        Assert.Contains("<ApplicationVersion>1.2.8.0</ApplicationVersion>", csproj);
+        Assert.Contains("AssemblyVersion(\"1.2.8.0\")", assembly);
+        Assert.Contains("AssemblyFileVersion(\"1.2.8.0\")", assembly);
+        Assert.Contains("AssemblyInformationalVersion(\"1.2.8\")", assembly);
     }
 
     [Fact]
@@ -58,9 +58,9 @@ public sealed class CharacterTagAuditIntegrationTests
         Assert.Contains("replacement target equals the source", auditor, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("hair between eyes", auditor, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("mole under eye", auditor, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("colored hair ribbon", auditor, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("colored hairband", auditor, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("colored jacket", auditor, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("colored hair ribbon", pyramid, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("colored hairband", pyramid, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("colored jacket", pyramid, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("visually confirmed", pyramid, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("character-audit mode", pyramid, StringComparison.OrdinalIgnoreCase);
@@ -86,7 +86,14 @@ public sealed class CharacterTagAuditIntegrationTests
         Assert.Contains("Container words are families, not features", pyramid, StringComparison.Ordinal);
         Assert.Contains("black elbow gloves", pyramid, StringComparison.Ordinal);
         Assert.Contains("only when no specific jewelry tag exists", pyramid, StringComparison.Ordinal);
-        Assert.Contains("color` + a real tag", pyramid, StringComparison.Ordinal);
+        Assert.Contains("must be a real danbooru tag", pyramid, StringComparison.Ordinal);
+        Assert.Contains("white long sleeves", pyramid, StringComparison.Ordinal);
+        // v1.2.8: colored composites must themselves be danbooru tags, and
+        // body framing / outfit meta never enter the character prompt.
+        Assert.Contains("only when the colored form is itself a real danbooru tag", auditor, StringComparison.Ordinal);
+        Assert.Contains("`white school uniform`", auditor, StringComparison.Ordinal);
+        Assert.Contains("`official alternate costume`", auditor, StringComparison.Ordinal);
+        Assert.DoesNotContain("allowed because it is `color` + a real tag", auditor, StringComparison.Ordinal);
         Assert.Contains("never invent", pyramid, StringComparison.Ordinal);
         Assert.Contains("One accessory, one tag", pyramid, StringComparison.Ordinal);
         Assert.Contains("deleting only strips the word", auditor, StringComparison.Ordinal);
