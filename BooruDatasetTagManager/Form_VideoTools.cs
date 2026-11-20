@@ -40,6 +40,9 @@ namespace BooruDatasetTagManager
         private readonly RadioButton radioExtractNativeFps = new RadioButton();
         private readonly RadioButton radioExtractSpecific = new RadioButton();
         private readonly RadioButton radioExtractRandom = new RadioButton();
+        private readonly RadioButton radioExtractCount = new RadioButton();
+        private readonly NumericUpDown numericFrameCount = new NumericUpDown();
+        private readonly List<Button> stepButtons = new List<Button>();
         private readonly TrackBar trackRandomPercent = new TrackBar();
         private readonly Label labelRandomPercent = new Label();
         private readonly RadioButton radioRandomDistributed = new RadioButton();
@@ -110,7 +113,8 @@ namespace BooruDatasetTagManager
             var panelControls = new TableLayoutPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = ScaleLayout(300),
+                // Room for a third row of buttons now that the ±5/10/100 steps wrap.
+                Height = ScaleLayout(340),
                 ColumnCount = 1,
                 RowCount = 4,
                 Padding = new Padding(8, 6, 8, 8)
@@ -125,6 +129,8 @@ namespace BooruDatasetTagManager
             scrubber.TickStyle = TickStyle.None;
             scrubber.Minimum = 0;
             scrubber.Maximum = 0;
+            // Clicking the track beside the thumb jumps 5 frames.
+            scrubber.LargeChange = 5;
             scrubber.Scroll += async (_, _) => await ShowFrameAsync(scrubber.Value, false).ConfigureAwait(true);
 
             labelFrameInfo.Dock = DockStyle.Fill;
@@ -150,8 +156,12 @@ namespace BooruDatasetTagManager
             buttonLockFrame.Click += (_, _) => LockCurrentFrame();
 
             panelButtons.Controls.Add(buttonPlayPause);
+            foreach (int step in new[] { -100, -10, -5 })
+                panelButtons.Controls.Add(CreateStepButton(step));
             panelButtons.Controls.Add(buttonPrevFrame);
             panelButtons.Controls.Add(buttonNextFrame);
+            foreach (int step in new[] { 5, 10, 100 })
+                panelButtons.Controls.Add(CreateStepButton(step));
             panelButtons.Controls.Add(buttonPrevVideo);
             panelButtons.Controls.Add(buttonNextVideo);
             panelButtons.Controls.Add(buttonLockFrame);
@@ -282,6 +292,66 @@ namespace BooruDatasetTagManager
             groupExtract.SizeChanged += (_, _) => UpdateHintLabelWidths();
         }
 
+        private Button CreateStepButton(int delta)
+        {
+            var button = new Button { Text = delta.ToString("+0;-0", CultureInfo.InvariantCulture) };
+            ApplySecondaryButton(button);
+            button.MinimumSize = new Size(52, 34);
+            button.Click += async (_, _) => await StepFrameAsync(delta).ConfigureAwait(true);
+            stepButtons.Add(button);
+            return button;
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (!IsTypingInTextControl() && TryHandlePreviewHotkey(keyData))
+                return true;
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private bool TryHandlePreviewHotkey(Keys keyData)
+        {
+            int step = keyData switch
+            {
+                Keys.Left => -1,
+                Keys.Right => 1,
+                Keys.Shift | Keys.Left => -5,
+                Keys.Shift | Keys.Right => 5,
+                Keys.Control | Keys.Left => -10,
+                Keys.Control | Keys.Right => 10,
+                Keys.PageUp => -100,
+                Keys.PageDown => 100,
+                _ => 0
+            };
+            if (step != 0)
+            {
+                _ = StepFrameAsync(step);
+                return true;
+            }
+
+            switch (keyData)
+            {
+                case Keys.Space:
+                    _ = TogglePlaybackAsync();
+                    return true;
+                case Keys.L:
+                    LockCurrentFrame();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        // Arrows/Space/L must keep editing the frame list and number boxes.
+        private bool IsTypingInTextControl()
+        {
+            Control focused = ActiveControl;
+            // SplitContainer/NumericUpDown are containers: drill to the real focus.
+            while (focused is ContainerControl container && container.ActiveControl != null)
+                focused = container.ActiveControl;
+            return focused is TextBoxBase || focused is ComboBox;
+        }
+
         private void UpdateHintLabel(Label label, Control host, string text)
         {
             label.AutoSize = true;
@@ -369,6 +439,14 @@ namespace BooruDatasetTagManager
             radioExtractRandom.AutoSize = true;
             radioExtractRandom.CheckedChanged += (_, _) => UpdateExtractControls();
 
+            radioExtractCount.AutoSize = true;
+            radioExtractCount.CheckedChanged += (_, _) => UpdateExtractControls();
+
+            numericFrameCount.Width = ScaleLayout(90);
+            numericFrameCount.Minimum = 1;
+            numericFrameCount.Maximum = 100000;
+            numericFrameCount.Value = 20;
+
             trackRandomPercent.Minimum = 1;
             trackRandomPercent.Maximum = 100;
             trackRandomPercent.TickFrequency = 10;
@@ -451,11 +529,11 @@ namespace BooruDatasetTagManager
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 10
+                RowCount = 11
             };
             extractLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             extractLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            for (int i = 0; i < 9; i++)
+            for (int i = 0; i < 10; i++)
                 extractLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             extractLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
@@ -465,19 +543,21 @@ namespace BooruDatasetTagManager
             extractLayout.Controls.Add(numericFps, 1, 1);
             extractLayout.Controls.Add(radioExtractNativeFps, 0, 2);
             extractLayout.Controls.Add(labelNativeFpsValue, 1, 2);
-            extractLayout.Controls.Add(radioExtractSpecific, 0, 3);
+            extractLayout.Controls.Add(radioExtractCount, 0, 3);
+            extractLayout.Controls.Add(numericFrameCount, 1, 3);
+            extractLayout.Controls.Add(radioExtractSpecific, 0, 4);
             extractLayout.SetColumnSpan(radioExtractSpecific, 2);
-            extractLayout.Controls.Add(textSpecificFrames, 0, 4);
+            extractLayout.Controls.Add(textSpecificFrames, 0, 5);
             extractLayout.SetColumnSpan(textSpecificFrames, 2);
-            extractLayout.Controls.Add(radioExtractRandom, 0, 5);
+            extractLayout.Controls.Add(radioExtractRandom, 0, 6);
             extractLayout.SetColumnSpan(radioExtractRandom, 2);
-            extractLayout.Controls.Add(panelRandomPercent, 0, 6);
+            extractLayout.Controls.Add(panelRandomPercent, 0, 7);
             extractLayout.SetColumnSpan(panelRandomPercent, 2);
-            extractLayout.Controls.Add(panelRandomMode, 0, 7);
+            extractLayout.Controls.Add(panelRandomMode, 0, 8);
             extractLayout.SetColumnSpan(panelRandomMode, 2);
-            extractLayout.Controls.Add(comboImageFormat, 0, 8);
+            extractLayout.Controls.Add(comboImageFormat, 0, 9);
             extractLayout.SetColumnSpan(comboImageFormat, 2);
-            extractLayout.Controls.Add(labelExtractHint, 0, 9);
+            extractLayout.Controls.Add(labelExtractHint, 0, 10);
             extractLayout.SetColumnSpan(labelExtractHint, 2);
             groupExtract.Controls.Add(extractLayout);
             UpdateRandomPercentLabel();
@@ -544,6 +624,11 @@ namespace BooruDatasetTagManager
             radioExtractNativeFps.Text = I18n.GetText("VideoToolsExtractNativeFps");
             radioExtractSpecific.Text = I18n.GetText("VideoToolsExtractSpecific");
             radioExtractRandom.Text = I18n.GetText("VideoToolsExtractRandom");
+            radioExtractCount.Text = I18n.GetText("VideoToolsExtractCount");
+            toolTip.SetToolTip(radioExtractCount, I18n.GetText("VideoToolsExtractCountHint"));
+            string hotkeyHint = I18n.GetText("VideoToolsHotkeyHint");
+            foreach (Control control in stepButtons.Concat(new Control[] { scrubber, previewBox, labelFrameInfo, buttonPlayPause, buttonPrevFrame, buttonNextFrame, buttonLockFrame }))
+                toolTip.SetToolTip(control, hotkeyHint);
             radioRandomDistributed.Text = I18n.GetText("VideoToolsExtractRandomDistributed");
             radioRandomRegional.Text = I18n.GetText("VideoToolsExtractRandomRegional");
             UpdateRandomPercentLabel();
@@ -610,6 +695,7 @@ namespace BooruDatasetTagManager
         {
             numericFps.Enabled = radioExtractFps.Checked;
             textSpecificFrames.Enabled = radioExtractSpecific.Checked;
+            numericFrameCount.Enabled = radioExtractCount.Checked;
             bool random = radioExtractRandom.Checked;
             trackRandomPercent.Enabled = random;
             labelRandomPercent.Enabled = random;
@@ -658,6 +744,8 @@ namespace BooruDatasetTagManager
                 return FrameExtractMode.NativeFps;
             if (radioExtractRandom.Checked)
                 return FrameExtractMode.Random;
+            if (radioExtractCount.Checked)
+                return FrameExtractMode.Count;
             return FrameExtractMode.Specific;
         }
 
@@ -1035,7 +1123,7 @@ namespace BooruDatasetTagManager
                     jobCancellation.Token.ThrowIfCancellationRequested();
                     UpdateStatus(Path.GetFileName(input));
                     FrameExtractMode mode = GetSelectedExtractMode();
-                    if (mode != FrameExtractMode.Specific && mode != FrameExtractMode.Random)
+                    if (mode != FrameExtractMode.Specific && mode != FrameExtractMode.Random && mode != FrameExtractMode.Count)
                         progressBar.Value = 0;
 
                     string outputDir = videoService.GetFlatExtractOutputDirectory(input);
@@ -1069,7 +1157,8 @@ namespace BooruDatasetTagManager
                         trackRandomPercent.Value,
                         radioRandomRegional.Checked
                             ? RandomFrameSampleMode.Regional
-                            : RandomFrameSampleMode.Distributed).ConfigureAwait(true);
+                            : RandomFrameSampleMode.Distributed,
+                        (int)numericFrameCount.Value).ConfigureAwait(true);
                     if (!result.Success)
                         errors.Add(input + ": " + result.ErrorMessage);
                     else

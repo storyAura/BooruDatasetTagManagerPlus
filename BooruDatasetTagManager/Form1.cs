@@ -5152,40 +5152,34 @@ namespace BooruDatasetTagManager
                 return;
             }
 
-            List<DataItem> selectedItems = GetSelectedReplaceTransparentItems();
-            if (selectedItems.Count == 0)
+            // Menu runs while the Tools dropdown is still closing (see
+            // ReplaceTransparentBackgroundAsync): yield before showing a dialog.
+            await Task.Yield();
+
+            // No selection needed: the dialog scans the whole dataset by
+            // default and lets the user narrow it to one sub-folder.
+            List<DataItem> all = Program.DataManager.DataSet.Values.ToList();
+            var scopes = new List<KeyValuePair<string, List<DataItem>>>
             {
-                MessageBox.Show(this, I18n.GetText("TipImgOrTagNotSelect"), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            await ReplaceTransparentBackgroundAsync(selectedItems, confirmBulk: false);
-        }
-
-        /// <summary>
-        /// Images the user currently has selected in the dataset browser (the
-        /// visible list). Falls back to the hidden grid so a stale browser
-        /// handle cannot empty the batch.
-        /// </summary>
-        private List<DataItem> GetSelectedReplaceTransparentItems()
-        {
-            var items = new List<DataItem>();
-            if (Program.DataManager == null)
-                return items;
-
-            IReadOnlyList<string> browserPaths = datasetBrowserView?.GetSelectedImagePaths();
-            IEnumerable<string> paths = browserPaths != null && browserPaths.Count > 0
-                ? browserPaths
-                : GetSelectedDatasetImagePaths();
-            foreach (string path in paths)
+                new(I18n.GetText("FolderListAll"), all)
+            };
+            IReadOnlyList<DatasetFolderEntry> folders = DatasetFolderIndex.Create(
+                all.Select(item => item.ImageFilePath), Program.DataManager.DatasetRoot);
+            if (folders.Count > 1)
             {
-                if (!string.IsNullOrEmpty(path)
-                    && Program.DataManager.DataSet.TryGetValue(path, out DataItem item))
+                foreach (DatasetFolderEntry folder in folders)
                 {
-                    items.Add(item);
+                    string key = folder.RelativePath.Length == 0 ? DatasetFolderIndex.RootFolderKey : folder.RelativePath;
+                    string label = folder.RelativePath.Length == 0 ? I18n.GetText("FolderListRoot") : folder.RelativePath;
+                    scopes.Add(new($"{label} ({folder.ImageCount})", GetItemsInFolders(new[] { key })));
                 }
             }
-            return items;
+
+            using Form_backgroundReplace backgroundReplace = new Form_backgroundReplace(scopes);
+            if (backgroundReplace.ShowDialog(this) != DialogResult.OK || backgroundReplace.Targets.Count == 0)
+                return;
+            List<DataItem> targets = backgroundReplace.Targets;
+            await ApplyTransparentReplacementAsync(backgroundReplace, targets, backgroundReplace.ScopeItemCount - targets.Count);
         }
 
         private async void menuFolderReplaceTransp_Click(object sender, EventArgs e)
@@ -5309,6 +5303,17 @@ namespace BooruDatasetTagManager
             using Form_backgroundReplace backgroundReplace = new Form_backgroundReplace();
             if (backgroundReplace.ShowDialog(this) != DialogResult.OK)
                 return;
+            int skipped = Math.Max(0, (items?.Count ?? candidates.Count) - targets.Count);
+            await ApplyTransparentReplacementAsync(backgroundReplace, targets, skipped);
+        }
+
+        /// <summary>
+        /// Fills the transparent pixels of <paramref name="targets"/> with the
+        /// colors chosen in <paramref name="backgroundReplace"/> and overwrites
+        /// the files (SafeFile → cache drop → thumbnail rebuild).
+        /// </summary>
+        private async Task ApplyTransparentReplacementAsync(Form_backgroundReplace backgroundReplace, List<DataItem> targets, int skipped)
+        {
             LockEdit(true);
             try
             {
@@ -5389,7 +5394,6 @@ namespace BooruDatasetTagManager
                 }
                 // Say how many files the scan filtered out: with a folder full of
                 // opaque images "complete" alone looks like nothing happened.
-                int skipped = Math.Max(0, (items?.Count ?? candidates.Count) - targets.Count);
                 SetStatus(skipped > 0
                     ? string.Format(I18n.GetText("TipBackgrRepCompleteCount"), targets.Count, skipped)
                     : I18n.GetText("TipBackgrRepComplete"));

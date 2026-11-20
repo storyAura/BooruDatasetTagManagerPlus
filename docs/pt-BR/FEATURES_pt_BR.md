@@ -121,7 +121,7 @@ Entrada: menu de contexto do dataset, menu do cabeçalho da pasta, ou **Ferramen
 
 ## Ferramentas de vídeo
 
-**Ferramentas → Conversão de vídeo… / Extração de frames…**. Converta entre mp4 / mkv / avi / webm / mov / flv (com opção de substituir o original); extraia todos os frames, por FPS, no FPS nativo, por números de frame específicos ou uma porcentagem aleatória (distribuída pelo clipe ou um bloco regional contínuo; controle padrão 10%), com pré-visualização e fluxo de bloqueio de frames; os resultados são importados para o dataset. O FFmpeg vem incluído nos builds de Release.
+**Ferramentas → Conversão de vídeo… / Extração de frames…**. Converta entre mp4 / mkv / avi / webm / mov / flv (com opção de substituir o original); extraia todos os frames, por FPS, no FPS nativo, por números de frame específicos, uma quantidade definida (distribuída por igual no clipe) ou uma porcentagem aleatória (distribuída pelo clipe ou um bloco regional contínuo; controle padrão 10%), tudo numa única decodificação; com pré-visualização e fluxo de bloqueio de frames, e atalhos na pré-visualização ←/→ 1 frame, Shift 5, Ctrl 10, PgUp/PgDn 100, Espaço reproduz, L bloqueia; os resultados são importados para o dataset. O FFmpeg vem incluído nos builds de Release.
 
 ![Extração de frames de vídeo](../images/video-frame-extraction.png)
 

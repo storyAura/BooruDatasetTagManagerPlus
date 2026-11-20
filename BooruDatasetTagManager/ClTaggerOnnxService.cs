@@ -186,6 +186,7 @@ namespace BooruDatasetTagManager
                     }
                     catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
                     {
+                        DebugLog.Write("Onnx", $"GPU (DirectML) session failed, retrying on CPU: {ex}");
                         // A DirectML session can fail for device/driver reasons that
                         // say nothing about the file on disk: retry on CPU before
                         // the outer handler declares the model corrupt and purges
@@ -208,6 +209,7 @@ namespace BooruDatasetTagManager
             }
             loadedModel = model;
             loadedForceCpu = !usesDirectMlProvider;
+            DebugLog.Write("Onnx", $"Loaded {loadedModelPath} on {(usesDirectMlProvider ? "GPU (DirectML)" : "CPU")}");
         }
 
         public OnnxTagResult TagImageWithTiming(string imagePath, double generalThreshold, double characterThreshold)
@@ -405,6 +407,7 @@ namespace BooruDatasetTagManager
             }
             catch (OnnxRuntimeException ex) when (usesDirectMlProvider)
             {
+                DebugLog.Write("Onnx", $"GPU (DirectML) inference failed, switching to CPU for the rest of the run: {ex}");
                 activeSession.Dispose();
                 session = CreateSession(loadedModelPath, forceCpu: true);
                 loadedForceCpu = true;
@@ -449,8 +452,9 @@ namespace BooruDatasetTagManager
                     options.AppendExecutionProvider_DML(0);
                     usesDirectMlProvider = true;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    DebugLog.Write("Onnx", $"DirectML unavailable, using CPU: {ex}");
                     options.AppendExecutionProvider_CPU();
                 }
             }

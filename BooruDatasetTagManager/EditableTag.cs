@@ -263,11 +263,11 @@ namespace BooruDatasetTagManager
         {
             if (Program.Settings.FixTagsOnSaveLoad)
             {
+                // Keep "moskva (azur lane)" literal (a "\(" is an extra token for trainers);
+                // escape only when the tag would otherwise be read back as weight syntax.
                 string resTag = Tag;
-                if (!resTag.Contains("\\(") && resTag.Contains('('))
-                    resTag = resTag.Replace("(", "\\(");
-                if (!resTag.Contains("\\)") && resTag.Contains(')'))
-                    resTag = resTag.Replace(")", "\\)");
+                if (Weight != 1f || resTag.StartsWith('(') || resTag.StartsWith('['))
+                    resTag = PromptParser.EscapeBrackets(resTag);
                 if (Weight == 1f)
                     return resTag;
                 else if (Weight == 0f)

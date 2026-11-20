@@ -236,6 +236,34 @@ public sealed class VideoProcessingServiceTests
     }
 
     [Fact]
+    public void PlanEvenFrameIndices_takes_the_middle_of_each_equal_segment()
+    {
+        Assert.Equal(new[] { 10, 30, 50, 70, 90 }, VideoProcessingService.PlanEvenFrameIndices(100, 5));
+    }
+
+    [Theory]
+    [InlineData(7, 7)]
+    [InlineData(7, 50)]
+    public void PlanEvenFrameIndices_caps_at_every_frame_in_order(int frameCount, int count)
+    {
+        Assert.Equal(Enumerable.Range(0, frameCount), VideoProcessingService.PlanEvenFrameIndices(frameCount, count));
+    }
+
+    [Theory]
+    [InlineData(0, 5)]
+    [InlineData(100, 0)]
+    public void PlanEvenFrameIndices_returns_empty_without_frames_or_count(int frameCount, int count)
+    {
+        Assert.Empty(VideoProcessingService.PlanEvenFrameIndices(frameCount, count));
+    }
+
+    [Fact]
+    public void BuildSelectFilter_matches_every_frame_in_one_expression()
+    {
+        Assert.Equal(@"select=eq(n\,3)+eq(n\,150)", VideoProcessingService.BuildSelectFilter(new[] { 3, 150 }));
+    }
+
+    [Fact]
     public void FormatExtractItemProgress_includes_current_total_and_item()
     {
         Assert.Equal("3/12  frame 145", VideoProcessingService.FormatExtractItemProgress(3, 12, "frame 145"));

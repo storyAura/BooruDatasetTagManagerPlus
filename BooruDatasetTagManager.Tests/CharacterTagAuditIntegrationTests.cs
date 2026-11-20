@@ -18,7 +18,7 @@ public sealed class CharacterTagAuditIntegrationTests
     }
 
     [Fact]
-    public void ProjectPublishesAgentSkillsAndVersionIs128()
+    public void ProjectPublishesAgentSkillsAndVersionIs129()
     {
         string project = ProjectDirectory();
         string csproj = File.ReadAllText(Path.Combine(project, "BooruDatasetTagManager.csproj"));
@@ -27,10 +27,10 @@ public sealed class CharacterTagAuditIntegrationTests
         Assert.Contains("..\\Agent\\skills\\**\\*", csproj);
         Assert.Contains("Data\\danbooru_tag_near_synonyms.csv", csproj);
         Assert.True(File.Exists(Path.Combine(project, "Data", "danbooru_tag_near_synonyms.csv")));
-        Assert.Contains("<ApplicationVersion>1.2.8.0</ApplicationVersion>", csproj);
-        Assert.Contains("AssemblyVersion(\"1.2.8.0\")", assembly);
-        Assert.Contains("AssemblyFileVersion(\"1.2.8.0\")", assembly);
-        Assert.Contains("AssemblyInformationalVersion(\"1.2.8\")", assembly);
+        Assert.Contains("<ApplicationVersion>1.2.9.0</ApplicationVersion>", csproj);
+        Assert.Contains("AssemblyVersion(\"1.2.9.0\")", assembly);
+        Assert.Contains("AssemblyFileVersion(\"1.2.9.0\")", assembly);
+        Assert.Contains("AssemblyInformationalVersion(\"1.2.9\")", assembly);
     }
 
     [Fact]

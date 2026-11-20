@@ -190,18 +190,18 @@ namespace BooruDatasetTagManager
                         inputHeight = model.InputSize;
                     }
 
-                    string modelPath = HuggingFaceModelDownloader.GetLocalPath(model.Repo, model.ModelFile);
-                    loadedModelPath = modelPath;
-                    // The v1.0 SAM3 graph is about 2 GB. Full ORT optimization
-                    // rewrites it on the CPU and then DirectML spends the run
-                    // copying those nodes back. Keep the exported graph.
                     bool lightGraph = model.Preprocess == PixAiPreprocessKind.LetterboxRgbV10;
+                    string modelPath = HuggingFaceModelDownloader.GetLocalPath(model.Repo, model.ModelFile);
+                    if (lightGraph)
+                        modelPath = PrepareDirectMlCompatibleGraph(modelPath);
+                    loadedModelPath = modelPath;
                     try
                     {
                         session = CreateSession(modelPath, forceCpu, lightGraph);
                     }
                     catch (Exception ex) when (ex is not DllNotFoundException && usesDirectMlProvider)
                     {
+                        DebugLog.Write("Onnx", $"GPU (DirectML) session failed, retrying on CPU: {ex}");
                         // A DirectML session can fail for device/driver reasons that
                         // say nothing about the file on disk: retry on CPU before
                         // the outer handler declares the model corrupt and purges
@@ -211,6 +211,7 @@ namespace BooruDatasetTagManager
                     ConfigureSessionMetadata(session);
                     loadedDefinition = model;
                     loadedForceCpu = !usesDirectMlProvider;
+                    DebugLog.Write("Onnx", $"Loaded {loadedModelPath} on {(usesDirectMlProvider ? "GPU (DirectML)" : "CPU")}");
                 });
             }
             catch (Exception ex) when (ex is not FileNotFoundException)
@@ -367,6 +368,53 @@ namespace BooruDatasetTagManager
             return result.AsEnumerable<float>().ToArray();
         }
 
+        // Protobuf bytes of AttributeProto { name: "allowzero", i: 1 }.
+        private static readonly byte[] AllowZeroOn = { 0x0A, 0x09, (byte)'a', (byte)'l', (byte)'l', (byte)'o', (byte)'w', (byte)'z', (byte)'e', (byte)'r', (byte)'o', 0x18, 0x01 };
+
+        /// <summary>
+        /// The v1.0 export marks its 341 Reshape nodes allowzero=1, which DirectML
+        /// rejects with E_INVALIDARG, so the GPU session silently fell back to CPU.
+        /// Every one of those shapes is a static constant without zeros, where
+        /// allowzero=0 is identical. Returns a patched copy of the 2.6 MB graph
+        /// beside the original (it shares model.onnx.data), or the original path
+        /// when there is nothing to patch or the copy cannot be written.
+        /// </summary>
+        internal static string PrepareDirectMlCompatibleGraph(string modelPath)
+        {
+            string patchedPath = Path.ChangeExtension(modelPath, ".dml.onnx");
+            try
+            {
+                if (File.Exists(patchedPath) && File.GetLastWriteTimeUtc(patchedPath) >= File.GetLastWriteTimeUtc(modelPath))
+                    return patchedPath;
+                byte[] graph = File.ReadAllBytes(modelPath);
+                if (ClearAllowZero(graph) == 0)
+                    return modelPath;
+                SafeFile.WriteAllBytes(patchedPath, graph);
+                return patchedPath;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                DebugLog.Write("Onnx", $"Could not write DirectML-compatible graph, using original: {ex}");
+                return modelPath;
+            }
+        }
+
+        /// <summary>Flips every allowzero=1 attribute to 0 in place; returns how many.</summary>
+        internal static int ClearAllowZero(byte[] graph)
+        {
+            int count = 0;
+            int at = 0;
+            while (true)
+            {
+                int found = graph.AsSpan(at).IndexOf(AllowZeroOn);
+                if (found < 0)
+                    return count;
+                at += found + AllowZeroOn.Length;
+                graph[at - 1] = 0x00; // the varint value of field "i"
+                count++;
+            }
+        }
+
         internal static float[] ApplySigmoid(IReadOnlyList<float> values)
         {
             var output = new float[values.Count];
@@ -388,6 +436,7 @@ namespace BooruDatasetTagManager
             }
             catch (OnnxRuntimeException ex) when (usesDirectMlProvider)
             {
+                DebugLog.Write("Onnx", $"GPU (DirectML) inference failed, switching to CPU for the rest of the run: {ex}");
                 activeSession.Dispose();
                 session = CreateSession(
                     loadedModelPath,
@@ -439,14 +488,13 @@ namespace BooruDatasetTagManager
 
         private static InferenceSession CreateSession(string modelPath, bool forceCpu, bool lightGraph, out bool usesDirectMl)
         {
-            // Full optimization of the v1.0 graph is a CPU rewrite of a 2 GB
-            // SAM3 model. DirectML then copies those rewritten nodes back to
-            // the CPU on every image. BASIC leaves the exported graph on the GPU.
+            // Full optimization fuses v1.0's attention: on an 8 GB DirectML card
+            // BASIC spilled VRAM and took ~100 s/image vs ~3.4 s with ALL (CPU
+            // speed is the same either way). The 2 GB graph still skips memory
+            // patterns / the CPU arena to bound RAM.
             using var options = new SessionOptions
             {
-                GraphOptimizationLevel = lightGraph
-                    ? GraphOptimizationLevel.ORT_ENABLE_BASIC
-                    : GraphOptimizationLevel.ORT_ENABLE_ALL,
+                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
                 EnableMemoryPattern = !lightGraph
             };
             if (lightGraph)
@@ -464,8 +512,9 @@ namespace BooruDatasetTagManager
                     options.AppendExecutionProvider_DML(0);
                     usesDirectMl = true;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    DebugLog.Write("Onnx", $"DirectML unavailable, using CPU: {ex}");
                     options.AppendExecutionProvider_CPU();
                 }
             }

@@ -11,9 +11,6 @@ namespace BooruDatasetTagManager
 {
     public class PromptParser
     {
-        private static Regex re_attention = new Regex(@"\\\(|\\\)|\\\[|\\]|\\\\|\\|\(|\[|:\s*([+-]?[.\d]+)\s*\)|\)|]|[^\\()\[\]:]+|:", RegexOptions.Compiled | RegexOptions.Multiline);
-        private static Regex re_break = new Regex(@"\s*\bBREAK\b\s*", RegexOptions.Compiled | RegexOptions.Multiline);
-
         public static float round_bracket_multiplier = 1.1f;
         public static float square_bracket_multiplier = 1f / 1.1f;
 
@@ -48,111 +45,80 @@ namespace BooruDatasetTagManager
             return result;
         }
 
+        // Danbooru tags carry literal brackets ("moskva (azur lane)", "olivier (brown dust)"),
+        // so weight syntax is only recognised when it wraps a WHOLE separator-delimited item:
+        // "(tag:1.2)", "((tag))", "[tag]". Running WebUI's attention regex over the whole line
+        // split such tags apart and re-wrapped them in another bracket pair on every save.
+        // ponytail: per-item only; WebUI group weights spanning separators ("(a, b:1.2)") stay literal.
+        private static readonly Regex re_explicit_weight = new Regex(@"^(.*):\s*([+-]?[.\d]+)\s*$", RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex re_escaped_bracket = new Regex(@"\\([()\[\]\\])", RegexOptions.Compiled);
+
         public static List<PromptItem> ParsePromptWeight(string promptString, string splitSeparator = ",")
         {
-            
-            List<PromptItem> res = new List<PromptItem>();
-            List<int> round_brackets = new List<int>();
-            List<int> square_brackets = new List<int>();
             List<PromptItem> result = new List<PromptItem>();
-
-            void multiply_range(int startPosition, float multiplier)
+            foreach (string raw in promptString.Split(new string[] { splitSeparator }, StringSplitOptions.RemoveEmptyEntries))
             {
-                for (int i = startPosition; i < res.Count; i++)
-                {
-                    res[i].Weight *= multiplier;
-                }
+                PromptItem item = ParseSingleTagWeight(raw);
+                if (item.Text.Length > 0 && !result.Exists(a => a.Text == item.Text))
+                    result.Add(item);
             }
-
-            foreach (Match m in re_attention.Matches(promptString))
-            {
-                string text = m.Groups[0].Value;
-                string weight = m.Groups[1].Value;
-
-                if (text.StartsWith("\\"))
-                    res.Add(new PromptItem(text.Substring(1), 1.0f));
-                else if (text == "(")
-                    round_brackets.Add(res.Count);
-                else if (text == "[")
-                    square_brackets.Add(res.Count);
-                else if (!string.IsNullOrEmpty(weight) && round_brackets.Count > 0)
-                {
-                    // Invariant culture: Convert.ToDouble used CurrentCulture, so on
-                    // decimal-comma locales (ru-RU, de-DE, ...) a normal "(tag:1.1)"
-                    // weight threw FormatException while loading the dataset. The
-                    // regex also admits malformed numbers like "1.2.3"; fall back to
-                    // weight 1 instead of crashing the load.
-                    float parsedWeight = float.TryParse(weight, NumberStyles.Float, CultureInfo.InvariantCulture, out float w)
-                        ? w
-                        : 1.0f;
-                    multiply_range(round_brackets.Pop(), parsedWeight);
-                }
-                else if (text == ")")
-                    multiply_range(round_brackets.Pop(), round_bracket_multiplier);
-                else if (text == "]")
-                    multiply_range(square_brackets.Pop(), square_bracket_multiplier);
-                else
-                {
-                    string[] parts = re_break.Split(text);
-                    for (int i = 0; i < parts.Length; i++)
-                    {
-                        if(i>0)
-                            res.Add(new PromptItem("BREAK", -1f));
-                        res.Add(new PromptItem(parts[i], 1.0f));
-                    }
-                }
-            }
-            foreach (var item in round_brackets)
-            {
-                multiply_range(item, round_bracket_multiplier);
-            }
-            foreach (var item in square_brackets)
-            {
-                multiply_range(item, square_bracket_multiplier);
-            }
-
-            if (res.Count == 0)
-            {
-                res.Add(new PromptItem("", 1f));
-            }
-            int p = 0;
-            while (p + 1 < res.Count)
-            {
-                if (res[p].Weight == res[p + 1].Weight)
-                {
-                    res[p].Text += res[p + 1].Text;
-                    res.RemoveAt(p + 1);
-                }
-                else
-                    p += 1;
-            }
-
-            foreach (var item in res)
-            {
-                string[] clearedTags = item.Text.Split(new string[] {splitSeparator}, StringSplitOptions.RemoveEmptyEntries);
-                if (clearedTags.Length > 0)
-                {
-                    foreach (var tag in clearedTags)
-                    {
-                        if (!string.IsNullOrWhiteSpace(tag))
-                        {
-                            string textTag = tag.Replace('_', ' ').ToLower().Trim();
-                            int tagIndex = result.FindIndex(a => a.Text == textTag);
-                            if (tagIndex != -1)
-                            {
-                                result[tagIndex].Weight *= round_bracket_multiplier * item.Weight;
-                            }
-                            else
-                                result.Add(new PromptItem(textTag, item.Weight));
-                        }
-                    }
-                }
-            }
-
+            if (result.Count == 0)
+                result.Add(new PromptItem("", 1f));
             return result;
         }
 
+        public static PromptItem ParseSingleTagWeight(string raw)
+        {
+            string s = raw.Trim();
+            float weight = 1f;
+            while (true)
+            {
+                if (IsWrapped(s, '(', ')'))
+                {
+                    s = s.Substring(1, s.Length - 2).Trim();
+                    Match m = re_explicit_weight.Match(s);
+                    if (m.Success)
+                    {
+                        // Invariant culture: decimal-comma locales threw on "(tag:1.1)";
+                        // malformed numbers like "1.2.3" fall back to neutral weight.
+                        weight *= float.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out float w) ? w : 1f;
+                        s = m.Groups[1].Value.Trim();
+                    }
+                    else
+                        weight *= round_bracket_multiplier;
+                }
+                else if (IsWrapped(s, '[', ']'))
+                {
+                    s = s.Substring(1, s.Length - 2).Trim();
+                    weight *= square_bracket_multiplier;
+                }
+                else
+                    break;
+            }
+            string text = re_escaped_bracket.Replace(s, "$1").Replace('_', ' ').ToLower().Trim();
+            return new PromptItem(text, weight);
+        }
 
+        public static string EscapeBrackets(string tag)
+        {
+            return Regex.Replace(tag, @"(?<!\\)([()\[\]])", @"\$1");
+        }
+
+        // True when s[0] is an unescaped open bracket whose matching close is the last char.
+        private static bool IsWrapped(string s, char open, char close)
+        {
+            if (s.Length < 2 || s[0] != open || s[s.Length - 1] != close)
+                return false;
+            int depth = 0;
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (s[i] == '\\') { i++; continue; }
+                if (s[i] == open) depth++;
+                else if (s[i] == close && --depth == 0)
+                    return i == s.Length - 1;
+            }
+            return false;
+        }
 
         public class PromptItem
         {

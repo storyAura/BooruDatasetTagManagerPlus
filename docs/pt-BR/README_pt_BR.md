@@ -1,6 +1,6 @@
 <div align="center">
 
-# BooruDatasetTagManager+ 1.2.8
+# BooruDatasetTagManager+ 1.2.9
 
 Ferramenta Windows para marcar datasets de LoRA e personagens
 
@@ -14,7 +14,7 @@ Ferramenta Windows para marcar datasets de LoRA e personagens
 
 Cada imagem tem um `.txt` com o mesmo nome para as tags: abra a pasta e edite. Também dá para marcar com o Tag tagger local ou com LLM, auditar tags de personagem e buscar tags do Danbooru em chinês. A interface começa em chinês simplificado e pode ser trocada para português. Fork de [starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager).
 
-[Download](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) · [Guia de funcionalidades](FEATURES_pt_BR.md) · [Notas da versão](../RELEASE_NOTES_v1.2.8.md) · [Problemas](https://github.com/storyAura/BooruDatasetTagManagerPlus/issues)
+[Download](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) · [Guia de funcionalidades](FEATURES_pt_BR.md) · [Notas da versão](../RELEASE_NOTES_v1.2.9.md) · [Problemas](https://github.com/storyAura/BooruDatasetTagManagerPlus/issues)
 
 ## Funcionalidades
 
@@ -56,9 +56,9 @@ dotnet test BooruDatasetTagManager.Tests\BooruDatasetTagManager.Tests.csproj
 
 ## Histórico de versões
 
-- **1.2.8** (atual) — O Tag tagger passa a incluir o PixAI Tagger v1.0 e o WD EVA02 2026 Canary, em GPU ou CPU; janela de busca nas tags da imagem (obrigado @furjifurji #1); a auditoria de personagem não inventa mais tags coloridas, a temperatura é ajustável e erros de rede são repetidos. [Notas da versão](../RELEASE_NOTES_v1.2.8.md)
+- **1.2.9** (atual) — Substituir fundo transparente verifica todas as imagens ou uma subpasta sem seleção prévia; tags de personagem com parênteses não são mais divididas nem ganham mais parênteses a cada salvamento (obrigado @furjifurji #2); o PixAI v1.0 passa a usar a GPU de fato; extração de quantidade fixa de frames numa única decodificação. [Notas da versão](../RELEASE_NOTES_v1.2.9.md)
+- **1.2.8** — O Tag tagger passa a incluir o PixAI Tagger v1.0 e o WD EVA02 2026 Canary, em GPU ou CPU; janela de busca nas tags da imagem (obrigado @furjifurji #1); a auditoria de personagem não inventa mais tags coloridas, a temperatura é ajustável e erros de rede são repetidos. [Notas da versão](../RELEASE_NOTES_v1.2.8.md)
 - **1.2.7** — O Tag tagger passa a incluir o OppaiOracle; a auditoria de personagem percorre as tags uma a uma; os recortes múltiplos com YOLO não perdem mais caixas pequenas. [Notas da versão](../RELEASE_NOTES_v1.2.7.md)
-- **1.2.6** — O tagger ONNX passa a se chamar Tag tagger; menu Ferramentas agrupado; carregamento de bibliotecas nativas no Win10 e memória em lotes grandes reforçados. [Notas da versão](../RELEASE_NOTES_v1.2.6.md)
 
 Versões anteriores estão em [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) e nas notas da versão em [docs](../).
 

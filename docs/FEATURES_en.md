@@ -86,7 +86,7 @@ Entry: **Tools → Remove background**, or the dataset context menu. Built-in RM
 
 ## Transparent background replacement
 
-Entry: **Tools → Replace transparent background** (selection); folder group header context menu in the dataset browser → **Replace transparent background (current folder)** / **Replace transparent background (all images)**. Fills transparent areas with a chosen solid color, a random color, or a random pick from a color list you build in the dialog.
+Entry: **Tools → Replace transparent background** (no selection needed: it opens and scans the whole dataset; the dialog's Scope list narrows it to one sub-folder and re-scans; OK stays disabled until transparent images are found); folder group header context menu in the dataset browser → **Replace transparent background (current folder)** / **Replace transparent background (all images)**. Fills transparent areas with a chosen solid color, a random color, or a random pick from a color list you build in the dialog.
 
 - **Scans first**: alpha-capable formats (PNG / WebP / GIF) are picked by extension, then each is decoded to confirm it really has transparent pixels — alpha-less formats (JPG, …) and fully opaque PNG / WebP files are skipped rather than re-encoded
 - Decoding goes through ImageSharp (`ImageLoader`) and encoding through `ImageEditorSaveService` keyed on the target extension, so **WebP / TIFF / GIF work** (older builds failed on WebP with "Out of Memory")
@@ -130,7 +130,7 @@ Entry: dataset context menu, folder-header context menu, or **Tools → Pre-buck
 
 ## Video tools
 
-**Tools → Video format conversion… / Frame extraction…**. Convert between mp4 / mkv / avi / webm / mov / flv (optional replace-original); extract all frames, by FPS, at native FPS, by specific frame numbers, or a random percentage (distributed across the clip or a contiguous regional block; slider default 10%), with preview and a lock-frame workflow; results import into the dataset. FFmpeg is bundled in Release builds.
+**Tools → Video format conversion… / Frame extraction…**. Convert between mp4 / mkv / avi / webm / mov / flv (optional replace-original); extract all frames, by FPS, at native FPS, by specific frame numbers, a set count (spread evenly over the clip), or a random percentage (distributed across the clip or a contiguous regional block; slider default 10%), all decoded in one pass; with preview and a lock-frame workflow, plus preview hotkeys ←/→ 1 frame, Shift 5, Ctrl 10, PgUp/PgDn 100, Space play, L lock; results import into the dataset. FFmpeg is bundled in Release builds.
 
 ![Video frame extraction](images/video-frame-extraction.png)
 

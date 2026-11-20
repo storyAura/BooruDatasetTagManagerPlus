@@ -1,6 +1,6 @@
 <div align="center">
 
-# BooruDatasetTagManager+ 1.2.8
+# BooruDatasetTagManager+ 1.2.9
 
 面向 LoRA / 角色数据集的 Windows 打标工具
 
@@ -14,7 +14,7 @@
 
 每张图配一个同名 `.txt` 存放标签，加载文件夹就能改。也能用本地 Tag 推标或 LLM 自动打标、审查角色标签、用中文搜索 Danbooru 标签。界面默认简体中文。fork 自 [starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager)。
 
-[下载](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) · [功能详解](docs/FEATURES.md) · [发布说明](docs/RELEASE_NOTES_v1.2.8.md) · [问题反馈](https://github.com/storyAura/BooruDatasetTagManagerPlus/issues)
+[下载](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) · [功能详解](docs/FEATURES.md) · [发布说明](docs/RELEASE_NOTES_v1.2.9.md) · [问题反馈](https://github.com/storyAura/BooruDatasetTagManagerPlus/issues)
 
 ## 功能
 
@@ -56,9 +56,9 @@ dotnet test BooruDatasetTagManager.Tests\BooruDatasetTagManager.Tests.csproj
 
 ## 更新日志
 
-- **1.2.8**（当前）— Tag 推标新增 PixAI Tagger v1.0 与 WD EVA02 2026 Canary，可选 GPU / CPU；图片标签查找浮窗（感谢 @furjifurji #1）；角色审查不再编造带颜色的标签，温度可调，网络错误自动重试。[发布说明](docs/RELEASE_NOTES_v1.2.8.md)
+- **1.2.9**（当前）— 替换透明背景打开即检测全部或指定子文件夹，不用先选图；修复带括号的角色标签被拆开、越存括号越多（感谢 @furjifurji #2）；PixAI v1.0 真正用上 GPU；视频按数量抽帧并一次解码。[发布说明](docs/RELEASE_NOTES_v1.2.9.md)
+- **1.2.8** — Tag 推标新增 PixAI Tagger v1.0 与 WD EVA02 2026 Canary，可选 GPU / CPU；图片标签查找浮窗（感谢 @furjifurji #1）；角色审查不再编造带颜色的标签，温度可调，网络错误自动重试。[发布说明](docs/RELEASE_NOTES_v1.2.8.md)
 - **1.2.7** — Tag 推标新增 OppaiOracle；角色审查改为逐标签流程；修复多重切割 YOLO 漏报小框。[发布说明](docs/RELEASE_NOTES_v1.2.7.md)
-- **1.2.6** — ONNX 推标改名 Tag 推标；工具菜单分组；Win10 原生库加载与大批量推标内存加固。[发布说明](docs/RELEASE_NOTES_v1.2.6.md)
 
 更早的版本见 [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) 和 [docs](docs/) 下的发布说明。
 

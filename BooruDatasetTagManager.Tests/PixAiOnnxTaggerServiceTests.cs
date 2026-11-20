@@ -10,6 +10,42 @@ namespace BooruDatasetTagManager.Tests;
 public class PixAiOnnxTaggerServiceTests
 {
     [Fact]
+    public void ClearAllowZero_flips_only_allowzero_one_attributes()
+    {
+        // DirectML rejects Reshape allowzero=1 (v1.0 GPU session fell back to CPU).
+        byte[] on = [0x0A, 0x09, .. "allowzero"u8, 0x18, 0x01];
+        byte[] off = [0x0A, 0x09, .. "allowzero"u8, 0x18, 0x00];
+        byte[] graph = [0x01, .. on, 0x42, .. off, .. on];
+
+        int count = PixAiOnnxTaggerService.ClearAllowZero(graph);
+
+        Assert.Equal(2, count);
+        Assert.Equal([0x01, .. off, 0x42, .. off, .. off], graph);
+    }
+
+    [Fact]
+    public void PrepareDirectMlCompatibleGraph_writes_patched_copy_beside_model()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "pixai-dml-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string model = Path.Combine(dir, "model.onnx");
+            File.WriteAllBytes(model, [0x0A, 0x09, .. "allowzero"u8, 0x18, 0x01]);
+
+            string patched = PixAiOnnxTaggerService.PrepareDirectMlCompatibleGraph(model);
+
+            Assert.Equal(Path.Combine(dir, "model.dml.onnx"), patched);
+            Assert.Equal(0x00, File.ReadAllBytes(patched)[^1]);
+            Assert.Equal(0x01, File.ReadAllBytes(model)[^1]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ParseLines_reads_pixai_v09_csv_format()
     {
         var lines = new[]

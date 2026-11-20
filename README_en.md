@@ -1,6 +1,6 @@
 <div align="center">
 
-# BooruDatasetTagManager+ 1.2.8
+# BooruDatasetTagManager+ 1.2.9
 
 A Windows tagger for LoRA and character datasets
 
@@ -14,7 +14,7 @@ A Windows tagger for LoRA and character datasets
 
 Each image has a matching `.txt` file for its tags: load a folder and edit them. You can also auto-tag with the local Tag tagger or an LLM, audit character tags, and search Danbooru tags in Chinese. The UI defaults to Simplified Chinese and can be switched to English. Forked from [starik222/BooruDatasetTagManager](https://github.com/starik222/BooruDatasetTagManager).
 
-[Download](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) · [Feature guide](docs/FEATURES_en.md) · [Release notes](docs/RELEASE_NOTES_v1.2.8.md) · [Issues](https://github.com/storyAura/BooruDatasetTagManagerPlus/issues)
+[Download](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) · [Feature guide](docs/FEATURES_en.md) · [Release notes](docs/RELEASE_NOTES_v1.2.9.md) · [Issues](https://github.com/storyAura/BooruDatasetTagManagerPlus/issues)
 
 ## Features
 
@@ -56,9 +56,9 @@ dotnet test BooruDatasetTagManager.Tests\BooruDatasetTagManager.Tests.csproj
 
 ## Changelog
 
-- **1.2.8** (current) — Tag tagger adds PixAI Tagger v1.0 and WD EVA02 2026 Canary, on GPU or CPU; a find window for image tags (thanks @furjifurji #1); the character audit no longer invents colored tags, its temperature is adjustable, and network errors are retried. [Release notes](docs/RELEASE_NOTES_v1.2.8.md)
+- **1.2.9** (current) — Replace transparent background scans all images or one sub-folder without a selection; bracketed character tags are no longer split or wrapped in more brackets on each save (thanks @furjifurji #2); PixAI v1.0 really runs on GPU; fixed-count frame extraction in one decode pass. [Release notes](docs/RELEASE_NOTES_v1.2.9.md)
+- **1.2.8** — Tag tagger adds PixAI Tagger v1.0 and WD EVA02 2026 Canary, on GPU or CPU; a find window for image tags (thanks @furjifurji #1); the character audit no longer invents colored tags, its temperature is adjustable, and network errors are retried. [Release notes](docs/RELEASE_NOTES_v1.2.8.md)
 - **1.2.7** — Tag tagger adds OppaiOracle; the character audit walks tags one by one; multi-crop YOLO no longer misses small boxes. [Release notes](docs/RELEASE_NOTES_v1.2.7.md)
-- **1.2.6** — ONNX tagger renamed Tag tagger; grouped Tools menu; Win10 native-library loading and large-batch tagging memory hardened. [Release notes](docs/RELEASE_NOTES_v1.2.6.md)
 
 Older versions are on [Releases](https://github.com/storyAura/BooruDatasetTagManagerPlus/releases) and in the release notes under [docs](docs/).
 
